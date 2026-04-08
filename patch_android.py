@@ -127,14 +127,7 @@ manifest.write_text("""<?xml version="1.0" encoding="utf-8"?>
             </intent-filter>
         </activity>
 
-        <!-- url_launcher: exported=false required Android 12+ -->
-        <activity
-            android:name="io.flutter.plugins.urllauncher.WebViewActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Black.NoTitleBar"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-            android:hardwareAccelerated="true"
-            android:windowSoftInputMode="adjustResize"/>
+
 
         <meta-data android:name="flutterEmbedding" android:value="2"/>
     </application>
