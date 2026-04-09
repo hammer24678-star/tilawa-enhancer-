@@ -5,17 +5,21 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/api_service.dart';
+import '../l10n/strings.dart';
 import 'history_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final S s;
+  final VoidCallback onLangToggle;
+  const HomeScreen({super.key, required this.s, required this.onLangToggle});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   File? _selectedFile;
-  String _selectedEngine = 'v7.6';
+  String _selectedEngine = 'v8.0';
   String _status = '';
   double _progress = 0;
   bool _isProcessing = false;
@@ -26,47 +30,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Timer? _serverTimer;
   Timer? _pollTimer;
   late AnimationController _glowCtrl;
-
-  // File size display
   String _fileSizeLabel = '';
-  bool _isLargeFile = false; // > 8MB → shows chunk info
+  bool _isLargeFile = false;
 
+  // ── 4 engines: v8.0 at top ──────────────────────────────────────────────────
   final List<Map<String, String>> _engines = [
-    {
-      'id': 'v7.6',
-      'name': 'v7.6 - Intelligent Assessment',
-      'desc': 'MDS تشخيص ذكي - الاحدث',
-      'badge': 'NEW',
-      'bc': 'blue',
-    },
-    {
-      'id': 'v7.5',
-      'name': 'v7.5 - Disciplined Precision',
-      'desc': 'Do-No-Harm - 94/100 مثبت',
-      'badge': 'BEST',
-      'bc': 'green',
-    },
-    {
-      'id': 'v7.0',
-      'name': 'v7.0 - Classic',
-      'desc': 'البنية الاصلية - 91/100',
-      'badge': 'STABLE',
-      'bc': 'gold',
-    },
+    {'id':'v8.0','name':'v8.0 - Calibrated Precision','desc':'5 أخطاء مُصلَحة — الأدق | 5 bugs fixed — Most accurate','badge':'NEW','bc':'gold'},
+    {'id':'v7.6','name':'v7.6 - Intelligent Assessment','desc':'MDS تشخيص ذكي | Smart diagnosis','badge':'MDS','bc':'blue'},
+    {'id':'v7.5','name':'v7.5 - Disciplined Precision','desc':'Do-No-Harm — 94/100','badge':'BEST','bc':'green'},
+    {'id':'v7.0','name':'v7.0 - Classic','desc':'البنية الأصلية | Original — 91/100','badge':'STABLE','bc':''},
   ];
+
+  S get s => widget.s;
 
   @override
   void initState() {
     super.initState();
-    _glowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-    _checkServerOnce();
-    _serverTimer = Timer.periodic(
-      const Duration(seconds: 6),
-      (_) => _checkServerOnce(),
-    );
+    _glowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))
+        ..repeat(reverse: true);
+    _checkServer();
+    _serverTimer = Timer.periodic(const Duration(seconds: 6), (_) => _checkServer());
   }
 
   @override
@@ -77,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Future<void> _checkServerOnce() async {
+  Future<void> _checkServer() async {
     final up = await ApiService.isServerRunning();
     if (mounted) setState(() => _isServerUp = up);
   }
@@ -85,22 +68,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _pickFile() async {
     final r = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['mp3', 'wav', 'm4a', 'flac', 'aac'],
-    );
+      allowedExtensions: ['mp3','wav','m4a','flac','aac']);
     if (r != null && r.files.single.path != null) {
       final file = File(r.files.single.path!);
       final bytes = await file.length();
-      final mb = bytes / 1024 / 1024;
-      final isLarge = bytes > 8 * 1024 * 1024;
-
       setState(() {
         _selectedFile = file;
-        _outputFile = null;
-        _result = null;
-        _status = '';
-        _progress = 0;
-        _fileSizeLabel = '${mb.toStringAsFixed(1)} MB';
-        _isLargeFile = isLarge;
+        _outputFile = null; _result = null;
+        _status = ''; _progress = 0;
+        _fileSizeLabel = '${(bytes/1024/1024).toStringAsFixed(1)} MB';
+        _isLargeFile = bytes > 8 * 1024 * 1024;
       });
     }
   }
@@ -108,31 +85,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _process() async {
     if (_selectedFile == null || !_isServerUp) return;
     setState(() {
-      _isProcessing = true;
-      _progress = 0.02;
-      _status = 'جارٍ الرفع...';
-      _outputFile = null;
-      _result = null;
+      _isProcessing = true; _progress = 0.02;
+      _status = s.processing;
+      _outputFile = null; _result = null;
     });
-
     try {
-      final resp = await ApiService.uploadFile(
-        _selectedFile!,
-        _selectedEngine,
-        onProgress: (progress, label) {
-          if (mounted) setState(() {
-            _progress = progress;
-            _status = label;
-          });
-        },
-      );
+      final resp = await ApiService.uploadFile(_selectedFile!, _selectedEngine,
+        onProgress: (p, label) {
+          if (mounted) setState(() { _progress = p; _status = label; });
+        });
       _jobId = resp['job_id'];
       _startPolling();
     } catch (e) {
-      setState(() {
-        _isProcessing = false;
-        _status = 'خطا في الرفع: $e';
-      });
+      setState(() { _isProcessing = false; _status = 'خطأ: $e'; });
     }
   }
 
@@ -141,57 +106,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (_jobId == null) return;
       try {
-        final s = await ApiService.getStatus(_jobId!);
+        final st = await ApiService.getStatus(_jobId!);
         if (!mounted) return;
-
-        final serverProgress = (s['progress'] ?? 0) / 100.0;
-        // Blend: upload progress was 0-68%, server is 0-100%
-        // After finalize, use server progress mapped to 68-100%
-        final status = s['status'] as String? ?? '';
-        double displayProgress;
+        final srvProgress = (st['progress'] ?? 0) / 100.0;
+        final status = st['status'] as String? ?? '';
+        double displayP;
         if (status == 'uploading' || status == 'merging') {
-          displayProgress = _progress; // keep upload progress
+          displayP = _progress;
         } else {
-          displayProgress = 0.68 + serverProgress * 0.32;
+          displayP = 0.68 + srvProgress * 0.32;
         }
-
-        setState(() {
-          _progress = displayProgress.clamp(0.0, 1.0);
-          _status = s['label'] ?? '';
-        });
-
+        setState(() { _progress = displayP.clamp(0.0, 1.0); _status = st['label'] ?? ''; });
         if (status == 'done') {
           _pollTimer?.cancel();
-          await _downloadOutput(s);
+          await _download(st);
         } else if (status == 'error') {
           _pollTimer?.cancel();
-          setState(() {
-            _isProcessing = false;
-            _status = 'فشل: ${s['error']}';
-          });
+          setState(() { _isProcessing = false; _status = 'فشل: ${st['error']}'; });
         }
       } catch (_) {}
     });
   }
 
-  Future<void> _downloadOutput(Map<String, dynamic> sd) async {
+  Future<void> _download(Map<String, dynamic> sd) async {
     setState(() { _status = 'جارٍ التحميل...'; _progress = 0.95; });
     try {
-      final dir = await getDownloadsDirectory() ??
-          await getApplicationDocumentsDirectory();
+      final dir = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
       final name = sd['filename'] ?? 'enhanced_1425h.mp3';
-      final f = await ApiService.downloadFile(_jobId!, '${dir.path}/$name');
+      final path = '${dir.path}/$name';
+      final f = await ApiService.downloadFile(_jobId!, path);
       if (mounted) {
         setState(() {
-          _isProcessing = false;
-          _progress = 1.0;
-          _outputFile = f;
-          _result = sd;
-          _status = f != null ? 'اكتملت' : 'فشل التحميل';
+          _isProcessing = false; _progress = 1.0;
+          _outputFile = f; _result = sd;
+          _status = f != null ? s.done : 'فشل التحميل';
         });
       }
     } catch (e) {
-      if (mounted) setState(() { _isProcessing = false; _status = 'خطا: $e'; });
+      if (mounted) setState(() { _isProcessing = false; _status = 'خطأ: $e'; });
     }
   }
 
@@ -199,88 +151,98 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _header()),
-            SliverToBoxAdapter(child: _serverBanner()),
-            SliverToBoxAdapter(child: _engineSelector()),
-            SliverToBoxAdapter(child: _fileCard()),
-            if (_isProcessing || _progress > 0)
-              SliverToBoxAdapter(child: _progressCard()),
-            if (_outputFile != null)
-              SliverToBoxAdapter(child: _resultCard()),
-            SliverToBoxAdapter(child: _historyButton()),
-            SliverToBoxAdapter(child: _donationCard()),
-            const SliverToBoxAdapter(child: SizedBox(height: 40)),
-          ],
-        ),
+        child: CustomScrollView(slivers: [
+          SliverToBoxAdapter(child: _header()),
+          SliverToBoxAdapter(child: _serverBanner()),
+          SliverToBoxAdapter(child: _engineSelector()),
+          SliverToBoxAdapter(child: _fileCard()),
+          if (_isProcessing || _progress > 0)
+            SliverToBoxAdapter(child: _progressCard()),
+          if (_outputFile != null)
+            SliverToBoxAdapter(child: _resultCard()),
+          SliverToBoxAdapter(child: _bottomRow()),
+          SliverToBoxAdapter(child: _donationCard()),
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+        ]),
       ),
     );
   }
 
   Widget _header() => Padding(
-    padding: const EdgeInsets.fromLTRB(24, 36, 24, 8),
-    child: Column(children: [
-      AnimatedBuilder(
-        animation: _glowCtrl,
-        builder: (_, __) => Text(
-          'محسِّن التلاوة',
-          textDirection: TextDirection.rtl,
-          style: TextStyle(
-            fontSize: 38, fontWeight: FontWeight.bold,
-            color: Color.lerp(
-              const Color(0xFFD4AF37),
-              const Color(0xFFFFF4B0),
-              _glowCtrl.value,
-            ),
-          ),
-        ),
-      ),
-      const SizedBox(height: 4),
-      const Text('YASSER AL-DOSSARI - 1425H',
-        style: TextStyle(color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 3)),
+    padding: const EdgeInsets.fromLTRB(20, 28, 20, 8),
+    child: Row(children: [
+      // Logo
+      Container(
+        width: 52, height: 52,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(
+            color: const Color(0xFFD4AF37).withOpacity(0.2),
+            blurRadius: 12)]),
+        child: ClipOval(child: Image.asset(
+          'assets/images/logo.png', fit: BoxFit.cover,
+          errorBuilder: (_,__,___) => Container(
+            color: const Color(0xFF1A1500),
+            child: const Icon(Icons.music_note, color: Color(0xFFD4AF37), size: 28))))),
+      const SizedBox(width: 14),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        AnimatedBuilder(
+          animation: _glowCtrl,
+          builder: (_, __) => Text(s.appName,
+            textDirection: TextDirection.rtl,
+            style: TextStyle(
+              fontSize: 26, fontWeight: FontWeight.bold,
+              color: Color.lerp(const Color(0xFFD4AF37), const Color(0xFFFFF4B0), _glowCtrl.value)))),
+        Text(s.subtitle,
+          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10, letterSpacing: 1.5)),
+      ])),
+      // Settings button
+      GestureDetector(
+        onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => SettingsScreen(s: s, onLangToggle: widget.onLangToggle))),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161B22),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFF21262D))),
+          child: const Icon(Icons.settings_outlined,
+            color: Color(0xFF8B949E), size: 20))),
     ]),
   );
 
   Widget _serverBanner() => Container(
-    margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+    margin: const EdgeInsets.fromLTRB(16,4,16,4),
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
     decoration: BoxDecoration(
       color: _isServerUp ? const Color(0xFF0D2015) : const Color(0xFF200D0D),
       borderRadius: BorderRadius.circular(12),
       border: Border.all(
         color: _isServerUp ? const Color(0xFF3FB950) : const Color(0xFFF85149),
-        width: 0.8),
-    ),
+        width: 0.8)),
     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Container(width: 8, height: 8,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _isServerUp ? const Color(0xFF3FB950) : const Color(0xFFF85149))),
+      Container(width: 8, height: 8, decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _isServerUp ? const Color(0xFF3FB950) : const Color(0xFFF85149))),
       const SizedBox(width: 8),
-      Flexible(child: Text(
-        _isServerUp
-            ? 'الخادم السحابي يعمل'
-            : 'الخادم غير متصل - تحقق من الانترنت',
+      Text(_isServerUp ? s.serverOnline : s.serverOffline,
         style: TextStyle(
           color: _isServerUp ? const Color(0xFF3FB950) : const Color(0xFFF85149),
-          fontSize: 12))),
+          fontSize: 12)),
     ]),
   );
 
   Widget _engineSelector() => Container(
-    margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+    margin: const EdgeInsets.fromLTRB(16,10,16,4),
     decoration: BoxDecoration(
       color: const Color(0xFF161B22),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: const Color(0xFF21262D)),
-    ),
+      border: Border.all(color: const Color(0xFF21262D))),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Padding(
-        padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
-        child: Text('اختر المحرك',
-          style: TextStyle(color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 1.5)),
-      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16,14,16,4),
+        child: Text(s.chooseEngine,
+          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 1.5))),
       ..._engines.map(_engineTile),
       const SizedBox(height: 8),
     ]),
@@ -288,26 +250,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _engineTile(Map<String, String> e) {
     final sel = _selectedEngine == e['id'];
-    final bc = e['bc'];
-    final badgeColor = bc == 'blue' ? const Color(0xFF58A6FF)
+    final bc = e['bc']!;
+    final badgeColor = bc == 'gold' ? const Color(0xFFD4AF37)
         : bc == 'green' ? const Color(0xFF3FB950)
-        : const Color(0xFFD4AF37);
-    final badgeBg = bc == 'blue' ? const Color(0xFF0D1B2E)
+        : bc == 'blue' ? const Color(0xFF58A6FF)
+        : const Color(0xFF484F58);
+    final badgeBg = bc == 'gold' ? const Color(0xFF1A1200)
         : bc == 'green' ? const Color(0xFF0D2015)
-        : const Color(0xFF1A1200);
+        : bc == 'blue' ? const Color(0xFF0D1B2E)
+        : const Color(0xFF1C1C1C);
 
     return GestureDetector(
       onTap: () => setState(() => _selectedEngine = e['id']!),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.fromLTRB(8, 3, 8, 3),
+        margin: const EdgeInsets.fromLTRB(8,3,8,3),
         padding: const EdgeInsets.all(13),
         decoration: BoxDecoration(
           color: sel ? const Color(0xFF1A1500) : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: sel ? const Color(0xFFD4AF37) : Colors.transparent,
-            width: 1.2)),
+            color: sel ? const Color(0xFFD4AF37) : Colors.transparent, width: 1.2)),
         child: Row(children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 180),
@@ -315,12 +278,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: sel ? const Color(0xFFD4AF37) : const Color(0xFF30363D),
-                width: 2),
+                color: sel ? const Color(0xFFD4AF37) : const Color(0xFF30363D), width: 2),
               color: sel ? const Color(0xFFD4AF37) : Colors.transparent),
-            child: sel
-                ? const Icon(Icons.check, size: 12, color: Color(0xFF0A0C10))
-                : null),
+            child: sel ? const Icon(Icons.check, size: 12, color: Color(0xFF0A0C10)) : null),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
@@ -329,17 +289,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   color: sel ? const Color(0xFFD4AF37) : const Color(0xFFC9D1D9),
                   fontWeight: FontWeight.bold, fontSize: 13))),
               const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: badgeBg, borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: badgeColor.withOpacity(0.4), width: 0.6)),
-                child: Text(e['badge']!,
-                  style: TextStyle(color: badgeColor, fontSize: 9, fontWeight: FontWeight.bold))),
+              if (e['badge']!.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: badgeBg, borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: badgeColor.withOpacity(0.4), width: 0.6)),
+                  child: Text(e['badge']!,
+                    style: TextStyle(color: badgeColor, fontSize: 9, fontWeight: FontWeight.bold))),
             ]),
             const SizedBox(height: 3),
             Text(e['desc']!,
-              style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
+              style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
           ])),
         ]),
       ),
@@ -349,7 +310,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _fileCard() => GestureDetector(
     onTap: _isProcessing ? null : _pickFile,
     child: Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: const Color(0xFF161B22),
@@ -358,14 +319,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           color: _selectedFile != null ? const Color(0xFFD4AF37) : const Color(0xFF30363D),
           width: 1.5)),
       child: Column(children: [
-        Icon(
-          _selectedFile != null ? Icons.audio_file : Icons.add_circle_outline,
+        Icon(_selectedFile != null ? Icons.audio_file : Icons.add_circle_outline,
           color: const Color(0xFFD4AF37), size: 52),
         const SizedBox(height: 12),
-        Text(
-          _selectedFile != null
-              ? _selectedFile!.path.split('/').last
-              : 'اختر الملف الصوتي',
+        Text(_selectedFile != null ? _selectedFile!.path.split('/').last : s.pickFile,
           textDirection: TextDirection.rtl,
           textAlign: TextAlign.center,
           style: TextStyle(
@@ -382,17 +339,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1500),
-                  borderRadius: BorderRadius.circular(4),
+                  color: const Color(0xFF1A1500), borderRadius: BorderRadius.circular(4),
                   border: Border.all(color: const Color(0xFFD4AF37).withOpacity(0.5))),
-                child: const Text('رفع مجزأ',
-                  style: TextStyle(color: Color(0xFFD4AF37), fontSize: 9))),
+                child: Text(s.chunkedBadge,
+                  style: const TextStyle(color: Color(0xFFD4AF37), fontSize: 9))),
             ],
           ]),
         ],
         const SizedBox(height: 4),
-        const Text('MP3 - WAV - M4A - FLAC - حتى 300MB',
-          style: TextStyle(color: Color(0xFF484F58), fontSize: 11)),
+        Text(s.fileSizeLimit,
+          style: const TextStyle(color: Color(0xFF484F58), fontSize: 11)),
         if (_selectedFile != null) ...[
           const SizedBox(height: 18),
           SizedBox(width: double.infinity,
@@ -405,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 disabledBackgroundColor: const Color(0xFFD4AF37).withOpacity(0.3)),
               child: Text(
-                _isProcessing ? 'جارٍ المعالجة...' : 'معالجة بالمحرك $_selectedEngine',
+                _isProcessing ? s.processing : '${s.process} — $_selectedEngine',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)))),
         ],
       ]),
@@ -413,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   );
 
   Widget _progressCard() => Container(
-    margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+    margin: const EdgeInsets.fromLTRB(16,10,16,4),
     padding: const EdgeInsets.all(20),
     decoration: BoxDecoration(
       color: const Color(0xFF161B22),
@@ -421,8 +377,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       border: Border.all(color: const Color(0xFF21262D))),
     child: Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Flexible(child: Text(
-          _status.isEmpty ? 'جارٍ المعالجة...' : _status,
+        Flexible(child: Text(_status.isEmpty ? s.processing : _status,
           style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 13))),
         Text('${(_progress * 100).toInt()}%',
           style: const TextStyle(
@@ -437,8 +392,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)))),
       if (_isLargeFile && _progress < 0.68) ...[
         const SizedBox(height: 8),
-        Text(
-          'ملف كبير — رفع مجزأ (قد يستغرق دقيقة)',
+        Text(s.chunkedBadge,
           style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
       ],
     ]),
@@ -446,9 +400,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _resultCard() {
     final score = double.tryParse(_result?['score']?.toString() ?? '0') ?? 0.0;
-    final label = score >= 96 ? 'ممتاز' : score >= 92 ? 'رائع' : 'جيد جداً';
+    final label = score >= 96 ? s.excellent : score >= 92 ? s.great : s.good;
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: const Color(0xFF0D2015),
@@ -480,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             onPressed: () {
               if (_outputFile == null) return;
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('محفوظ: ${_outputFile!.path.split('/').last}'),
+                content: Text('${s.savedTo}: ${_outputFile!.path.split('/').last}'),
                 backgroundColor: const Color(0xFF0D2015)));
             },
             style: ElevatedButton.styleFrom(
@@ -491,8 +445,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 borderRadius: BorderRadius.circular(10),
                 side: const BorderSide(color: Color(0xFF3FB950)))),
             icon: const Icon(Icons.download),
-            label: const Text('محفوظ في Downloads',
-              style: TextStyle(fontWeight: FontWeight.bold)))),
+            label: Text(s.savedTo,
+              style: const TextStyle(fontWeight: FontWeight.bold)))),
       ]),
     );
   }
@@ -504,24 +458,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       color: Color(0xFFD4AF37), fontWeight: FontWeight.bold, fontSize: 13)),
   ]);
 
-  Widget _historyButton() => GestureDetector(
-    onTap: () => Navigator.push(
-      context, MaterialPageRoute(builder: (_) => const HistoryScreen())),
-    child: Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF21262D))),
-      child: Row(children: [
-        const Icon(Icons.history, color: Color(0xFF8B949E), size: 20),
-        const SizedBox(width: 12),
-        const Expanded(child: Text('سجل الملفات المعالجة',
-          style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 14))),
-        const Icon(Icons.arrow_forward_ios, color: Color(0xFF8B949E), size: 14),
-      ]),
-    ),
+  Widget _bottomRow() => Padding(
+    padding: const EdgeInsets.fromLTRB(16,10,16,4),
+    child: Row(children: [
+      Expanded(child: GestureDetector(
+        onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const HistoryScreen())),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161B22),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF21262D))),
+          child: Row(children: [
+            const Icon(Icons.history, color: Color(0xFF8B949E), size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(s.history,
+              style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 13))),
+            const Icon(Icons.arrow_forward_ios, color: Color(0xFF8B949E), size: 13),
+          ])))),
+    ]),
   );
 
   Widget _donationCard() => GestureDetector(
@@ -530,7 +486,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       if (await canLaunchUrl(uri)) await launchUrl(uri);
     },
     child: Container(
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      margin: const EdgeInsets.fromLTRB(16,10,16,8),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -541,12 +497,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Row(children: [
         const Text('🤲', style: TextStyle(fontSize: 30)),
         const SizedBox(width: 14),
-        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('صدقة جارية',
-            style: TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.bold, fontSize: 15)),
-          SizedBox(height: 3),
-          Text('ساهم في مشروع تحسين التلاوة - InstaPay',
-            style: TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(s.donation, style: const TextStyle(
+            color: Color(0xFFD4AF37), fontWeight: FontWeight.bold, fontSize: 15)),
+          const SizedBox(height: 3),
+          Text(s.donationDesc, style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
         ])),
         const Icon(Icons.arrow_forward_ios, color: Color(0xFFD4AF37), size: 14),
       ]),
