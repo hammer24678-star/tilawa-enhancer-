@@ -1,172 +1,161 @@
-"""
-patch_android.py — DEFINITIVE FIX (v4)
-
-ROOT CAUSE OF ALL CRASHES:
-  Previous versions wrote AndroidManifest.xml from scratch,
-  including <InitializationProvider> which triggers
-  ProfileInstallerInitializer at startup — crashes on Samsung Knox.
-  Also wrote styles.xml / strings.xml overwriting Flutter's correct versions.
-
-THIS VERSION:
-  - Writes build.gradle from scratch (safe)
-  - Writes settings.gradle from scratch (safe)
-  - Writes gradle-wrapper.properties (Gradle 8.3 fix)
-  - Writes network_security_config.xml (localhost HTTP fix)
-  - READS Flutter's generated AndroidManifest.xml, patches ONLY 2 attributes
-  - Does NOT touch styles.xml — Flutter's version is correct
-  - Does NOT touch strings.xml — Flutter's version is correct
-"""
+"""patch_android.py v7 — read+patch, never write from scratch (Rule 10)"""
 from pathlib import Path
 import re
 
-ROOT = Path('android')
-APP  = ROOT / 'app'
+ROOT = Path("android")
+APP  = ROOT / "app"
 
-# ── 1. build.gradle ───────────────────────────────────────────────────────────
-(APP / 'build.gradle').write_text('''
-plugins {
-    id "com.android.application"
-    id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
-}
+(APP / "build.gradle").write_text(
+'plugins {\n'
+'    id "com.android.application"\n'
+'    id "kotlin-android"\n'
+'    id "dev.flutter.flutter-gradle-plugin"\n'
+'}\n'
+'android {\n'
+'    namespace "com.tilawa.tilawa_enhancer"\n'
+'    compileSdk 34\n'
+'    ndkVersion flutter.ndkVersion\n'
+'    compileOptions {\n'
+'        sourceCompatibility JavaVersion.VERSION_1_8\n'
+'        targetCompatibility JavaVersion.VERSION_1_8\n'
+'    }\n'
+'    kotlinOptions { jvmTarget = "1.8" }\n'
+'    defaultConfig {\n'
+'        applicationId "com.tilawa.tilawa_enhancer"\n'
+'        minSdk 21\n'
+'        targetSdk 34\n'
+'        versionCode 3\n'
+'        versionName "2.1.0"\n'
+'    }\n'
+'    buildTypes {\n'
+'        release {\n'
+'            signingConfig signingConfigs.debug\n'
+'            minifyEnabled false\n'
+'            shrinkResources false\n'
+'        }\n'
+'    }\n'
+'}\n'
+'flutter { source "../.." }\n'
+'dependencies {\n'
+'    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22"\n'
+'}\n'
+)
+print("  build.gradle OK")
 
-android {
-    namespace "com.tilawa.tilawa_enhancer"
-    compileSdk 34
-    ndkVersion flutter.ndkVersion
+(ROOT / "settings.gradle").write_text(
+'pluginManagement {\n'
+'    def flutterSdkPath = {\n'
+'        def properties = new Properties()\n'
+'        file("local.properties").withInputStream { properties.load(it) }\n'
+'        def flutterSdkPath = properties.getProperty("flutter.sdk")\n'
+'        assert flutterSdkPath != null\n'
+'        return flutterSdkPath\n'
+'    }()\n'
+'    includeBuild("${flutterSdkPath}/packages/flutter_tools/gradle")\n'
+'    repositories { google(); mavenCentral(); gradlePluginPortal() }\n'
+'}\n'
+'plugins {\n'
+'    id "dev.flutter.flutter-plugin-loader" version "1.0.0"\n'
+'    id "com.android.application" version "8.1.0" apply false\n'
+'    id "org.jetbrains.kotlin.android" version "1.9.22" apply false\n'
+'}\n'
+'include ":app"\n'
+)
+print("  settings.gradle OK")
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-
-    kotlinOptions {
-        jvmTarget = "1.8"
-    }
-
-    defaultConfig {
-        applicationId "com.tilawa.tilawa_enhancer"
-        minSdk 21
-        targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
-    }
-
-    buildTypes {
-        release {
-            signingConfig signingConfigs.debug
-            minifyEnabled false
-            shrinkResources false
-        }
-    }
-}
-
-flutter {
-    source "../.."
-}
-
-dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22"
-}
-''')
-print("  ✅ build.gradle written")
-
-# ── 2. settings.gradle ────────────────────────────────────────────────────────
-(ROOT / 'settings.gradle').write_text('''
-pluginManagement {
-    def flutterSdkPath = {
-        def properties = new Properties()
-        file("local.properties").withInputStream { properties.load(it) }
-        def flutterSdkPath = properties.getProperty("flutter.sdk")
-        assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
-        return flutterSdkPath
-    }()
-    includeBuild("${flutterSdkPath}/packages/flutter_tools/gradle")
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-
-plugins {
-    id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-    id "com.android.application" version "8.1.0" apply false
-    id "org.jetbrains.kotlin.android" version "1.9.22" apply false
-}
-
-include ":app"
-''')
-print("  ✅ settings.gradle written")
-
-# ── 3. gradle-wrapper.properties — Gradle 8.3 ────────────────────────────────
-wrapper = ROOT / 'gradle' / 'wrapper' / 'gradle-wrapper.properties'
+wrapper = ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties"
 wrapper.parent.mkdir(parents=True, exist_ok=True)
 wrapper.write_text(
-    'distributionBase=GRADLE_USER_HOME\n'
-    'distributionPath=wrapper/dists\n'
-    'zipStoreBase=GRADLE_USER_HOME\n'
-    'zipStorePath=wrapper/dists\n'
-    'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-all.zip\n'
+    "distributionBase=GRADLE_USER_HOME\n"
+    "distributionPath=wrapper/dists\n"
+    "zipStoreBase=GRADLE_USER_HOME\n"
+    "zipStorePath=wrapper/dists\n"
+    "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-all.zip\n"
 )
-print("  ✅ gradle-wrapper.properties → Gradle 8.3")
+print("  gradle-wrapper.properties OK (Gradle 8.3)")
 
-# ── 4. network_security_config.xml — allow localhost HTTP ─────────────────────
-res_xml = APP / 'src' / 'main' / 'res' / 'xml'
+res_xml = APP / "src" / "main" / "res" / "xml"
 res_xml.mkdir(parents=True, exist_ok=True)
-(res_xml / 'network_security_config.xml').write_text(
-    '<?xml version="1.0" encoding="utf-8"?>\n'
-    '<network-security-config>\n'
-    '    <domain-config cleartextTrafficPermitted="true">\n'
-    '        <domain includeSubdomains="false">127.0.0.1</domain>\n'
-    '        <domain includeSubdomains="false">localhost</domain>\n'
-    '    </domain-config>\n'
-    '</network-security-config>\n'
+(res_xml / "network_security_config.xml").write_text(
+'<?xml version="1.0" encoding="utf-8"?>\n'
+'<network-security-config>\n'
+'    <domain-config cleartextTrafficPermitted="true">\n'
+'        <domain includeSubdomains="false">127.0.0.1</domain>\n'
+'        <domain includeSubdomains="false">localhost</domain>\n'
+'    </domain-config>\n'
+'</network-security-config>\n'
 )
-print("  ✅ network_security_config.xml → allows localhost HTTP")
+print("  network_security_config.xml OK")
 
-# ── 5. PATCH AndroidManifest.xml — do NOT rewrite from scratch ───────────────
-# Flutter's generated manifest is already correct.
-# We ONLY need to add 2 attributes to the <application> tag:
-#   android:usesCleartextTraffic="false"
-#   android:networkSecurityConfig="@xml/network_security_config"
-# And add READ_MEDIA_AUDIO permission for Android 13+
+# MANIFEST: read Flutter's version, patch it — NEVER write from scratch (Rule 10)
+manifest_path = APP / "src" / "main" / "AndroidManifest.xml"
+txt = manifest_path.read_text()
+print(f"  Manifest read ({len(txt)} bytes)")
 
-mp = APP / 'src' / 'main' / 'AndroidManifest.xml'
-manifest = mp.read_text()
-
-# Add usesCleartextTraffic if not present
-if 'usesCleartextTraffic' not in manifest:
-    manifest = manifest.replace(
-        'android:hardwareAccelerated="true"',
-        'android:hardwareAccelerated="true"\n        android:usesCleartextTraffic="false"\n        android:networkSecurityConfig="@xml/network_security_config"'
+# A8 fix: add permissions before <application (Flutter default has none)
+if "android.permission.INTERNET" not in txt:
+    perms = (
+        '    <uses-permission android:name="android.permission.INTERNET"/>\n'
+        '    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n'
+        '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"'
+        ' android:maxSdkVersion="32"/>\n\n'
     )
-    # fallback: insert before <activity
-    if 'usesCleartextTraffic' not in manifest:
-        manifest = re.sub(
-            r'(<application\b)',
-            r'\1\n        android:usesCleartextTraffic="false"\n        android:networkSecurityConfig="@xml/network_security_config"',
-            manifest
-        )
-    print("  ✅ AndroidManifest.xml patched: usesCleartextTraffic + networkSecurityConfig")
+    txt = txt.replace("\n    <application", "\n" + perms + "    <application", 1)
+    print("  INTERNET + READ_MEDIA_AUDIO inserted")
 else:
-    print("  ✅ AndroidManifest.xml already has usesCleartextTraffic")
+    print("  INTERNET already present")
 
-# Add READ_MEDIA_AUDIO permission if not present (needed for audio files on Android 13+)
-if 'READ_MEDIA_AUDIO' not in manifest:
-    manifest = manifest.replace(
-        '<application',
-        '<uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n\n    <application'
-    )
-    print("  ✅ AndroidManifest.xml: READ_MEDIA_AUDIO permission added")
+# A9 fix: add network attrs to <application> tag, NOT <activity>
+# Target the closing > of Flutter's <application attribute list specifically
+if "networkSecurityConfig" not in txt:
+    OLD = 'android:icon="@mipmap/ic_launcher">'
+    NEW = ('android:icon="@mipmap/ic_launcher"\n'
+           '        android:networkSecurityConfig="@xml/network_security_config"\n'
+           '        android:usesCleartextTraffic="false">')
+    if OLD in txt:
+        txt = txt.replace(OLD, NEW, 1)
+        print("  networkSecurityConfig added to <application>")
+    else:
+        # Regex fallback: match <application ...> spanning multiple lines
+        txt = re.sub(
+            r'(<application\b(?:[^<])*?)(>)',
+            lambda m: m.group(1)
+                + '\n        android:networkSecurityConfig="@xml/network_security_config"'
+                + '\n        android:usesCleartextTraffic="false"'
+                + m.group(2),
+            txt, count=1, flags=re.DOTALL
+        )
+        print("  networkSecurityConfig added via regex fallback")
+else:
+    print("  networkSecurityConfig already present")
 
-mp.write_text(manifest)
-print("  ✅ AndroidManifest.xml saved (Flutter's original structure preserved)")
+manifest_path.write_text(txt)
+print("  AndroidManifest.xml patched and saved")
 
-# ── DONE ──────────────────────────────────────────────────────────────────────
+# Verification
+final = manifest_path.read_text()
+checks = [
+    ("android.permission.INTERNET",         "INTERNET permission"),
+    ("android.permission.READ_MEDIA_AUDIO", "READ_MEDIA_AUDIO"),
+    ("networkSecurityConfig",               "networkSecurityConfig"),
+    ("usesCleartextTraffic",                "usesCleartextTraffic"),
+    ("NormalTheme",                          "NormalTheme meta-data"),
+    ("flutterEmbedding",                     "flutterEmbedding meta-data"),
+]
+ok = True
+for token, label in checks:
+    found = token in final
+    print(f"  {'OK' if found else 'MISSING!'}: {label}")
+    if not found:
+        ok = False
+
+# Confirm networkSecurityConfig is on <application>, not <activity>
+before_activity = final[:final.find("<activity")] if "<activity" in final else final
+if "networkSecurityConfig" in before_activity:
+    print("  OK: networkSecurityConfig is on <application> (not <activity>)")
+else:
+    print("  WRONG: networkSecurityConfig ended up on <activity>!")
+    ok = False
+
 print()
-print("patch_android.py: ALL DONE")
-print("  Flutter's styles.xml   → untouched (correct theme parents)")
-print("  Flutter's strings.xml  → untouched")
-print("  Flutter's MainActivity → untouched (extends FlutterActivity)")
-print("  ProfileInstallerInitializer → NOT in our manifest (no startup crash)")
+print("patch_android.py v7:", "ALL OK" if ok else "ERRORS — check above")
