@@ -1,4 +1,4 @@
-"""patch_android.py v7 — read+patch, never write from scratch (Rule 10)"""
+"""patch_android.py v8 — adds WRITE_EXTERNAL_STORAGE (download fix)"""
 from pathlib import Path
 import re
 
@@ -92,21 +92,35 @@ manifest_path = APP / "src" / "main" / "AndroidManifest.xml"
 txt = manifest_path.read_text()
 print(f"  Manifest read ({len(txt)} bytes)")
 
-# A8 fix: add permissions before <application (Flutter default has none)
+# Add ALL required permissions before <application (Flutter default has none)
 if "android.permission.INTERNET" not in txt:
     perms = (
         '    <uses-permission android:name="android.permission.INTERNET"/>\n'
         '    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n'
         '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"'
-        ' android:maxSdkVersion="32"/>\n\n'
+        ' android:maxSdkVersion="32"/>\n'
+        # WRITE_EXTERNAL_STORAGE: needed on Android ≤ 9 (API 28) to write to
+        # any external path. On Android 10+ it is silently ignored by the OS,
+        # but we use getExternalStorageDirectory() which needs no permission anyway.
+        '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"'
+        ' android:maxSdkVersion="28"/>\n\n'
     )
     txt = txt.replace("\n    <application", "\n" + perms + "    <application", 1)
-    print("  INTERNET + READ_MEDIA_AUDIO inserted")
+    print("  INTERNET + READ_MEDIA_AUDIO + WRITE_EXTERNAL_STORAGE inserted")
+elif "WRITE_EXTERNAL_STORAGE" not in txt:
+    # INTERNET already present but WRITE missing — insert WRITE after INTERNET line
+    txt = txt.replace(
+        '<uses-permission android:name="android.permission.INTERNET"/>',
+        '<uses-permission android:name="android.permission.INTERNET"/>\n'
+        '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"'
+        ' android:maxSdkVersion="28"/>',
+        1
+    )
+    print("  WRITE_EXTERNAL_STORAGE inserted (INTERNET was already present)")
 else:
-    print("  INTERNET already present")
+    print("  All permissions already present")
 
-# A9 fix: add network attrs to <application> tag, NOT <activity>
-# Target the closing > of Flutter's <application attribute list specifically
+# A9 fix: add networkSecurityConfig + usesCleartextTraffic to <application> tag
 if "networkSecurityConfig" not in txt:
     OLD = 'android:icon="@mipmap/ic_launcher">'
     NEW = ('android:icon="@mipmap/ic_launcher"\n'
@@ -116,7 +130,6 @@ if "networkSecurityConfig" not in txt:
         txt = txt.replace(OLD, NEW, 1)
         print("  networkSecurityConfig added to <application>")
     else:
-        # Regex fallback: match <application ...> spanning multiple lines
         txt = re.sub(
             r'(<application\b(?:[^<])*?)(>)',
             lambda m: m.group(1)
@@ -135,10 +148,11 @@ print("  AndroidManifest.xml patched and saved")
 # Verification
 final = manifest_path.read_text()
 checks = [
-    ("android.permission.INTERNET",         "INTERNET permission"),
-    ("android.permission.READ_MEDIA_AUDIO", "READ_MEDIA_AUDIO"),
-    ("networkSecurityConfig",               "networkSecurityConfig"),
-    ("usesCleartextTraffic",                "usesCleartextTraffic"),
+    ("android.permission.INTERNET",          "INTERNET permission"),
+    ("android.permission.READ_MEDIA_AUDIO",  "READ_MEDIA_AUDIO"),
+    ("android.permission.WRITE_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"),
+    ("networkSecurityConfig",                "networkSecurityConfig"),
+    ("usesCleartextTraffic",                 "usesCleartextTraffic"),
     ("NormalTheme",                          "NormalTheme meta-data"),
     ("flutterEmbedding",                     "flutterEmbedding meta-data"),
 ]
@@ -149,7 +163,6 @@ for token, label in checks:
     if not found:
         ok = False
 
-# Confirm networkSecurityConfig is on <application>, not <activity>
 before_activity = final[:final.find("<activity")] if "<activity" in final else final
 if "networkSecurityConfig" in before_activity:
     print("  OK: networkSecurityConfig is on <application> (not <activity>)")
@@ -158,4 +171,4 @@ else:
     ok = False
 
 print()
-print("patch_android.py v7:", "ALL OK" if ok else "ERRORS — check above")
+print("patch_android.py v8:", "ALL OK" if ok else "ERRORS — check above")
