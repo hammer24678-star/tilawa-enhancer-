@@ -17,37 +17,64 @@ void main() async {
   runApp(TilawaApp(langAr: langAr, seenWelcome: seenWelcome));
 }
 
-class TilawaApp extends StatelessWidget {
+// ── FIX F1: TilawaApp must be StatefulWidget ────────────────────────────────
+// Bug: was StatelessWidget, creating ValueNotifier inside build().
+// build() can be called multiple times — each call created a NEW notifier,
+// resetting the language silently. The notifier was also never disposed.
+// Fix: move notifier into State (initState → dispose lifecycle).
+// ────────────────────────────────────────────────────────────────────────────
+class TilawaApp extends StatefulWidget {
   final bool langAr;
   final bool seenWelcome;
   const TilawaApp({super.key, required this.langAr, required this.seenWelcome});
 
   @override
-  Widget build(BuildContext context) {
-    final langNotifier = ValueNotifier<bool>(langAr);
+  State<TilawaApp> createState() => _TilawaAppState();
+}
 
+class _TilawaAppState extends State<TilawaApp> {
+  late final ValueNotifier<bool> _langNotifier;
+
+  @override
+  void initState() {
+    super.initState();
+    // Created ONCE here — never again until the widget is destroyed.
+    _langNotifier = ValueNotifier<bool>(widget.langAr);
+  }
+
+  @override
+  void dispose() {
+    _langNotifier.dispose(); // properly released
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return LangProvider(
-      notifier: langNotifier,
+      notifier: _langNotifier,
       child: ValueListenableBuilder<bool>(
-        valueListenable: langNotifier,
-        builder: (context, _, __) => MaterialApp(
-          title: 'محسِّن التلاوة',
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            colorScheme: const ColorScheme.dark(
-              primary: Color(0xFFD4AF37),
-              surface: Color(0xFF161B22),
+        valueListenable: _langNotifier,
+        builder: (context, _, __) {
+          final s = S(ar: _langNotifier.value);
+          return MaterialApp(
+            title: s.appName,
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData(
+              colorScheme: const ColorScheme.dark(
+                primary: Color(0xFFD4AF37),
+                surface: Color(0xFF161B22),
+              ),
+              useMaterial3: true,
+              scaffoldBackgroundColor: const Color(0xFF0A0C10),
+              appBarTheme: const AppBarTheme(
+                backgroundColor: Color(0xFF0A0C10),
+                foregroundColor: Color(0xFFD4AF37),
+                elevation: 0,
+              ),
             ),
-            useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFF0A0C10),
-            appBarTheme: const AppBarTheme(
-              backgroundColor: Color(0xFF0A0C10),
-              foregroundColor: Color(0xFFD4AF37),
-              elevation: 0,
-            ),
-          ),
-          home: seenWelcome ? const HomeScreen() : const WelcomeScreen(),
-        ),
+            home: widget.seenWelcome ? const HomeScreen() : const WelcomeScreen(),
+          );
+        },
       ),
     );
   }
