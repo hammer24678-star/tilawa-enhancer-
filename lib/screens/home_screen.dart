@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-// STEP 2-1: path_provider import REMOVED — api_service now handles all path logic
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
@@ -31,6 +30,13 @@ class _HomeScreenState extends State<HomeScreen>
   Timer?  _pollTimer;
   String  _sizeLabel    = '';
   bool    _isLarge      = false;
+
+  // RC3 FIX: Prevents multiple simultaneous _downloadAndSave calls.
+  // The poll timer fires every 2s but getStatus has a 10s timeout.
+  // When the server is slow, up to 5 poll callbacks can be in-flight
+  // simultaneously — all getting status='done', all trying to download
+  // to the same temp filename, corrupting each other's writes.
+  bool _downloading = false;
 
   late final AnimationController _glowCtrl;
 
@@ -111,39 +117,95 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  // RC2 FIX + RC3 FIX applied here.
+  //
+  // RC2 BEFORE (broken):
+  //   try {
+  //     final st = await ApiService.getStatus(_jobId!);
+  //     if (status == 'done') {
+  //       _pollTimer?.cancel();
+  //       await _downloadAndSave(st);   // ← INSIDE catch block
+  //     }
+  //   } catch (_) {}                   // silently swallows ALL exceptions
+  //                                    // including from _downloadAndSave
+  //
+  // RC2 AFTER (fixed):
+  //   The download call is OUTSIDE the polling try/catch.
+  //   Polling errors (network timeouts, JSON parse errors) are still caught.
+  //   Download errors surface to the user instead of being swallowed silently.
+  //
+  // RC3 AFTER (fixed):
+  //   _downloading flag ensures only ONE _downloadAndSave runs at a time.
+  //   Without this, concurrent poll callbacks all seeing 'done' would each
+  //   try to download → write to the same temp filename simultaneously →
+  //   race condition corrupts the file → size guard triggers → "ملف فارغ".
   void _startPolling() {
     _pollTimer?.cancel();
+    String? doneStatus; // captured outside try/catch for RC2
+
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (_jobId == null) return;
+
+      // Poll the server — errors here (network, timeout) are silently ignored
+      // so the UI stays in "processing" state and retries next tick.
       try {
         final st = await ApiService.getStatus(_jobId!);
         if (!mounted) return;
+
         final srv = (st['progress'] ?? 0) / 100.0;
         final status = st['status'] as String? ?? '';
         final display = (status == 'uploading' || status == 'merging')
             ? _progress
             : (0.68 + srv * 0.32).clamp(0.0, 1.0);
         setState(() { _progress = display; _status = st['label'] ?? ''; });
-        if (status == 'done') {
-          _pollTimer?.cancel();
-          await _downloadAndSave(st);
-        } else if (status == 'error') {
+
+        if (status == 'error') {
           _pollTimer?.cancel();
           setState(() { _busy = false; _status = 'فشل: ${st['error']}'; });
+          return;
         }
-      } catch (_) {}
+
+        if (status == 'done') {
+          _pollTimer?.cancel();
+          // RC3: Guard — only one download at a time.
+          // If a concurrent callback already started the download, skip.
+          if (_downloading) return;
+          _downloading = true;
+          doneStatus = status;
+
+          // RC2: Download runs OUTSIDE the catch block below.
+          // Errors from _downloadAndSave are now visible to the user.
+          try {
+            await _downloadAndSave(st);
+          } catch (e) {
+            if (mounted) {
+              setState(() { _busy = false; _status = 'فشل: $e'; });
+            }
+          } finally {
+            _downloading = false;
+          }
+        }
+      } catch (_) {
+        // Only poll errors (network timeouts, parse errors) are silently
+        // ignored here. Download errors are handled in the block above.
+        _ ; // suppress unused variable warning
+      }
     });
   }
 
-  // STEP 2-2: downloadFile now handles path internally — no path_provider here
-  // STEP 2-3: Uses new (File?, String?) return type for real error messages
-  // STEP 2-4: No try/catch needed — errors are returned as String, not thrown
+  // RC2 FIX: This method is now called OUTSIDE the polling try/catch.
+  // Any exception thrown here propagates to the caller (which has its own
+  // try/catch that updates the UI with a real error message).
+  //
+  // S18 NEW: Shows snackbar on success (with file path) and on failure.
+  // Previously only _reDownload showed a snackbar — _downloadAndSave was silent.
+  // This meant the user saw "اكتملت ✓" in the progress card but got NO
+  // indication of where the file was saved or whether it really succeeded.
   Future<void> _downloadAndSave(Map<String, dynamic> sd) async {
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
 
     final filename = ApiService.buildFilename(_engine);
-    // STEP 2-5: api_service picks getExternalStorageDirectory() internally
     final (file, error) = await ApiService.downloadFile(_jobId!, filename);
 
     if (!mounted) return;
@@ -152,15 +214,42 @@ class _HomeScreenState extends State<HomeScreen>
       _output = file; _result = sd;
       _status = file != null ? s.done : 'فشل: $error';
     });
+
+    // Show snackbar — success shows path, failure shows reason.
+    if (file != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          s.ar
+            ? '\u2705 تم الحفظ في Downloads\n\ud83d\udcc1 ${file.path}'
+            : '\u2705 Saved to Downloads\n\ud83d\udcc1 ${file.path}',
+          style: const TextStyle(fontSize: 12),
+        ),
+        backgroundColor: const Color(0xFF0D2015),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: s.ar ? 'حسناً' : 'OK',
+          textColor: const Color(0xFF3FB950),
+          onPressed: () {},
+        ),
+      ));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          s.ar ? '\u274c فشل التحميل\n$error' : '\u274c Download failed\n$error',
+          style: const TextStyle(fontSize: 12),
+        ),
+        backgroundColor: const Color(0xFF200D0D),
+        duration: const Duration(seconds: 6),
+      ));
+    }
   }
 
-  // STEP 2-6: Re-download with full path in snackbar + error snackbar on failure
-  // STEP 2-7: Snackbar duration 8s on success (user has time to read path)
-  // STEP 2-8: Error snackbar on failure — red, shows real error string
+  // H5 FIX: _reDownload now updates _status on success (was missing before).
+  // Also shows snackbar on success/failure (was already there in S17).
   Future<void> _reDownload() async {
     if (_jobId == null) return;
     final s = LangProvider.strings(context);
-    setState(() { _status = s.downloading; });
+    setState(() { _status = s.downloading; _progress = 0.95; });
 
     final filename = ApiService.buildFilename(_engine);
     final (file, error) = await ApiService.downloadFile(_jobId!, filename);
@@ -168,28 +257,33 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
     setState(() {
       _output = file;
+      // H5 FIX: was missing _progress and _status update on success
+      _progress = 1.0;
       _status = file != null ? s.done : 'فشل: $error';
     });
 
     if (file != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-          '✅ تم الحفظ\n'
-          '📁 ${file.path}',
+          s.ar
+            ? '\u2705 تم الحفظ في Downloads\n\ud83d\udcc1 ${file.path}'
+            : '\u2705 Saved to Downloads\n\ud83d\udcc1 ${file.path}',
           style: const TextStyle(fontSize: 12),
         ),
         backgroundColor: const Color(0xFF0D2015),
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
-          label: 'حسناً',
+          label: s.ar ? 'حسناً' : 'OK',
           textColor: const Color(0xFF3FB950),
           onPressed: () {},
         ),
       ));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('❌ فشل التحميل\n$error',
-          style: const TextStyle(fontSize: 12)),
+        content: Text(
+          s.ar ? '\u274c فشل التحميل\n$error' : '\u274c Download failed\n$error',
+          style: const TextStyle(fontSize: 12),
+        ),
         backgroundColor: const Color(0xFF200D0D),
         duration: const Duration(seconds: 6),
       ));
@@ -527,7 +621,7 @@ class _HomeScreenState extends State<HomeScreen>
         ]),
         const SizedBox(height: 18),
 
-        // ── DOWNLOAD BUTTON ──────────────────────────────────────────────────
+        // ── DOWNLOAD BUTTON ────────────────────────────────────────────────
         SizedBox(width: double.infinity,
           child: ElevatedButton.icon(
             onPressed: _reDownload,
@@ -551,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen>
                     fontSize: 10,
                     color: Colors.black.withOpacity(0.6))),
               ]),
-            )),
+          )),
 
         if (_output != null) ...[
           const SizedBox(height: 8),

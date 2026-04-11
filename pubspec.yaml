@@ -1,7 +1,7 @@
 name: tilawa_enhancer
 description: "محسن التلاوة - تحسين صوت القرآن الكريم"
 publish_to: 'none'
-version: 2.3.0+5
+version: 2.4.0+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

@@ -1,16 +1,18 @@
-"""patch_android.py v9
-Changes from v6:
-  + WRITE_EXTERNAL_STORAGE permission (maxSdkVersion=28) — needed for Android ≤ 9
-  + Writes MainActivity.kt with MediaScannerConnection MethodChannel
-    (build.yml Fix MainActivity step creates the dir first; we overwrite the file)
+"""patch_android.py v10
+Changes from v9:
+  RC1: MainActivity.kt — adds 'saveToDownloads' MethodChannel method.
+       Android 10+: uses MediaStore.Downloads API → file lands in public Downloads.
+       Android 9- : uses Environment.DIRECTORY_DOWNLOADS + MediaScanner trigger.
+  H1 : AndroidManifest.xml — usesCleartextTraffic false→true (networkSecurityConfig
+       is the authoritative policy source; false was semantically inconsistent).
+  KEEP: scanFile method retained for compatibility (safe no-op if unused).
 """
 from pathlib import Path
-import os
 
 ROOT = Path("android")
 APP  = ROOT / "app"
 
-# ── STEP 3-1: build.gradle (unchanged from v6) ─────────────────────────────────
+# ── STEP 3-1: build.gradle (unchanged from v9) ────────────────────────────────
 (APP / "build.gradle").write_text("""
 plugins {
     id "com.android.application"
@@ -97,10 +99,11 @@ res_xml.mkdir(parents=True, exist_ok=True)
 )
 print("  network_security_config.xml OK")
 
-# ── STEP 3-5: AndroidManifest.xml — adds WRITE_EXTERNAL_STORAGE ───────────────
-# CRITICAL: WRITE_EXTERNAL_STORAGE with maxSdkVersion=28 is required for
-# Android ≤ 9 (API 28) to write to getExternalStorageDirectory().
-# Android 10+ (API 29+): no permission needed (app-scoped storage exemption).
+# ── STEP 3-5: AndroidManifest.xml ─────────────────────────────────────────────
+# H1 FIX: usesCleartextTraffic changed from "false" to "true".
+# networkSecurityConfig is the authoritative policy; it already blocks cleartext
+# everywhere except 127.0.0.1/localhost. Setting the attribute to false was
+# semantically inconsistent and potentially confusing for future maintainers.
 manifest = APP / "src" / "main" / "AndroidManifest.xml"
 manifest.parent.mkdir(parents=True, exist_ok=True)
 manifest.write_text("""<?xml version="1.0" encoding="utf-8"?>
@@ -114,17 +117,17 @@ manifest.write_text("""<?xml version="1.0" encoding="utf-8"?>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
 
-    <!-- Storage — WRITE (Android ≤ 9 only; API 29+ uses app-scoped dir, no permission needed) -->
+    <!-- Storage — WRITE (Android <= 9 only; needed for DIRECTORY_DOWNLOADS write) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"/>
 
     <application
-        android:label="محسِّن التلاوة"
+        android:label="\\u0645\\u062d\\u0633\\u0650\\u0651\\u0646 \\u0627\\u0644\\u062a\\u0644\\u0627\\u0648\\u0629"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
@@ -148,16 +151,16 @@ manifest.write_text("""<?xml version="1.0" encoding="utf-8"?>
     </application>
 </manifest>
 """)
-print("  AndroidManifest.xml written (v9 — WRITE_EXTERNAL_STORAGE added)")
+print("  AndroidManifest.xml written (v10 — usesCleartextTraffic=true)")
 
 # ── STEP 3-6: Verify manifest ──────────────────────────────────────────────────
 txt = manifest.read_text()
 for check, label in [
     ("android.permission.INTERNET",              "INTERNET permission"),
-    ("WRITE_EXTERNAL_STORAGE",                   "WRITE_EXTERNAL_STORAGE (≤API28)"),
+    ("WRITE_EXTERNAL_STORAGE",                   "WRITE_EXTERNAL_STORAGE (<=API28)"),
     ("READ_MEDIA_AUDIO",                         "READ_MEDIA_AUDIO (API33+)"),
     ("networkSecurityConfig",                    "networkSecurityConfig on <application>"),
-    ("usesCleartextTraffic",                     "usesCleartextTraffic on <application>"),
+    ('usesCleartextTraffic="true"',              "usesCleartextTraffic=TRUE (H1 fix)"),
     ("flutterEmbedding",                         "flutterEmbedding meta-data"),
     ("applicationName",                          "${applicationName}"),
     ("NormalTheme",                              "NormalTheme meta-data"),
@@ -165,29 +168,39 @@ for check, label in [
     ok = check in txt
     print(f"  {'OK' if ok else 'MISSING!'}: {label}")
 
-# ── STEP 3-7: Write MainActivity.kt with MediaScanner MethodChannel ────────────
-# build.yml "Fix MainActivity package" step runs BEFORE this script.
-# It creates com/tilawa/tilawa_enhancer/ and moves the file there.
-# We OVERWRITE it here with the full MediaScanner implementation.
-# The directory already exists — makedirs is a no-op safety call.
+# ── STEP 3-7: Write MainActivity.kt — scanFile + saveToDownloads ───────────────
+# RC1 FIX: Added 'saveToDownloads' method.
+#   Android 10+ (API 29+): MediaStore.Downloads API — no WRITE permission needed,
+#     file lands directly in the public Downloads folder visible to ALL file managers.
+#   Android 9- (API 28-):  Environment.DIRECTORY_DOWNLOADS — requires
+#     WRITE_EXTERNAL_STORAGE which is declared in manifest (maxSdkVersion=28).
+#     MediaScanner called after copy so the file appears immediately.
+# KEEP: 'scanFile' method retained for backwards compatibility.
 MAIN_ACTIVITY_KT = r"""package com.tilawa.tilawa_enhancer
 
+import android.content.ContentValues
 import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * MainActivity — S17
- * Adds MethodChannel "com.tilawa.tilawa_enhancer/media" with method "scanFile".
+ * MainActivity — S18
  *
- * Purpose: After downloadFile() writes a file to /Android/data/.../files/,
- * it calls this channel. MediaScannerConnection.scanFile() notifies Android's
- * media database, making the file visible in:
- *   - Samsung My Files → Downloads
- *   - Xiaomi MIUI Files → Recent
- *   - Any stock file manager's "Downloads" section
- * Without this call, the file is a ghost — invisible until device reboot.
+ * MethodChannel: "com.tilawa.tilawa_enhancer/media"
+ *
+ * Methods:
+ *   scanFile(path: String)
+ *     Legacy media scanner trigger. Kept for compatibility.
+ *
+ *   saveToDownloads(path: String, filename: String) -> String (uri/path)
+ *     RC1 FIX: Saves a file from [path] into the public Downloads folder.
+ *     API 29+: MediaStore.Downloads — no permission needed, always visible.
+ *     API <29: Environment.DIRECTORY_DOWNLOADS — needs WRITE_EXTERNAL_STORAGE
+ *              (declared in manifest with maxSdkVersion=28).
  */
 class MainActivity : FlutterActivity() {
 
@@ -199,20 +212,78 @@ class MainActivity : FlutterActivity() {
             "com.tilawa.tilawa_enhancer/media"
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+
+                // ── Legacy: kept for compatibility ─────────────────────────────
                 "scanFile" -> {
                     val path = call.argument<String>("path")
                     if (path != null) {
                         MediaScannerConnection.scanFile(
-                            this,
-                            arrayOf(path),
-                            arrayOf("audio/mpeg")
-                        ) { _, _ ->
-                            result.success(null)
-                        }
+                            this, arrayOf(path), arrayOf("audio/mpeg")
+                        ) { _, _ -> result.success(null) }
                     } else {
                         result.error("INVALID_PATH", "path argument is null", null)
                     }
                 }
+
+                // ── RC1: Save to public Downloads ──────────────────────────────
+                "saveToDownloads" -> {
+                    val sourcePath = call.argument<String>("path")
+                    val fileName   = call.argument<String>("filename")
+                    if (sourcePath == null || fileName == null) {
+                        result.error("INVALID_ARGS", "path or filename is null", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            // ── Android 10+ — MediaStore.Downloads ────────────
+                            // No WRITE permission needed. File appears immediately
+                            // in Downloads section of ALL file managers (Samsung,
+                            // MIUI, Pixel Files, etc.).
+                            val resolver = contentResolver
+                            val values = ContentValues().apply {
+                                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                                put(MediaStore.Downloads.MIME_TYPE, "audio/mpeg")
+                                put(MediaStore.Downloads.IS_PENDING, 1)
+                            }
+                            val collection = MediaStore.Downloads.getContentUri(
+                                MediaStore.VOLUME_EXTERNAL_PRIMARY
+                            )
+                            val itemUri = resolver.insert(collection, values)
+                            if (itemUri == null) {
+                                result.error("INSERT_FAILED",
+                                    "MediaStore.Downloads insert returned null", null)
+                                return@setMethodCallHandler
+                            }
+                            resolver.openOutputStream(itemUri)?.use { out ->
+                                java.io.File(sourcePath).inputStream()
+                                    .use { input -> input.copyTo(out) }
+                            }
+                            values.clear()
+                            values.put(MediaStore.Downloads.IS_PENDING, 0)
+                            resolver.update(itemUri, values, null, null)
+                            result.success(itemUri.toString())
+
+                        } else {
+                            // ── Android 9 and below — public Downloads dir ────
+                            // WRITE_EXTERNAL_STORAGE declared in manifest (maxSdk=28).
+                            val downloadsDir = Environment.getExternalStoragePublicDirectory(
+                                Environment.DIRECTORY_DOWNLOADS
+                            )
+                            downloadsDir.mkdirs()
+                            val dest = java.io.File(downloadsDir, fileName)
+                            java.io.File(sourcePath).copyTo(dest, overwrite = true)
+                            // Trigger media scan so file appears immediately
+                            MediaScannerConnection.scanFile(
+                                this,
+                                arrayOf(dest.absolutePath),
+                                arrayOf("audio/mpeg")
+                            ) { _, _ -> result.success(dest.absolutePath) }
+                        }
+                    } catch (e: Exception) {
+                        result.error("SAVE_FAILED", e.message, null)
+                    }
+                }
+
                 else -> result.notImplemented()
             }
         }
@@ -224,18 +295,22 @@ kt_dir = APP / "src" / "main" / "kotlin" / "com" / "tilawa" / "tilawa_enhancer"
 kt_dir.mkdir(parents=True, exist_ok=True)
 kt_path = kt_dir / "MainActivity.kt"
 kt_path.write_text(MAIN_ACTIVITY_KT)
-print(f"  MainActivity.kt written with MediaScanner channel: {kt_path}")
+print(f"  MainActivity.kt written (v10 — saveToDownloads): {kt_path}")
 
 # ── STEP 3-8: Verify MainActivity.kt ──────────────────────────────────────────
 kt_txt = kt_path.read_text()
 for check, label in [
-    ("package com.tilawa.tilawa_enhancer",               "correct package"),
-    ("MediaScannerConnection",                           "MediaScannerConnection import"),
-    ("com.tilawa.tilawa_enhancer/media",                 "channel name matches Dart side"),
-    ("scanFile",                                         "scanFile method handler"),
+    ("package com.tilawa.tilawa_enhancer",        "correct package"),
+    ("MediaScannerConnection",                    "MediaScannerConnection import"),
+    ("com.tilawa.tilawa_enhancer/media",          "channel name matches Dart side"),
+    ("scanFile",                                  "scanFile method (legacy)"),
+    ("saveToDownloads",                           "saveToDownloads method (RC1)"),
+    ("MediaStore.Downloads",                      "MediaStore.Downloads API (API29+)"),
+    ("DIRECTORY_DOWNLOADS",                       "DIRECTORY_DOWNLOADS fallback (API<29)"),
+    ("IS_PENDING",                                "IS_PENDING flag (atomic write)"),
 ]:
     ok = check in kt_txt
     print(f"  {'OK' if ok else 'MISSING!'}: {label}")
 
 print()
-print("patch_android.py v9: DONE")
+print("patch_android.py v10: DONE")
