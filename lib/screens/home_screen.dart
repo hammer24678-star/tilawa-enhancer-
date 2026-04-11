@@ -32,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen>
   String  _sizeLabel = '';
   bool    _isLarge   = false;
   bool    _downloading = false; // RC3: prevent concurrent downloads
+  bool    _isMerging  = false; // S20-A: true during server chunk-merge phase
 
   // S19: Wake server state
   bool _waking       = false;
@@ -136,7 +137,12 @@ class _HomeScreenState extends State<HomeScreen>
       _jobId = resp['job_id'];
       _startPolling();
     } catch (e) {
-      setState(() { _busy = false; _status = 'خطأ: $e'; });
+      setState(() {
+        _busy = false;
+        _progress = 0;       // S20-C: reset — bar disappears on upload error
+        _isMerging = false;  // S20-A: cancel merge animation
+        _status = 'خطأ: $e';
+      });
     }
   }
 
@@ -151,14 +157,20 @@ class _HomeScreenState extends State<HomeScreen>
 
         final srv = (st['progress'] ?? 0) / 100.0;
         final status = st['status'] as String? ?? '';
-        final display = (status == 'uploading' || status == 'merging')
+        final isMerging = (status == 'uploading' || status == 'merging');
+        final display = isMerging
             ? _progress
             : (0.68 + srv * 0.32).clamp(0.0, 1.0);
-        setState(() { _progress = display; _status = st['label'] ?? ''; });
+        // S20-A: _isMerging drives indeterminate mode in progress bar
+        setState(() { _progress = display; _status = st['label'] ?? ''; _isMerging = isMerging && _busy; });
 
         if (status == 'error') {
           _pollTimer?.cancel();
-          setState(() { _busy = false; _status = 'فشل: ${st['error']}'; });
+          setState(() {
+            _busy = false;
+            _isMerging = false;  // S20-B: clear merge animation on server error
+            _status = 'فشل: ${st['error']}';
+          });
           return;
         }
 
@@ -621,7 +633,8 @@ class _HomeScreenState extends State<HomeScreen>
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Flexible(child: Text(_status.isEmpty ? s.processing : _status,
           style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 13))),
-        Text('${(_progress * 100).toInt()}%',
+        // S20-A: '...' when merging — frozen '68%' looks like a crash
+        Text(_isMerging ? '...' : '${(_progress * 100).toInt()}%',
           style: const TextStyle(
             color: Color(0xFFD4AF37),
             fontWeight: FontWeight.bold, fontSize: 14)),
@@ -629,8 +642,9 @@ class _HomeScreenState extends State<HomeScreen>
       const SizedBox(height: 12),
       ClipRRect(
         borderRadius: BorderRadius.circular(8),
+        // S20-A: null = indeterminate (animated pulse) during server merge
         child: LinearProgressIndicator(
-          value: _progress, minHeight: 8,
+          value: _isMerging ? null : _progress, minHeight: 8,
           backgroundColor: const Color(0xFF21262D),
           valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)))),
     ]),

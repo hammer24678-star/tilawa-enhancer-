@@ -89,7 +89,11 @@ class ApiService {
             req.files.add(http.MultipartFile.fromBytes('chunk', bytes,
                 filename: 'chunk_$i'));
             final res = await req.send().timeout(const Duration(seconds: 60));
+            // S20-D: always drain — unread streams leave sockets in CLOSE_WAIT
+            await res.stream.drain<void>();
             if (res.statusCode == 200) break;
+            // S20-E: non-200 = throw so retry loop or rethrow fires
+            throw Exception('chunk_$i upload failed: HTTP ${res.statusCode}');
           } catch (e) {
             if (attempt == 2) rethrow;
             await Future.delayed(const Duration(seconds: 2));
@@ -107,7 +111,7 @@ class ApiService {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'job_id': jobId, 'engine': engine}),
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(const Duration(minutes: 3)); // S20-F: was 30s — HF cold start can exceed that
     return jsonDecode(finalRes.body);
   }
 
