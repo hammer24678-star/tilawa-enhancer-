@@ -18,25 +18,24 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
-  String  _engine       = 'v8.0';
-  String  _status       = '';
-  double  _progress     = 0;
-  bool    _busy         = false;
-  bool    _serverUp     = false;
+  String  _engine    = 'v8.0';
+  String  _status    = '';
+  double  _progress  = 0;
+  bool    _busy      = false;
+  bool    _serverUp  = false;
   String? _jobId;
   File?   _output;
   Map<String, dynamic>? _result;
   Timer?  _serverTimer;
   Timer?  _pollTimer;
-  String  _sizeLabel    = '';
-  bool    _isLarge      = false;
+  Timer?  _wakeTimer;
+  String  _sizeLabel = '';
+  bool    _isLarge   = false;
+  bool    _downloading = false; // RC3: prevent concurrent downloads
 
-  // RC3 FIX: Prevents multiple simultaneous _downloadAndSave calls.
-  // The poll timer fires every 2s but getStatus has a 10s timeout.
-  // When the server is slow, up to 5 poll callbacks can be in-flight
-  // simultaneously — all getting status='done', all trying to download
-  // to the same temp filename, corrupting each other's writes.
-  bool _downloading = false;
+  // S19: Wake server state
+  bool _waking       = false;
+  int  _wakeAttempts = 0;
 
   late final AnimationController _glowCtrl;
 
@@ -46,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen>
         '5 أخطاء مُصلَحة · ≥96/100 | 5 bugs fixed · ≥96/100',
         'NEW', 'gold'),
     _Engine('v7.6', 'v7.6 — Intelligent Assessment',
-        'MDS تشخيص ذكي | Smart multi-metric diagnosis',
+        'MDS تشخيص ذكي | Smart multi-metric diagnosis · ~94/100',
         'MDS', 'blue'),
     _Engine('v7.5', 'v7.5 — Disciplined Precision',
         'Do-No-Harm · 94/100',
@@ -60,31 +59,54 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _glowCtrl = AnimationController(
-      vsync: this, duration: const Duration(seconds: 2))
+        vsync: this, duration: const Duration(seconds: 2))
       ..repeat(reverse: true);
     _checkServer();
     _serverTimer = Timer.periodic(
-      const Duration(seconds: 6), (_) => _checkServer());
+        const Duration(seconds: 6), (_) => _checkServer());
   }
 
   @override
   void dispose() {
     _serverTimer?.cancel();
     _pollTimer?.cancel();
+    _wakeTimer?.cancel();
     _glowCtrl.dispose();
     super.dispose();
   }
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  // ── Server check ───────────────────────────────────────────────────────────
   Future<void> _checkServer() async {
     final up = await ApiService.isServerRunning();
     if (mounted) setState(() => _serverUp = up);
   }
 
+  // S19: Wake server — polls every 5s for up to 35s
+  void _wakeServer() {
+    if (_waking) return;
+    _wakeTimer?.cancel();
+    _wakeAttempts = 0;
+    setState(() { _waking = true; _serverUp = false; });
+
+    _wakeTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      _wakeAttempts++;
+      final up = await ApiService.isServerRunning();
+      if (!mounted) {
+        _wakeTimer?.cancel();
+        return;
+      }
+      if (up || _wakeAttempts >= 7) { // max 35s
+        _wakeTimer?.cancel();
+        setState(() { _serverUp = up; _waking = false; _wakeAttempts = 0; });
+      }
+    });
+  }
+
+  // ── File picker ────────────────────────────────────────────────────────────
   Future<void> _pickFile() async {
     final r = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['mp3','wav','m4a','flac','aac']);
+        type: FileType.custom,
+        allowedExtensions: ['mp3', 'wav', 'm4a', 'flac', 'aac']);
     if (r?.files.single.path != null) {
       final f = File(r!.files.single.path!);
       final bytes = await f.length();
@@ -92,12 +114,13 @@ class _HomeScreenState extends State<HomeScreen>
         _file = f;
         _output = null; _result = null;
         _status = ''; _progress = 0;
-        _sizeLabel = '${(bytes/1024/1024).toStringAsFixed(1)} MB';
+        _sizeLabel = '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
         _isLarge = bytes > 8 * 1024 * 1024;
       });
     }
   }
 
+  // ── Process ────────────────────────────────────────────────────────────────
   Future<void> _process() async {
     if (_file == null || !_serverUp) return;
     setState(() {
@@ -107,9 +130,9 @@ class _HomeScreenState extends State<HomeScreen>
     });
     try {
       final resp = await ApiService.uploadFile(_file!, _engine,
-        onProgress: (p, label) {
-          if (mounted) setState(() { _progress = p; _status = label; });
-        });
+          onProgress: (p, label) {
+        if (mounted) setState(() { _progress = p; _status = label; });
+      });
       _jobId = resp['job_id'];
       _startPolling();
     } catch (e) {
@@ -117,37 +140,11 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // RC2 FIX + RC3 FIX applied here.
-  //
-  // RC2 BEFORE (broken):
-  //   try {
-  //     final st = await ApiService.getStatus(_jobId!);
-  //     if (status == 'done') {
-  //       _pollTimer?.cancel();
-  //       await _downloadAndSave(st);   // ← INSIDE catch block
-  //     }
-  //   } catch (_) {}                   // silently swallows ALL exceptions
-  //                                    // including from _downloadAndSave
-  //
-  // RC2 AFTER (fixed):
-  //   The download call is OUTSIDE the polling try/catch.
-  //   Polling errors (network timeouts, JSON parse errors) are still caught.
-  //   Download errors surface to the user instead of being swallowed silently.
-  //
-  // RC3 AFTER (fixed):
-  //   _downloading flag ensures only ONE _downloadAndSave runs at a time.
-  //   Without this, concurrent poll callbacks all seeing 'done' would each
-  //   try to download → write to the same temp filename simultaneously →
-  //   race condition corrupts the file → size guard triggers → "ملف فارغ".
+  // ── Polling — RC2 + RC3 fixes ──────────────────────────────────────────────
   void _startPolling() {
     _pollTimer?.cancel();
-    String? doneStatus; // captured outside try/catch for RC2
-
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (_jobId == null) return;
-
-      // Poll the server — errors here (network, timeout) are silently ignored
-      // so the UI stays in "processing" state and retries next tick.
       try {
         final st = await ApiService.getStatus(_jobId!);
         if (!mounted) return;
@@ -167,40 +164,21 @@ class _HomeScreenState extends State<HomeScreen>
 
         if (status == 'done') {
           _pollTimer?.cancel();
-          // RC3: Guard — only one download at a time.
-          // If a concurrent callback already started the download, skip.
-          if (_downloading) return;
+          if (_downloading) return; // RC3
           _downloading = true;
-          doneStatus = status;
-
-          // RC2: Download runs OUTSIDE the catch block below.
-          // Errors from _downloadAndSave are now visible to the user.
           try {
-            await _downloadAndSave(st);
+            await _downloadAndSave(st); // RC2: own try/catch
           } catch (e) {
-            if (mounted) {
-              setState(() { _busy = false; _status = 'فشل: $e'; });
-            }
+            if (mounted) setState(() { _busy = false; _status = 'فشل: $e'; });
           } finally {
             _downloading = false;
           }
         }
-      } catch (_) {
-        // Only poll errors (network timeouts, parse errors) are silently
-        // ignored here. Download errors are handled in the block above.
-        _ ; // suppress unused variable warning
-      }
+      } catch (_) {} // only poll errors silently ignored
     });
   }
 
-  // RC2 FIX: This method is now called OUTSIDE the polling try/catch.
-  // Any exception thrown here propagates to the caller (which has its own
-  // try/catch that updates the UI with a real error message).
-  //
-  // S18 NEW: Shows snackbar on success (with file path) and on failure.
-  // Previously only _reDownload showed a snackbar — _downloadAndSave was silent.
-  // This meant the user saw "اكتملت ✓" in the progress card but got NO
-  // indication of where the file was saved or whether it really succeeded.
+  // ── Auto download after processing ────────────────────────────────────────
   Future<void> _downloadAndSave(Map<String, dynamic> sd) async {
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
@@ -209,19 +187,32 @@ class _HomeScreenState extends State<HomeScreen>
     final (file, error) = await ApiService.downloadFile(_jobId!, filename);
 
     if (!mounted) return;
+
+    final score = double.tryParse(sd['score']?.toString() ?? '0') ?? 0.0;
+
     setState(() {
       _busy = false; _progress = 1.0;
       _output = file; _result = sd;
       _status = file != null ? s.done : 'فشل: $error';
     });
 
-    // Show snackbar — success shows path, failure shows reason.
+    // S19: Save job record locally for persistent re-download
+    if (file != null && _jobId != null) {
+      await ApiService.saveJobRecord(
+        jobId: _jobId!,
+        engine: _engine,
+        score: score,
+        filename: filename,
+        metrics: sd,
+      );
+    }
+
     if (file != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           s.ar
-            ? '\u2705 تم الحفظ في Downloads\n\ud83d\udcc1 ${file.path}'
-            : '\u2705 Saved to Downloads\n\ud83d\udcc1 ${file.path}',
+            ? '✅ تم الحفظ في Downloads\n📁 ${file.path}'
+            : '✅ Saved to Downloads\n📁 ${file.path}',
           style: const TextStyle(fontSize: 12),
         ),
         backgroundColor: const Color(0xFF0D2015),
@@ -235,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen>
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-          s.ar ? '\u274c فشل التحميل\n$error' : '\u274c Download failed\n$error',
+          s.ar ? '❌ فشل التحميل\n$error' : '❌ Download failed\n$error',
           style: const TextStyle(fontSize: 12),
         ),
         backgroundColor: const Color(0xFF200D0D),
@@ -244,8 +235,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // H5 FIX: _reDownload now updates _status on success (was missing before).
-  // Also shows snackbar on success/failure (was already there in S17).
+  // ── Manual re-download button ──────────────────────────────────────────────
   Future<void> _reDownload() async {
     if (_jobId == null) return;
     final s = LangProvider.strings(context);
@@ -257,7 +247,6 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
     setState(() {
       _output = file;
-      // H5 FIX: was missing _progress and _status update on success
       _progress = 1.0;
       _status = file != null ? s.done : 'فشل: $error';
     });
@@ -266,8 +255,8 @@ class _HomeScreenState extends State<HomeScreen>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           s.ar
-            ? '\u2705 تم الحفظ في Downloads\n\ud83d\udcc1 ${file.path}'
-            : '\u2705 Saved to Downloads\n\ud83d\udcc1 ${file.path}',
+            ? '✅ تم الحفظ في Downloads\n📁 ${file.path}'
+            : '✅ Saved to Downloads\n📁 ${file.path}',
           style: const TextStyle(fontSize: 12),
         ),
         backgroundColor: const Color(0xFF0D2015),
@@ -279,14 +268,36 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ));
     } else {
+      final msg = (error == 'JOB_EXPIRED')
+          ? (s.ar ? s.jobExpired : s.jobExpired)
+          : (s.ar ? '❌ فشل التحميل\n$error' : '❌ Download failed\n$error');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          s.ar ? '\u274c فشل التحميل\n$error' : '\u274c Download failed\n$error',
-          style: const TextStyle(fontSize: 12),
-        ),
+        content: Text(msg, style: const TextStyle(fontSize: 12)),
         backgroundColor: const Color(0xFF200D0D),
         duration: const Duration(seconds: 6),
       ));
+    }
+  }
+
+  // S19: Open in player button
+  Future<void> _openInPlayer() async {
+    if (_output == null) return;
+    try {
+      final uri = Uri.parse(_output!.path);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        final s = LangProvider.strings(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            s.ar
+              ? 'لم يُعثر على تطبيق مشغل صوت. افتح مجلد Downloads يدوياً.'
+              : 'No audio player found. Open your Downloads folder manually.',
+          ),
+          backgroundColor: const Color(0xFF200D0D),
+          duration: const Duration(seconds: 4),
+        ));
+      }
     }
   }
 
@@ -359,31 +370,90 @@ class _HomeScreenState extends State<HomeScreen>
         border: Border.all(color: const Color(0xFF21262D))),
       child: Icon(icon, color: const Color(0xFF8B949E), size: 20)));
 
-  // ── SERVER BANNER ──────────────────────────────────────────────────────────
-  Widget _serverBanner(S s) => AnimatedContainer(
-    duration: const Duration(milliseconds: 400),
-    margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    decoration: BoxDecoration(
-      color: _serverUp ? const Color(0xFF0D2015) : const Color(0xFF200D0D),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(
-        color: _serverUp ? const Color(0xFF3FB950) : const Color(0xFFF85149),
-        width: 0.8)),
-    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        width: 8, height: 8,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _serverUp ? const Color(0xFF3FB950) : const Color(0xFFF85149))),
-      const SizedBox(width: 8),
-      Text(_serverUp ? s.serverOnline : s.serverOffline,
-        style: TextStyle(
-          color: _serverUp ? const Color(0xFF3FB950) : const Color(0xFFF85149),
-          fontSize: 12)),
-    ]),
-  );
+  // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
+  Widget _serverBanner(S s) {
+    final isOffline = !_serverUp;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _serverUp
+          ? const Color(0xFF0D2015)
+          : _waking
+            ? const Color(0xFF1A1500)
+            : const Color(0xFF200D0D),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _serverUp
+            ? const Color(0xFF3FB950)
+            : _waking
+              ? const Color(0xFFD4AF37)
+              : const Color(0xFFF85149),
+          width: 0.8)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            // Status dot / spinner
+            if (_waking)
+              const SizedBox(width: 8, height: 8,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: Color(0xFFD4AF37)))
+            else
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 400),
+                width: 8, height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _serverUp
+                    ? const Color(0xFF3FB950)
+                    : const Color(0xFFF85149))),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _waking
+                  ? s.waking
+                  : (_serverUp ? s.serverOnline : s.serverOffline),
+                style: TextStyle(
+                  color: _serverUp
+                    ? const Color(0xFF3FB950)
+                    : _waking
+                      ? const Color(0xFFD4AF37)
+                      : const Color(0xFFF85149),
+                  fontSize: 12)),
+            ),
+            // S19: Wake button — shown when server is offline and not already waking
+            if (isOffline && !_waking)
+              GestureDetector(
+                onTap: _wakeServer,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A1000),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFD4AF37).withOpacity(0.6))),
+                  child: Text(s.wakeServer,
+                    style: const TextStyle(
+                      color: Color(0xFFD4AF37),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold)))),
+          ]),
+          // S19: Hint text when offline
+          if (isOffline && !_waking) ...[
+            const SizedBox(height: 6),
+            Text(s.wakeHint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF8B949E), fontSize: 10)),
+          ],
+        ],
+      ),
+    );
+  }
 
   // ── ENGINE SELECTOR ────────────────────────────────────────────────────────
   Widget _engineSelector(S s) => Container(
@@ -566,11 +636,23 @@ class _HomeScreenState extends State<HomeScreen>
     ]),
   );
 
-  // ── RESULT + DOWNLOAD BUTTON ───────────────────────────────────────────────
+  // ── RESULT + DOWNLOAD BUTTON (S19: better labels, fallback warning, open) ──
   Widget _resultCard(S s) {
     final score = double.tryParse(_result?['score']?.toString() ?? '0') ?? 0.0;
-    final label = score >= 96 ? s.excellent : score >= 92 ? s.great : s.good;
-    final engineNames = {
+
+    // S19 FIX: Score labels now have proper thresholds.
+    // Before: 75 showed "Very Good" (wrong). Now shows "Fair" correctly.
+    final label = score >= 96 ? s.excellent
+        : score >= 90 ? s.great
+        : score >= 85 ? s.good        // Very Good
+        : score >= 78 ? s.decent      // Good
+        : s.fair;                     // Fair — covers the 75 fallback case
+
+    final scoreColor = score >= 90 ? const Color(0xFF3FB950)
+        : score >= 80 ? const Color(0xFFD4AF37)
+        : const Color(0xFFF85149); // red for scores below 80
+
+    const engineNames = {
       'v8.0': 'Calibrated Precision',
       'v7.6': 'Intelligent Assessment',
       'v7.5': 'Disciplined Precision',
@@ -579,29 +661,37 @@ class _HomeScreenState extends State<HomeScreen>
     final engineName = engineNames[_engine] ?? _engine;
     final filename   = ApiService.buildFilename(_engine);
 
+    // S19: "Open in Player" only available when we have a content:// URI (API 29+)
+    final hasContentUri = _output?.path.startsWith('content://') ?? false;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D2015),
+        color: score < 80 ? const Color(0xFF1A0A00) : const Color(0xFF0D2015),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF3FB950), width: 1.2)),
+        border: Border.all(
+          color: score < 80 ? const Color(0xFFF85149) : const Color(0xFF3FB950),
+          width: 1.2)),
       child: Column(children: [
+        // Score
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(label, style: const TextStyle(
-              color: Color(0xFF3FB950),
+            Text(label, style: TextStyle(
+              color: scoreColor,
               fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(width: 10),
             Text('${score.toStringAsFixed(1)}/100',
-              style: const TextStyle(
-                color: Color(0xFFD4AF37),
+              style: TextStyle(
+                color: scoreColor,
                 fontWeight: FontWeight.w900, fontSize: 34)),
           ]),
         const SizedBox(height: 12),
+
+        // Engine used
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
@@ -613,15 +703,37 @@ class _HomeScreenState extends State<HomeScreen>
             style: const TextStyle(
               color: Color(0xFFD4AF37), fontSize: 11))),
         const SizedBox(height: 12),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          if (_result?['lufs']  != null) _metric('LUFS',  _result!['lufs'].toString()),
-          if (_result?['rms']   != null) _metric('RMS',   _result!['rms'].toString()),
-          if (_result?['crest'] != null) _metric('Crest', _result!['crest'].toString()),
-          if (_result?['lra']   != null) _metric('LRA',   _result!['lra'].toString()),
-        ]),
-        const SizedBox(height: 18),
 
-        // ── DOWNLOAD BUTTON ────────────────────────────────────────────────
+        // Metrics (with target deltas)
+        _metricsRow(),
+        const SizedBox(height: 6),
+
+        // Target reference line
+        Text(
+          s.ar
+            ? 'الهدف: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19'
+            : 'Target: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19',
+          style: const TextStyle(color: Color(0xFF484F58), fontSize: 9)),
+        const SizedBox(height: 16),
+
+        // S19 FALLBACK WARNING: shown when score ≤ 78
+        if (score <= 78) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF200D0D),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: const Color(0xFFF85149).withOpacity(0.4))),
+            child: Text(s.fallbackWarning,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFFF85149),
+                fontSize: 11, height: 1.5))),
+        ],
+
+        // Download button
         SizedBox(width: double.infinity,
           child: ElevatedButton.icon(
             onPressed: _reDownload,
@@ -647,6 +759,25 @@ class _HomeScreenState extends State<HomeScreen>
               ]),
           )),
 
+        // S19: Open in player button (only when content:// URI available)
+        if (hasContentUri) ...[
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openInPlayer,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF58A6FF),
+                side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+              icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+              label: Text(s.openInPlayer,
+                style: const TextStyle(fontSize: 13)),
+            )),
+        ],
+
+        // Saved indicator
         if (_output != null) ...[
           const SizedBox(height: 8),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -661,6 +792,16 @@ class _HomeScreenState extends State<HomeScreen>
       ]),
     );
   }
+
+  Widget _metricsRow() => Row(
+    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    children: [
+      if (_result?['lufs']  != null) _metric('LUFS',  _result!['lufs'].toString()),
+      if (_result?['rms']   != null) _metric('RMS',   _result!['rms'].toString()),
+      if (_result?['crest'] != null) _metric('Crest', _result!['crest'].toString()),
+      if (_result?['lra']   != null) _metric('LRA',   _result!['lra'].toString()),
+    ],
+  );
 
   Widget _metric(String label, String value) => Column(children: [
     Text(label,

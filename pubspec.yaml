@@ -1,7 +1,7 @@
 name: tilawa_enhancer
 description: "محسن التلاوة - تحسين صوت القرآن الكريم"
 publish_to: 'none'
-version: 2.4.0+6
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -13,7 +13,6 @@ dependencies:
   file_picker: ^6.2.1
   url_launcher: ^6.2.5
   path_provider: ^2.1.2
-  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
@@ -23,4 +22,4 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
+    - assets/

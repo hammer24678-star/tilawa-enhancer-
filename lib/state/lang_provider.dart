@@ -27,10 +27,37 @@ class S {
   String get donation     => ar ? 'صدقة جارية'                 : 'Donate';
   String get donationDesc => ar ? 'ساهم في مشروع تحسين التلاوة': 'Support Tilawa project';
 
-  // Results
+  // Results — score labels (S19: added fair + poor, fixed 75 showing "Very Good")
   String get excellent    => ar ? 'ممتاز'    : 'Excellent';
   String get great        => ar ? 'رائع'     : 'Great';
   String get good         => ar ? 'جيد جداً' : 'Very Good';
+  String get decent       => ar ? 'جيد'      : 'Good';
+  String get fair         => ar ? 'مقبول'    : 'Fair';
+
+  // S19: Open in player button
+  String get openInPlayer => ar ? 'فتح في المشغل' : 'Open in Player';
+
+  // S19: Wake server
+  String get wakeServer   => ar ? 'تنبيه الخادم' : 'Wake Server';
+  String get waking       => ar ? 'جارٍ تنبيه الخادم...' : 'Waking server...';
+  String get wakeHint     =>
+    ar ? 'HuggingFace قد يكون في وضع السكون. أول طلب يستغرق ~30 ثانية'
+       : 'HuggingFace may be sleeping. First request takes ~30 seconds';
+
+  // S19: Fallback mode warning (score ≤78 = server has no reference audio)
+  String get fallbackWarning =>
+    ar ? '⚠ النتيجة المنخفضة تعني أن الخادم في وضع الاحتياطي — ملفات المرجع غير محمَّلة.\n'
+         'تنبيه الخادم ثم أعد المعالجة للحصول على النتيجة الكاملة.'
+       : '⚠ Low score means server is in fallback mode — reference audio not loaded.\n'
+         'Wake the server then reprocess to get the full score.';
+
+  // S19: History screen
+  String get noHistory    => ar ? 'لا يوجد سجل بعد' : 'No history yet';
+  String get reDownload   => ar ? 'تحميل مجدداً'   : 'Re-download';
+  String get jobExpired   =>
+    ar ? 'انتهت صلاحية المهمة — الخادم حذف الملف'
+       : 'Job expired — server has cleared the file';
+  String get historyTitle => ar ? 'سجل الملفات المعالجة' : 'Processing History';
 
   // Welcome
   String get welcomeStart => ar ? 'ابدأ الآن'  : 'Get Started';
@@ -50,13 +77,13 @@ class S {
   String get english      => ar ? 'الإنجليزية'       : 'English';
   String get engineHistory=> ar ? 'تاريخ المحركات'   : 'Engine History';
   String get about        => ar ? 'عن التطبيق'       : 'About';
-  String get version      => ar ? 'الإصدار 2.1'      : 'Version 2.1';
+  String get version      => ar ? 'الإصدار 2.5'      : 'Version 2.5';
   String get target       =>
     ar ? 'الهدف: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19'
        : 'Target: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19';
 }
 
-/// InheritedWidget — wraps entire app, ALL screens auto-rebuild
+/// InheritedWidget — wraps entire app, ALL screens auto-rebuild on lang change
 class LangProvider extends InheritedNotifier<ValueNotifier<bool>> {
   const LangProvider({
     super.key,

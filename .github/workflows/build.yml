@@ -27,7 +27,6 @@ jobs:
       - name: Regenerate android/
         run: flutter create --platforms=android --project-name tilawa_enhancer .
 
-
       - name: Fix MainActivity package
         run: |
           OLD="android/app/src/main/kotlin/com/example/tilawa_enhancer"
@@ -37,7 +36,12 @@ jobs:
           sed -i 's/package com.example.tilawa_enhancer/package com.tilawa.tilawa_enhancer/' "$NEW/MainActivity.kt"
           echo "MainActivity.kt package fixed:"
           head -1 "$NEW/MainActivity.kt"
-      - name: Patch android/ v6
+
+      # S19: Pillow required for icon generation in patch_android.py
+      - name: Install Pillow for icon generation
+        run: pip install Pillow --quiet
+
+      - name: Patch android/ v11
         run: python3 patch_android.py
 
       - name: Verify INTERNET permission in manifest
@@ -55,6 +59,11 @@ jobs:
           else
             echo "ERROR: networkSecurityConfig missing!"
             exit 1
+          fi
+          if grep -q "queries" "$MANIFEST"; then
+            echo "queries block: CONFIRMED"
+          else
+            echo "WARNING: queries block missing (Open in Player may fail on API30+)"
           fi
 
       - name: Build APK
