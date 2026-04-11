@@ -1,7 +1,7 @@
 name: tilawa_enhancer
 description: "محسن التلاوة - تحسين صوت القرآن الكريم"
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.5.0+7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -10,9 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
-  file_picker: ^6.2.1
+  file_picker: ^6.2.1    # NEVER above v6 — v7/v8 crash Samsung
   url_launcher: ^6.2.5
   path_provider: ^2.1.2
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
@@ -22,4 +23,4 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/
+    - assets/images/
