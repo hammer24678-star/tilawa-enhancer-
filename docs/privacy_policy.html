@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سياسة الخصوصية — محسِّن التلاوة | Privacy Policy — Tilawa Enhancer</title>
+<style>
+  /* ── App-exact color palette ── */
+  :root {
+    --bg:       #0A0C10;   /* scaffoldBackgroundColor */
+    --surface:  #161B22;   /* card background */
+    --border:   #21262D;   /* card border */
+    --border2:  #30363D;   /* subtle border */
+    --gold:     #D4AF37;   /* primary */
+    --gold-dim: #1A1500;   /* gold card background */
+    --text:     #C9D1D9;   /* main text */
+    --muted:    #8B949E;   /* secondary text */
+    --dim:      #484F58;   /* very muted */
+    --green:    #3FB950;   /* success */
+    --green-bg: #0D2015;   /* green card background */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'Segoe UI', 'Helvetica Neue', Arial,
+                 'Noto Sans Arabic', 'Cairo', sans-serif;
+    font-size: 15px;
+    line-height: 1.8;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 2rem 1.5rem 1.5rem;
+    text-align: center;
+  }
+  .pkg {
+    font-family: 'SFMono-Regular', 'Consolas', 'Courier New', monospace;
+    font-size: 0.7rem;
+    color: var(--dim);
+    letter-spacing: 0.15em;
+    margin-bottom: 0.75rem;
+  }
+  header h1 {
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 0.2rem;
+    letter-spacing: 0.02em;
+  }
+  .sub {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Language toggle ── */
+  .lang-bar {
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+  }
+  .lang-bar button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 20px;
+    font-size: 0.78rem;
+    font-family: inherit;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+  .lang-bar button.active {
+    background: var(--gold-dim);
+    border-color: var(--gold);
+    color: var(--gold);
+    font-weight: 700;
+  }
+
+  /* ── Content ── */
+  .container {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem;
+  }
+
+  .date-line {
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: var(--dim);
+    text-align: center;
+    margin-bottom: 1.5rem;
+    letter-spacing: 0.1em;
+  }
+
+  /* ── Highlight card (the "no data" badge) ── */
+  .highlight {
+    background: var(--green-bg);
+    border: 1px solid var(--green);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin-bottom: 2rem;
+    color: var(--green);
+    font-size: 0.9rem;
+    font-weight: 600;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .highlight::before {
+    content: "✓";
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ── Sections ── */
+  section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  p { margin-bottom: 0.75rem; color: var(--text); font-size: 0.92rem; }
+  p:last-child { margin-bottom: 0; }
+
+  ul {
+    margin: 0.5rem 0 0.75rem;
+    padding-right: 1.2rem;
+  }
+  body.en ul { padding-right: 0; padding-left: 1.2rem; }
+
+  li {
+    margin-bottom: 0.5rem;
+    color: var(--text);
+    font-size: 0.92rem;
+  }
+  li::marker { color: var(--gold); }
+  strong { color: var(--gold); font-weight: 600; }
+
+  /* ── Contact link ── */
+  .contact-link {
+    display: inline-block;
+    background: var(--gold-dim);
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: var(--gold);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-family: monospace;
+    margin-top: 6px;
+    word-break: break-all;
+  }
+  .contact-link:hover { border-color: var(--gold); }
+
+  /* ── Badges row ── */
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .badge {
+    background: var(--gold-dim);
+    border: 1px solid rgba(212,175,55,0.35);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    color: var(--gold);
+    font-weight: 600;
+  }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 2rem 1rem 3rem;
+    font-family: monospace;
+    font-size: 0.65rem;
+    color: var(--dim);
+    letter-spacing: 0.12em;
+  }
+
+  /* ── Language switching ── */
+  [lang="en"] { display: none; }
+  body.en [lang="ar"] { display: none; }
+  body.en [lang="en"] { display: block; }
+  body.en { direction: ltr; text-align: left; }
+
+  /* Responsive */
+  @media (max-width: 480px) {
+    header { padding: 1.5rem 1rem 1rem; }
+    header h1 { font-size: 1.4rem; }
+    section { padding: 14px 14px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="pkg">com.tilawa.tilawa_enhancer</div>
+  <h1>محسِّن التلاوة</h1>
+  <div class="sub">Tilawa Enhancer · Privacy Policy · سياسة الخصوصية</div>
+</header>
+
+<div class="lang-bar">
+  <button class="active" onclick="setLang('ar')">العربية</button>
+  <button onclick="setLang('en')">English</button>
+</div>
+
+<div class="container">
+
+  <div class="date-line">آخر تحديث: أبريل 2026 · Last updated: April 2026</div>
+
+  <!-- ═══════════════ ARABIC ═══════════════ -->
+  <div lang="ar">
+
+    <div class="highlight">
+      نحن لا نجمع أي بيانات شخصية. التطبيق يعالج الملفات الصوتية فقط ولا يُخزِّن أي شيء يخصك.
+    </div>
+
+    <section>
+      <h2>ما الذي يفعله التطبيق</h2>
+      <p>يُحسِّن التطبيق جودة ملفات الصوت القرآنية لتطابق البصمة الصوتية لتلاوات الشيخ ياسر الدوسري من رمضان 1425هـ، وذلك باستخدام محركات معالجة صوتية متخصصة.</p>
+    </section>
+
+    <section>
+      <h2>البيانات التي نتلقاها</h2>
+      <ul>
+        <li><strong>الملف الصوتي:</strong> يُرفع مؤقتاً إلى خادم المعالجة السحابي لإجراء التحسين، ثم يُحذف.</li>
+        <li><strong>لا حسابات:</strong> لا تسجيل، لا بريد إلكتروني، لا كلمة مرور.</li>
+        <li><strong>لا تحليلات:</strong> لا نتتبع الاستخدام ولا نجمع إحصائيات.</li>
+        <li><strong>لا إعلانات:</strong> التطبيق خالٍ تماماً من الإعلانات.</li>
+      </ul>
+      <div class="badges">
+        <span class="badge">بدون إعلانات</span>
+        <span class="badge">بدون حسابات</span>
+        <span class="badge">بدون تتبع</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>ما يحدث لملفك الصوتي</h2>
+      <ul>
+        <li>يُرسل إلى خادم Hugging Face Spaces عبر اتصال مشفر HTTPS.</li>
+        <li>تُجرى عليه المعالجة الصوتية.</li>
+        <li>يُتاح الملف المحسَّن للتحميل.</li>
+        <li>يُحذف الملف الأصلي والمحسَّن من الخادم بعد اكتمال المهمة.</li>
+      </ul>
+      <p>لا نحتفظ بأي ملف صوتي بعد اكتمال المعالجة.</p>
+    </section>
+
+    <section>
+      <h2>التخزين المحلي على جهازك</h2>
+      <ul>
+        <li>تفضيل اللغة (عربي / إنجليزي)</li>
+        <li>سجل المهام السابقة (أسماء الملفات فقط، بدون المحتوى الصوتي)</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>الأطراف الثالثة</h2>
+      <p>نستخدم <strong>Hugging Face Spaces</strong> كخادم للمعالجة. هذا الخادم يخضع لسياسة خصوصية Hugging Face المستقلة. لا نشارك أي بيانات مع أي طرف آخر.</p>
+    </section>
+
+    <section>
+      <h2>حقوق الأطفال</h2>
+      <p>التطبيق مناسب لجميع الأعمار. لا نجمع بيانات من الأطفال أو من غيرهم.</p>
+    </section>
+
+    <section>
+      <h2>التواصل</h2>
+      <p>لأي استفسار يتعلق بالخصوصية:</p>
+      <a class="contact-link" href="https://github.com/c42742910-ops/tilawa-enhancer/issues" target="_blank">
+        github.com/c42742910-ops/tilawa-enhancer/issues
+      </a>
+    </section>
+
+  </div>
+
+  <!-- ═══════════════ ENGLISH ═══════════════ -->
+  <div lang="en">
+
+    <div class="highlight">
+      We collect no personal data. Tilawa Enhancer processes audio files only and stores nothing about you.
+    </div>
+
+    <section>
+      <h2>What the App Does</h2>
+      <p>Tilawa Enhancer improves the audio quality of Quran recitation files to match the acoustic profile of Sheikh Yasser Al-Dossari's Ramadan 1425H recordings, using specialized audio processing engines.</p>
+    </section>
+
+    <section>
+      <h2>Data We Receive</h2>
+      <ul>
+        <li><strong>Audio file:</strong> Temporarily uploaded to our cloud processing server for enhancement, then deleted.</li>
+        <li><strong>No accounts:</strong> No registration, no email, no password.</li>
+        <li><strong>No analytics:</strong> We do not track usage or collect statistics.</li>
+        <li><strong>No ads:</strong> The app is completely ad-free.</li>
+      </ul>
+      <div class="badges">
+        <span class="badge">No Ads</span>
+        <span class="badge">No Accounts</span>
+        <span class="badge">No Tracking</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>What Happens to Your Audio File</h2>
+      <ul>
+        <li>Sent to our Hugging Face Spaces server over encrypted HTTPS.</li>
+        <li>Audio processing is performed.</li>
+        <li>The enhanced file is made available for download.</li>
+        <li>Both the original and enhanced files are deleted after the job completes.</li>
+      </ul>
+      <p>We retain no audio files after processing is complete.</p>
+    </section>
+
+    <section>
+      <h2>Local Storage on Your Device</h2>
+      <ul>
+        <li>Language preference (Arabic / English)</li>
+        <li>Job history (filenames only, no audio content)</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Third Parties</h2>
+      <p>We use <strong>Hugging Face Spaces</strong> as our processing server. It is subject to Hugging Face's own privacy policy. We share no data with any other party.</p>
+    </section>
+
+    <section>
+      <h2>Children's Privacy</h2>
+      <p>The app is suitable for all ages. We collect no data from children or anyone else.</p>
+    </section>
+
+    <section>
+      <h2>Contact</h2>
+      <p>For any privacy-related questions:</p>
+      <a class="contact-link" href="https://github.com/c42742910-ops/tilawa-enhancer/issues" target="_blank">
+        github.com/c42742910-ops/tilawa-enhancer/issues
+      </a>
+    </section>
+
+  </div>
+
+</div>
+
+<footer>
+  محسِّن التلاوة &nbsp;·&nbsp; Tilawa Enhancer &nbsp;·&nbsp; com.tilawa.tilawa_enhancer &nbsp;·&nbsp; April 2026
+</footer>
+
+<script>
+function setLang(lang) {
+  document.body.className = lang === 'en' ? 'en' : '';
+  document.querySelectorAll('.lang-bar button').forEach((b, i) => {
+    b.classList.toggle('active', (lang === 'ar' && i === 0) || (lang === 'en' && i === 1));
+  });
+}
+</script>
+</body>
+</html>

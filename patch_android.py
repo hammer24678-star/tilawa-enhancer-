@@ -295,7 +295,7 @@ if not LOGO_SRC.exists():
     print(f"  SKIP: {LOGO_SRC} not found. Using Flutter default icon.")
 else:
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image
 
         src = Image.open(LOGO_SRC).convert("RGBA")
 
@@ -304,18 +304,13 @@ else:
             dest_dir.mkdir(parents=True, exist_ok=True)
             dest_path = dest_dir / "ic_launcher.png"
 
-            # Resize with high-quality Lanczos resampling
+            # Resize with high-quality Lanczos resampling, keep RGBA (transparency).
+            # DO NOT composite onto a background — Android's launcher applies
+            # the icon shape (circle, squircle, etc.) itself depending on the device.
+            # Adding a dark background here causes a visible black ring/border
+            # around the icon in the launcher. Save as RGBA PNG with full transparency.
             resized = src.resize((size, size), Image.LANCZOS)
-
-            # Create circular mask — clean on Android round icon mode
-            mask = Image.new("L", (size, size), 0)
-            draw = ImageDraw.Draw(mask)
-            draw.ellipse((0, 0, size - 1, size - 1), fill=255)
-
-            # Composite: circular icon over app dark background colour
-            bg = Image.new("RGBA", (size, size), (10, 12, 16, 255))
-            bg.paste(resized, mask=mask)
-            bg.convert("RGB").save(str(dest_path), "PNG")
+            resized.save(str(dest_path), "PNG")
             print(f"  OK: ic_launcher.png → {density} ({size}x{size}px)")
 
         print("  All 5 icon sizes generated successfully.")
