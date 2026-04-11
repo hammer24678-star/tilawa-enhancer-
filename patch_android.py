@@ -1,57 +1,40 @@
-"""
-patch_android.py — DEFINITIVE FIX (v4)
-
-ROOT CAUSE OF ALL CRASHES:
-  Previous versions wrote AndroidManifest.xml from scratch,
-  including <InitializationProvider> which triggers
-  ProfileInstallerInitializer at startup — crashes on Samsung Knox.
-  Also wrote styles.xml / strings.xml overwriting Flutter's correct versions.
-
-THIS VERSION:
-  - Writes build.gradle from scratch (safe)
-  - Writes settings.gradle from scratch (safe)
-  - Writes gradle-wrapper.properties (Gradle 8.3 fix)
-  - Writes network_security_config.xml (localhost HTTP fix)
-  - READS Flutter's generated AndroidManifest.xml, patches ONLY 2 attributes
-  - Does NOT touch styles.xml — Flutter's version is correct
-  - Does NOT touch strings.xml — Flutter's version is correct
+"""patch_android.py v11 — S19
+Changes:
+  S19-ICON : Resizes assets/images/logo.png to all 5 mipmap densities using PIL.
+             Requires: pip install Pillow (add to build.yml before this step).
+             Graceful skip if logo.png missing or PIL unavailable.
+  S19-QUERY: <queries> block in manifest for Android 11+ audio player intent
+             (needed by url_launcher "Open in Player" feature).
+  VERSION  : versionCode=7, versionName="2.5.0" matches pubspec 2.5.0+7
 """
 from pathlib import Path
-import re
 
-ROOT = Path('android')
-APP  = ROOT / 'app'
+ROOT = Path("android")
+APP  = ROOT / "app"
 
-# ── 1. build.gradle ───────────────────────────────────────────────────────────
-(APP / 'build.gradle').write_text('''
+# ── STEP 1: build.gradle ──────────────────────────────────────────────────────
+(APP / "build.gradle").write_text(r"""
 plugins {
     id "com.android.application"
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
-
 android {
     namespace "com.tilawa.tilawa_enhancer"
     compileSdk 34
     ndkVersion flutter.ndkVersion
-
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
-
-    kotlinOptions {
-        jvmTarget = "1.8"
-    }
-
+    kotlinOptions { jvmTarget = "1.8" }
     defaultConfig {
         applicationId "com.tilawa.tilawa_enhancer"
         minSdk 21
         targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
+        versionCode 7
+        versionName "2.5.0"
     }
-
     buildTypes {
         release {
             signingConfig signingConfigs.debug
@@ -59,62 +42,62 @@ android {
             shrinkResources false
         }
     }
+    packagingOptions {
+        exclude 'DebugProbesKt.bin'
+        exclude 'META-INF/AL2.0'
+        exclude 'META-INF/LGPL2.1'
+    }
 }
-
-flutter {
-    source "../.."
+// Remove kotlinx-coroutines-debug — declares android.permission.DUMP
+// which Samsung Knox security agent can kill the process on launch.
+configurations.all {
+    exclude group: 'org.jetbrains.kotlinx', module: 'kotlinx-coroutines-debug'
 }
-
+flutter { source "../.." }
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22"
 }
-''')
-print("  ✅ build.gradle written")
+""")
+print("  build.gradle OK (v11: versionCode=7, versionName=2.5.0)")
 
-# ── 2. settings.gradle ────────────────────────────────────────────────────────
-(ROOT / 'settings.gradle').write_text('''
+# ── STEP 2: settings.gradle ───────────────────────────────────────────────────
+(ROOT / "settings.gradle").write_text("""
 pluginManagement {
     def flutterSdkPath = {
         def properties = new Properties()
         file("local.properties").withInputStream { properties.load(it) }
         def flutterSdkPath = properties.getProperty("flutter.sdk")
-        assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+        assert flutterSdkPath != null
         return flutterSdkPath
     }()
     includeBuild("${flutterSdkPath}/packages/flutter_tools/gradle")
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
 }
-
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
     id "com.android.application" version "8.1.0" apply false
     id "org.jetbrains.kotlin.android" version "1.9.22" apply false
 }
-
 include ":app"
-''')
-print("  ✅ settings.gradle written")
+""")
+print("  settings.gradle OK")
 
-# ── 3. gradle-wrapper.properties — Gradle 8.3 ────────────────────────────────
-wrapper = ROOT / 'gradle' / 'wrapper' / 'gradle-wrapper.properties'
+# ── STEP 3: Gradle wrapper → 8.3 ─────────────────────────────────────────────
+wrapper = ROOT / "gradle" / "wrapper" / "gradle-wrapper.properties"
 wrapper.parent.mkdir(parents=True, exist_ok=True)
 wrapper.write_text(
-    'distributionBase=GRADLE_USER_HOME\n'
-    'distributionPath=wrapper/dists\n'
-    'zipStoreBase=GRADLE_USER_HOME\n'
-    'zipStorePath=wrapper/dists\n'
-    'distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-all.zip\n'
+    "distributionBase=GRADLE_USER_HOME\n"
+    "distributionPath=wrapper/dists\n"
+    "zipStoreBase=GRADLE_USER_HOME\n"
+    "zipStorePath=wrapper/dists\n"
+    "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-all.zip\n"
 )
-print("  ✅ gradle-wrapper.properties → Gradle 8.3")
+print("  gradle-wrapper.properties OK (Gradle 8.3)")
 
-# ── 4. network_security_config.xml — allow localhost HTTP ─────────────────────
-res_xml = APP / 'src' / 'main' / 'res' / 'xml'
+# ── STEP 4: network_security_config.xml ──────────────────────────────────────
+res_xml = APP / "src" / "main" / "res" / "xml"
 res_xml.mkdir(parents=True, exist_ok=True)
-(res_xml / 'network_security_config.xml').write_text(
+(res_xml / "network_security_config.xml").write_text(
     '<?xml version="1.0" encoding="utf-8"?>\n'
     '<network-security-config>\n'
     '    <domain-config cleartextTrafficPermitted="true">\n'
@@ -123,50 +106,231 @@ res_xml.mkdir(parents=True, exist_ok=True)
     '    </domain-config>\n'
     '</network-security-config>\n'
 )
-print("  ✅ network_security_config.xml → allows localhost HTTP")
+print("  network_security_config.xml OK")
 
-# ── 5. PATCH AndroidManifest.xml — do NOT rewrite from scratch ───────────────
-# Flutter's generated manifest is already correct.
-# We ONLY need to add 2 attributes to the <application> tag:
-#   android:usesCleartextTraffic="false"
-#   android:networkSecurityConfig="@xml/network_security_config"
-# And add READ_MEDIA_AUDIO permission for Android 13+
+# ── STEP 5: AndroidManifest.xml ───────────────────────────────────────────────
+# S19: Added <queries> block — Android 11+ (API 30) requires this for
+# PackageManager to resolve audio player apps. Without it, launchUrl()
+# for content:// audio URIs fails silently. No permission needed; this
+# only declares intent filters we want to query.
+manifest = APP / "src" / "main" / "AndroidManifest.xml"
+manifest.parent.mkdir(parents=True, exist_ok=True)
+manifest.write_text(
+'<?xml version="1.0" encoding="utf-8"?>\n'
+'<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+'\n'
+'    <uses-permission android:name="android.permission.INTERNET"/>\n'
+'    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n'
+'    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\n'
+'        android:maxSdkVersion="32"/>\n'
+'    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\n'
+'        android:maxSdkVersion="28"/>\n'
+'\n'
+'    <!-- S19: package visibility for url_launcher audio ACTION_VIEW (API 30+) -->\n'
+'    <queries>\n'
+'        <intent>\n'
+'            <action android:name="android.intent.action.VIEW" />\n'
+'            <data android:mimeType="audio/mpeg" />\n'
+'        </intent>\n'
+'        <intent>\n'
+'            <action android:name="android.intent.action.VIEW" />\n'
+'            <data android:mimeType="audio/*" />\n'
+'        </intent>\n'
+'    </queries>\n'
+'\n'
+'    <application\n'
+'        android:label="\u0645\u062d\u0633\u0650\u0651\u0646 \u0627\u0644\u062a\u0644\u0627\u0648\u0629"\n'
+'        android:name="${applicationName}"\n'
+'        android:icon="@mipmap/ic_launcher"\n'
+'        android:hardwareAccelerated="true"\n'
+'        android:networkSecurityConfig="@xml/network_security_config"\n'
+'        android:usesCleartextTraffic="true"\n'
+'        android:extractNativeLibs="true">\n'
+'\n'
+'        <activity\n'
+'            android:name=".MainActivity"\n'
+'            android:exported="true"\n'
+'            android:launchMode="singleTop"\n'
+'            android:taskAffinity=""\n'
+'            android:theme="@style/LaunchTheme"\n'
+'            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"\n'
+'            android:hardwareAccelerated="true"\n'
+'            android:windowSoftInputMode="adjustResize">\n'
+'            <meta-data\n'
+'                android:name="io.flutter.embedding.android.NormalTheme"\n'
+'                android:resource="@style/NormalTheme"/>\n'
+'            <intent-filter>\n'
+'                <action android:name="android.intent.action.MAIN"/>\n'
+'                <category android:name="android.intent.category.LAUNCHER"/>\n'
+'            </intent-filter>\n'
+'        </activity>\n'
+'\n'
+'        <meta-data android:name="flutterEmbedding" android:value="2"/>\n'
+'    </application>\n'
+'</manifest>\n'
+)
+print("  AndroidManifest.xml written (v11 — queries block for audio player)")
 
-mp = APP / 'src' / 'main' / 'AndroidManifest.xml'
-manifest = mp.read_text()
+# ── STEP 6: Verify manifest ───────────────────────────────────────────────────
+txt = manifest.read_text()
+for check, label in [
+    ("android.permission.INTERNET",   "INTERNET permission"),
+    ("WRITE_EXTERNAL_STORAGE",        "WRITE_EXTERNAL_STORAGE (<=API28)"),
+    ("READ_MEDIA_AUDIO",              "READ_MEDIA_AUDIO (API33+)"),
+    ("networkSecurityConfig",         "networkSecurityConfig on <application>"),
+    ('usesCleartextTraffic="true"',   "usesCleartextTraffic=true"),
+    ('extractNativeLibs="true"',      "extractNativeLibs=true (minSdk=21)"),
+    ("<queries>",                     "queries block (audio player, API30+)"),
+    ("flutterEmbedding",              "flutterEmbedding meta-data"),
+    ("applicationName",               "${applicationName}"),
+    ("NormalTheme",                   "NormalTheme meta-data"),
+]:
+    ok = check in txt
+    print(f"  {'OK' if ok else 'MISSING!'}: {label}")
 
-# Add usesCleartextTraffic if not present
-if 'usesCleartextTraffic' not in manifest:
-    manifest = manifest.replace(
-        'android:hardwareAccelerated="true"',
-        'android:hardwareAccelerated="true"\n        android:usesCleartextTraffic="false"\n        android:networkSecurityConfig="@xml/network_security_config"'
-    )
-    # fallback: insert before <activity
-    if 'usesCleartextTraffic' not in manifest:
-        manifest = re.sub(
-            r'(<application\b)',
-            r'\1\n        android:usesCleartextTraffic="false"\n        android:networkSecurityConfig="@xml/network_security_config"',
-            manifest
-        )
-    print("  ✅ AndroidManifest.xml patched: usesCleartextTraffic + networkSecurityConfig")
-else:
-    print("  ✅ AndroidManifest.xml already has usesCleartextTraffic")
+# ── STEP 7: MainActivity.kt ───────────────────────────────────────────────────
+MAIN_ACTIVITY_KT = (
+'package com.tilawa.tilawa_enhancer\n'
+'\n'
+'import android.content.ContentValues\n'
+'import android.media.MediaScannerConnection\n'
+'import android.os.Build\n'
+'import android.os.Environment\n'
+'import android.provider.MediaStore\n'
+'import io.flutter.embedding.android.FlutterActivity\n'
+'import io.flutter.embedding.engine.FlutterEngine\n'
+'import io.flutter.plugin.common.MethodChannel\n'
+'\n'
+'class MainActivity : FlutterActivity() {\n'
+'\n'
+'    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {\n'
+'        super.configureFlutterEngine(flutterEngine)\n'
+'        MethodChannel(\n'
+'            flutterEngine.dartExecutor.binaryMessenger,\n'
+'            "com.tilawa.tilawa_enhancer/media"\n'
+'        ).setMethodCallHandler { call, result ->\n'
+'            when (call.method) {\n'
+'                "scanFile" -> {\n'
+'                    val path = call.argument<String>("path")\n'
+'                    if (path != null) {\n'
+'                        MediaScannerConnection.scanFile(\n'
+'                            this, arrayOf(path), arrayOf("audio/mpeg")\n'
+'                        ) { _, _ -> result.success(null) }\n'
+'                    } else {\n'
+'                        result.error("INVALID_PATH", "path is null", null)\n'
+'                    }\n'
+'                }\n'
+'                "saveToDownloads" -> {\n'
+'                    val sourcePath = call.argument<String>("path")\n'
+'                    val fileName   = call.argument<String>("filename")\n'
+'                    if (sourcePath == null || fileName == null) {\n'
+'                        result.error("INVALID_ARGS", "path or filename is null", null)\n'
+'                        return@setMethodCallHandler\n'
+'                    }\n'
+'                    try {\n'
+'                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {\n'
+'                            val resolver = contentResolver\n'
+'                            val values = ContentValues().apply {\n'
+'                                put(MediaStore.Downloads.DISPLAY_NAME, fileName)\n'
+'                                put(MediaStore.Downloads.MIME_TYPE, "audio/mpeg")\n'
+'                                put(MediaStore.Downloads.IS_PENDING, 1)\n'
+'                            }\n'
+'                            val collection = MediaStore.Downloads.getContentUri(\n'
+'                                MediaStore.VOLUME_EXTERNAL_PRIMARY\n'
+'                            )\n'
+'                            val itemUri = resolver.insert(collection, values)\n'
+'                            if (itemUri == null) {\n'
+'                                result.error("INSERT_FAILED", "MediaStore insert returned null", null)\n'
+'                                return@setMethodCallHandler\n'
+'                            }\n'
+'                            resolver.openOutputStream(itemUri)?.use { out ->\n'
+'                                java.io.File(sourcePath).inputStream().use { input -> input.copyTo(out) }\n'
+'                            }\n'
+'                            values.clear()\n'
+'                            values.put(MediaStore.Downloads.IS_PENDING, 0)\n'
+'                            resolver.update(itemUri, values, null, null)\n'
+'                            result.success(itemUri.toString())\n'
+'                        } else {\n'
+'                            val downloadsDir = Environment.getExternalStoragePublicDirectory(\n'
+'                                Environment.DIRECTORY_DOWNLOADS\n'
+'                            )\n'
+'                            downloadsDir.mkdirs()\n'
+'                            val dest = java.io.File(downloadsDir, fileName)\n'
+'                            java.io.File(sourcePath).copyTo(dest, overwrite = true)\n'
+'                            MediaScannerConnection.scanFile(\n'
+'                                this, arrayOf(dest.absolutePath), arrayOf("audio/mpeg")\n'
+'                            ) { _, _ -> result.success(dest.absolutePath) }\n'
+'                        }\n'
+'                    } catch (e: Exception) {\n'
+'                        result.error("SAVE_FAILED", e.message, null)\n'
+'                    }\n'
+'                }\n'
+'                else -> result.notImplemented()\n'
+'            }\n'
+'        }\n'
+'    }\n'
+'}\n'
+)
 
-# Add READ_MEDIA_AUDIO permission if not present (needed for audio files on Android 13+)
-if 'READ_MEDIA_AUDIO' not in manifest:
-    manifest = manifest.replace(
-        '<application',
-        '<uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n\n    <application'
-    )
-    print("  ✅ AndroidManifest.xml: READ_MEDIA_AUDIO permission added")
+kt_dir = APP / "src" / "main" / "kotlin" / "com" / "tilawa" / "tilawa_enhancer"
+kt_dir.mkdir(parents=True, exist_ok=True)
+kt_path = kt_dir / "MainActivity.kt"
+kt_path.write_text(MAIN_ACTIVITY_KT)
+print(f"\n  MainActivity.kt written: {kt_path}")
 
-mp.write_text(manifest)
-print("  ✅ AndroidManifest.xml saved (Flutter's original structure preserved)")
-
-# ── DONE ──────────────────────────────────────────────────────────────────────
+# ── STEP 8: S19 App Icon ──────────────────────────────────────────────────────
 print()
-print("patch_android.py: ALL DONE")
-print("  Flutter's styles.xml   → untouched (correct theme parents)")
-print("  Flutter's strings.xml  → untouched")
-print("  Flutter's MainActivity → untouched (extends FlutterActivity)")
-print("  ProfileInstallerInitializer → NOT in our manifest (no startup crash)")
+print("  Generating app icon from assets/images/logo.png...")
+
+LOGO_SRC = Path("assets") / "images" / "logo.png"
+DENSITIES = {
+    'mipmap-mdpi':    48,
+    'mipmap-hdpi':    72,
+    'mipmap-xhdpi':   96,
+    'mipmap-xxhdpi':  144,
+    'mipmap-xxxhdpi': 192,
+}
+
+if not LOGO_SRC.exists():
+    print(f"  SKIP: {LOGO_SRC} not found. Using Flutter default icon.")
+else:
+    try:
+        from PIL import Image, ImageDraw
+
+        src = Image.open(LOGO_SRC).convert("RGBA")
+
+        for density, size in DENSITIES.items():
+            dest_dir = APP / "src" / "main" / "res" / density
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = dest_dir / "ic_launcher.png"
+
+            # Resize with high-quality Lanczos resampling
+            resized = src.resize((size, size), Image.LANCZOS)
+
+            # Create circular mask — clean on Android round icon mode
+            mask = Image.new("L", (size, size), 0)
+            draw = ImageDraw.Draw(mask)
+            draw.ellipse((0, 0, size - 1, size - 1), fill=255)
+
+            # Composite: circular icon over app dark background colour
+            bg = Image.new("RGBA", (size, size), (10, 12, 16, 255))
+            bg.paste(resized, mask=mask)
+            bg.convert("RGB").save(str(dest_path), "PNG")
+            print(f"  OK: ic_launcher.png → {density} ({size}x{size}px)")
+
+        print("  All 5 icon sizes generated successfully.")
+
+    except ImportError:
+        print("  SKIP: Pillow not installed.")
+        print("  Add 'pip install Pillow --quiet' to build.yml BEFORE patch_android.py.")
+    except Exception as ex:
+        print(f"  SKIP icon generation ({type(ex).__name__}: {ex})")
+
+# ── STEP 9: Delete dead duplicate S class if still present ───────────────────
+dead = Path("lib") / "l10n" / "strings.dart"
+if dead.exists():
+    dead.unlink()
+    print("\n  Deleted lib/l10n/strings.dart (dead duplicate S class)")
+
+print()
+print("patch_android.py v11: DONE")
