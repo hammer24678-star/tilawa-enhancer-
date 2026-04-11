@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:path_provider/path_provider.dart';
+// STEP 2-1: path_provider import REMOVED — api_service now handles all path logic
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
@@ -135,58 +135,70 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  /// Auto-download and save when processing finishes
+  // STEP 2-2: downloadFile now handles path internally — no path_provider here
+  // STEP 2-3: Uses new (File?, String?) return type for real error messages
+  // STEP 2-4: No try/catch needed — errors are returned as String, not thrown
   Future<void> _downloadAndSave(Map<String, dynamic> sd) async {
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
-    try {
-      final dir = await getDownloadsDirectory()
-          ?? await getApplicationDocumentsDirectory();
-      // Proper filename: Tilawa_v8.0_Calibrated_Precision_1425H.mp3
-      final filename = ApiService.buildFilename(_engine);
-      final path = '${dir.path}/$filename';
-      final f = await ApiService.downloadFile(_jobId!, path);
-      if (mounted) {
-        setState(() {
-          _busy = false; _progress = 1.0;
-          _output = f; _result = sd;
-          _status = f != null ? s.done : 'فشل التحميل';
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() { _busy = false; _status = 'خطأ: $e'; });
-    }
+
+    final filename = ApiService.buildFilename(_engine);
+    // STEP 2-5: api_service picks getExternalStorageDirectory() internally
+    final (file, error) = await ApiService.downloadFile(_jobId!, filename);
+
+    if (!mounted) return;
+    setState(() {
+      _busy = false; _progress = 1.0;
+      _output = file; _result = sd;
+      _status = file != null ? s.done : 'فشل: $error';
+    });
   }
 
-  /// Re-download button (in case first download failed)
+  // STEP 2-6: Re-download with full path in snackbar + error snackbar on failure
+  // STEP 2-7: Snackbar duration 8s on success (user has time to read path)
+  // STEP 2-8: Error snackbar on failure — red, shows real error string
   Future<void> _reDownload() async {
     if (_jobId == null) return;
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; });
-    try {
-      final dir = await getDownloadsDirectory()
-          ?? await getApplicationDocumentsDirectory();
-      final filename = ApiService.buildFilename(_engine);
-      final path = '${dir.path}/$filename';
-      final f = await ApiService.downloadFile(_jobId!, path);
-      if (mounted) {
-        setState(() { _output = f; _status = f != null ? s.done : 'فشل التحميل'; });
-        if (f != null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('${s.savedTo}: $filename'),
-            backgroundColor: const Color(0xFF0D2015),
-            duration: const Duration(seconds: 3)));
-        }
-      }
-    } catch (e) {
-      if (mounted) setState(() { _status = 'خطأ: $e'; });
+
+    final filename = ApiService.buildFilename(_engine);
+    final (file, error) = await ApiService.downloadFile(_jobId!, filename);
+
+    if (!mounted) return;
+    setState(() {
+      _output = file;
+      _status = file != null ? s.done : 'فشل: $error';
+    });
+
+    if (file != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          '✅ تم الحفظ\n'
+          '📁 ${file.path}',
+          style: const TextStyle(fontSize: 12),
+        ),
+        backgroundColor: const Color(0xFF0D2015),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'حسناً',
+          textColor: const Color(0xFF3FB950),
+          onPressed: () {},
+        ),
+      ));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('❌ فشل التحميل\n$error',
+          style: const TextStyle(fontSize: 12)),
+        backgroundColor: const Color(0xFF200D0D),
+        duration: const Duration(seconds: 6),
+      ));
     }
   }
 
   // ── BUILD ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    // Reading from InheritedWidget — auto-rebuilds when lang changes
     final s = LangProvider.strings(context);
     return Scaffold(
       body: SafeArea(
@@ -211,7 +223,6 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _header(S s) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
     child: Row(children: [
-      // Logo
       Container(
         width: 52, height: 52,
         decoration: BoxDecoration(
@@ -240,7 +251,6 @@ class _HomeScreenState extends State<HomeScreen>
           style: const TextStyle(
             color: Color(0xFF8B949E), fontSize: 10, letterSpacing: 1.5)),
       ])),
-      // Settings icon
       _iconBtn(Icons.settings_outlined, () => Navigator.push(
         context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
     ]),
@@ -483,7 +493,6 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFF3FB950), width: 1.2)),
       child: Column(children: [
-        // Score
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -499,8 +508,6 @@ class _HomeScreenState extends State<HomeScreen>
                 fontWeight: FontWeight.w900, fontSize: 34)),
           ]),
         const SizedBox(height: 12),
-
-        // Engine used
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
@@ -512,8 +519,6 @@ class _HomeScreenState extends State<HomeScreen>
             style: const TextStyle(
               color: Color(0xFFD4AF37), fontSize: 11))),
         const SizedBox(height: 12),
-
-        // Metrics
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           if (_result?['lufs']  != null) _metric('LUFS',  _result!['lufs'].toString()),
           if (_result?['rms']   != null) _metric('RMS',   _result!['rms'].toString()),
@@ -548,7 +553,6 @@ class _HomeScreenState extends State<HomeScreen>
               ]),
             )),
 
-        // Show if already saved
         if (_output != null) ...[
           const SizedBox(height: 8),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -579,57 +583,54 @@ class _HomeScreenState extends State<HomeScreen>
       onTap: () => Navigator.push(context,
         MaterialPageRoute(builder: (_) => const HistoryScreen())),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
           color: const Color(0xFF161B22),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: const Color(0xFF21262D))),
-        child: Row(children: [
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.history_rounded,
-            color: Color(0xFF8B949E), size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: Text(s.history,
-            style: const TextStyle(
-              color: Color(0xFFC9D1D9), fontSize: 13))),
-          const Icon(Icons.arrow_forward_ios_rounded,
-            color: Color(0xFF8B949E), size: 13),
-        ]))));
+            color: Color(0xFF8B949E), size: 18),
+          const SizedBox(width: 8),
+          Text(s.history, style: const TextStyle(
+            color: Color(0xFF8B949E), fontSize: 13)),
+        ]),
+      ),
+    ),
+  );
 
-  // ── DONATION ───────────────────────────────────────────────────────────────
-  Widget _donationCard(S s) => GestureDetector(
-    onTap: () async {
-      final uri = Uri.parse('https://ipay.instapay.eg/EG/AR/tilawa');
-      if (await canLaunchUrl(uri)) await launchUrl(uri);
-    },
-    child: Container(
-      margin: const EdgeInsets.fromLTRB(16,10,16,8),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A1000), Color(0xFF2A1F00)],
-          begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD4AF37), width: 0.8)),
-      child: Row(children: [
-        const Text('🤲', style: TextStyle(fontSize: 28)),
-        const SizedBox(width: 14),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(s.donation, style: const TextStyle(
-            color: Color(0xFFD4AF37),
-            fontWeight: FontWeight.bold, fontSize: 15)),
-          const SizedBox(height: 3),
-          Text(s.donationDesc, style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 11)),
-        ])),
-        const Icon(Icons.arrow_forward_ios_rounded,
-          color: Color(0xFFD4AF37), size: 14),
-      ]),
+  // ── DONATION CARD ──────────────────────────────────────────────────────────
+  Widget _donationCard(S s) => Padding(
+    padding: const EdgeInsets.fromLTRB(16,4,16,4),
+    child: GestureDetector(
+      onTap: () => launchUrl(
+        Uri.parse('https://buymeacoffee.com/tilawa'),
+        mode: LaunchMode.externalApplication),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1500),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFD4AF37).withOpacity(0.3))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.volunteer_activism,
+            color: Color(0xFFD4AF37), size: 18),
+          const SizedBox(width: 8),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(s.donation, style: const TextStyle(
+              color: Color(0xFFD4AF37),
+              fontWeight: FontWeight.bold, fontSize: 13)),
+            Text(s.donationDesc, style: const TextStyle(
+              color: Color(0xFF8B949E), fontSize: 10)),
+          ]),
+        ]),
+      ),
     ),
   );
 }
 
-// Data class for engines
+// ── Engine data class ──────────────────────────────────────────────────────────
 class _Engine {
   final String id, label, desc, badge, bc;
   const _Engine(this.id, this.label, this.desc, this.badge, this.bc);
