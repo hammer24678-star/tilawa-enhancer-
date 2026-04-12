@@ -176,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen>
         final isMerging = (status == 'uploading' || status == 'merging');
         final display = isMerging
             ? _progress
-            : (0.68 + srv * 0.32).clamp(0.0, 1.0);
+            : (0.68 + srv * 0.32).clamp(_progress, 1.0); // S21: monotonic — never regress
         // S20-A: _isMerging drives indeterminate mode in progress bar
         setState(() { _progress = display; _status = st['label'] ?? ''; _isMerging = isMerging && _busy; });
 
@@ -211,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen>
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
 
-    final filename = ApiService.buildFilename(_engine);
+    final filename = ApiService.buildFilename(_engine, originalPath: _file?.path); // S21 BUG2
     final (file, error) = await ApiService.downloadFile(_jobId!, filename);
 
     if (!mounted) return;
@@ -269,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen>
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
 
-    final filename = ApiService.buildFilename(_engine);
+    final filename = ApiService.buildFilename(_engine, originalPath: _file?.path); // S21 BUG2
     final (file, error) = await ApiService.downloadFile(_jobId!, filename);
 
     if (!mounted) return;

@@ -265,7 +265,10 @@ class ApiService {
   }
 
   // ── Build proper download filename ─────────────────────────────────────────
-  static String buildFilename(String engine) {
+  // S21 BUG2 FIX: optional originalPath — preserves original filename prefix.
+  // With originalPath:  {basename}__Tilawa_{engine}_{name}_1425H.mp3
+  // Without:            Tilawa_{engine}_{name}_1425H.mp3  (history fallback)
+  static String buildFilename(String engine, {String? originalPath}) {
     const engineNames = {
       'v8.0': 'Calibrated_Precision',
       'v7.6': 'Intelligent_Assessment',
@@ -273,6 +276,14 @@ class ApiService {
       'v7.0': 'Classic',
     };
     final name = engineNames[engine] ?? engine.replaceAll('.', '_');
-    return 'Tilawa_${engine}_${name}_1425H.mp3';
+    final suffix = 'Tilawa_${engine}_${name}_1425H.mp3';
+    if (originalPath != null && originalPath.isNotEmpty) {
+      final orig = originalPath.split('/').last;
+      final noExt = orig.contains('.')
+          ? orig.substring(0, orig.lastIndexOf('.'))
+          : orig;
+      return '${noExt}__${suffix}';
+    }
+    return suffix;
   }
 }
