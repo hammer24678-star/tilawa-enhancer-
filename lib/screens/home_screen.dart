@@ -40,20 +40,36 @@ class _HomeScreenState extends State<HomeScreen>
 
   late final AnimationController _glowCtrl;
 
-  // ── Engines ────────────────────────────────────────────────────────────────
+  // ── Engines (S21: full data from documentation) ─────────────────────────────
   static const _engines = [
-    _Engine('v8.0', 'v8.0 — Calibrated Precision',
-        '5 أخطاء مُصلَحة · ≥96/100 | 5 bugs fixed · ≥96/100',
-        'NEW', 'gold'),
-    _Engine('v7.6', 'v7.6 — Intelligent Assessment',
-        'MDS تشخيص ذكي | Smart multi-metric diagnosis · ~94/100',
-        'MDS', 'blue'),
-    _Engine('v7.5', 'v7.5 — Disciplined Precision',
-        'Do-No-Harm · 94/100',
-        'BEST', 'green'),
-    _Engine('v7.0', 'v7.0 — Classic',
-        'البنية الأصلية | Original architecture · 91/100',
-        'STABLE', ''),
+    _EngineData(
+      'v8.0', 'دقة مُعايَرة', 'Calibrated Precision', 96.0,
+      'NEW', 'gold',
+      ['4-Pass WAV', 'MDS', 'Crest Guard', 'SFM-NR', 'Single Compand', 'BIAS_V8'],
+      'إصلاح 5 أخطاء حرجة من v7.6: انعكاس اتجاه SPECTRAL_BIAS في 250Hz/4kHz/8kHz، compand مزدوج يسحق Crest، 5 limiters تراكمية، خطأ DR→LRA، وحارس Crest مستقل لكل pass.',
+      '5 critical fixes from v7.6: inverted SPECTRAL_BIAS in 250Hz/4kHz/8kHz, double-stacked compand crushing Crest, 5 cumulative limiters, wrong DR→LRA type, and independent Crest Guard per pass.',
+    ),
+    _EngineData(
+      'v7.6', 'تقييم ذكي', 'Intelligent Assessment', 94.0,
+      'MDS', 'blue',
+      ['MDS System', 'SFM-NR', 'DR-Calibrated', 'Spectral Dist EQ', '4-Pass WAV', 'A-Weighting'],
+      'أول نسخة بنظام MDS: الانبساط الطيفي SFM + النطاق الديناميكي + المسافة الطيفية + بصمة تلف الكودك. تشخيص مستمر 0-100 بدل 5 تصنيفات ثنائية.',
+      'First with MDS (Multi-Metric Damage Score): Spectral Flatness + Dynamic Range + Spectral Distance + Codec Damage Fingerprint. Continuous 0-100 diagnosis replacing 5 binary tiers.',
+    ),
+    _EngineData(
+      'v7.5', 'دقة منضبطة', 'Disciplined Precision', 94.0,
+      'BEST', 'green',
+      ['Do-No-Harm', 'Crest-Aware', 'Quality Gate', '4-Pass WAV', 'Bark EQ', 'Single Compand'],
+      'مبدأ "لا ضرر": Quality Gate يحمي الجودة بعد كل pass، Crest-Aware يمنع bass boost عند انهيار Crest، compand واحد نظيف فقط — لا تكديس. العودة لبنية v7.0 المُثبَّتة.',
+      '"Do-No-Harm": Quality Gate protects output after each pass, Crest-Aware blocks bass boost when Crest degrades, single clean compand only — no stacking. Return to proven v7.0 architecture.',
+    ),
+    _EngineData(
+      'v7.0', 'كلاسيكي', 'Classic', 91.0,
+      'STABLE', '',
+      ['Proven Arch', '9-Seg Spectral', 'Bark EQ', 'Compand Curves', 'LUFS \u00b10.1', 'AR-Safe'],
+      'البنية المُثبَّتة الأساس لجميع محركات v7.x. THREE-PASS pipeline مع تقارب تكراري، 9 قطاعات طيفية لكامل الملف، ودقة LUFS ±0.1 مقارنة بتسجيلات المرجع 1425H.',
+      'The proven foundational architecture for all v7.x engines. THREE-PASS pipeline with iterative convergence, 9-segment full-file spectral average, LUFS precision \u00b10.1 from 1425H reference.',
+    ),
   ];
 
   @override
@@ -368,8 +384,12 @@ class _HomeScreenState extends State<HomeScreen>
           style: const TextStyle(
             color: Color(0xFF8B949E), fontSize: 10, letterSpacing: 1.5)),
       ])),
-      _iconBtn(Icons.settings_outlined, () => Navigator.push(
-        context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
+      Row(children: [
+        _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
+        const SizedBox(width: 6),
+        _iconBtn(Icons.settings_outlined, () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
+      ]),
     ]),
   );
 
@@ -474,74 +494,166 @@ class _HomeScreenState extends State<HomeScreen>
       color: const Color(0xFF161B22),
       borderRadius: BorderRadius.circular(14),
       border: Border.all(color: const Color(0xFF21262D))),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    child: Column(children: [
+      // ── Header row ──────────────────────────────────────────────────
       Padding(
-        padding: const EdgeInsets.fromLTRB(16,14,16,6),
-        child: Text(s.chooseEngine,
-          style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 1.5))),
-      ..._engines.map((e) => _engineTile(e)),
-      const SizedBox(height: 8),
+        padding: const EdgeInsets.fromLTRB(16,14,16,10),
+        child: Row(children: [
+          const Icon(Icons.tune_rounded, color: Color(0xFF484F58), size: 13),
+          const SizedBox(width: 7),
+          Text(s.chooseEngine, style: const TextStyle(
+            color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 1.5)),
+          const Spacer(),
+          // Score pill for selected engine
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: _badgeBg(_selectedEngine.bc),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _badgeColor(_selectedEngine.bc).withOpacity(0.5))),
+            child: Text(
+              '≥${_selectedEngine.score.toInt()}',
+              style: TextStyle(
+                color: _badgeColor(_selectedEngine.bc),
+                fontSize: 10, fontWeight: FontWeight.bold))),
+        ])),
+      ..._engines.map((e) => _engineCard(e, s)),
+      const SizedBox(height: 10),
     ]),
   );
 
-  Widget _engineTile(_Engine e) {
+  _EngineData get _selectedEngine =>
+      _engines.firstWhere((e) => e.id == _engine, orElse: () => _engines.first);
+
+  Widget _engineCard(_EngineData e, S s) {
     final sel = _engine == e.id;
-    final bc = _badgeColor(e.bc);
-    final bg = _badgeBg(e.bc);
+    final col = _badgeColor(e.bc);
+    final bg  = _badgeBg(e.bc);
     return GestureDetector(
       onTap: () => setState(() => _engine = e.id),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.fromLTRB(8,2,8,2),
-        padding: const EdgeInsets.all(12),
+        duration: const Duration(milliseconds: 220),
+        margin: const EdgeInsets.fromLTRB(8,3,8,3),
         decoration: BoxDecoration(
-          color: sel ? const Color(0xFF1A1500) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          color: sel ? const Color(0xFF0D1117) : Colors.transparent,
+          borderRadius: BorderRadius.circular(11),
           border: Border.all(
-            color: sel ? const Color(0xFFD4AF37) : Colors.transparent,
-            width: 1.2)),
-        child: Row(children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            width: 20, height: 20,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: sel ? const Color(0xFFD4AF37) : const Color(0xFF30363D),
-                width: 2),
-              color: sel ? const Color(0xFFD4AF37) : Colors.transparent),
-            child: sel
-              ? const Icon(Icons.check, size: 12, color: Color(0xFF0A0C10))
-              : null),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            Row(children: [
-              Flexible(child: Text(e.label,
-                style: TextStyle(
-                  color: sel ? const Color(0xFFD4AF37) : const Color(0xFFC9D1D9),
-                  fontWeight: FontWeight.bold, fontSize: 13))),
-              if (e.badge.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: bg, borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: bc.withOpacity(0.4))),
-                  child: Text(e.badge,
-                    style: TextStyle(
-                      color: bc, fontSize: 9, fontWeight: FontWeight.bold))),
-              ],
-            ]),
-            const SizedBox(height: 3),
-            Text(e.desc,
-              style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
-          ])),
+            color: sel ? col : const Color(0xFF21262D),
+            width: sel ? 1.4 : 0.8)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Collapsed header (always visible) ───────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12,11,12,11),
+            child: Row(children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 18, height: 18,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: sel ? col : const Color(0xFF30363D), width: 2),
+                  color: sel ? col : Colors.transparent),
+                child: sel
+                  ? const Icon(Icons.check, size: 10, color: Color(0xFF0A0C10))
+                  : null),
+              const SizedBox(width: 11),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                Row(children: [
+                  Text(e.id, style: TextStyle(
+                    color: sel ? col : const Color(0xFFC9D1D9),
+                    fontWeight: FontWeight.bold, fontSize: 13)),
+                  if (e.badge.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: bg, borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: col.withOpacity(0.45))),
+                      child: Text(e.badge, style: TextStyle(
+                        color: col, fontSize: 8, fontWeight: FontWeight.bold))),
+                  ],
+                ]),
+                const SizedBox(height: 2),
+                Text(s.ar ? e.nameAr : e.nameEn,
+                  style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
+              ])),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text('≥${e.score.toInt()}', style: TextStyle(
+                  color: sel ? col : const Color(0xFF484F58),
+                  fontWeight: FontWeight.w800, fontSize: 15)),
+                Text('/100', style: const TextStyle(
+                  color: Color(0xFF484F58), fontSize: 8)),
+              ]),
+            ])),
+          // ── Expanded details (selected engine only) ──────────────────
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 250),
+            crossFadeState: sel
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+            firstChild: const SizedBox.shrink(),
+            secondChild: _engineExpanded(e, s, col),
+          ),
         ]),
       ),
     );
   }
+
+  Widget _engineExpanded(_EngineData e, S s, Color col) => Padding(
+    padding: const EdgeInsets.fromLTRB(12,0,12,12),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(height: 1, color: const Color(0xFF21262D),
+        margin: const EdgeInsets.only(bottom: 10)),
+      // Score bar
+      Row(children: [
+        Expanded(child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: e.score / 100,
+            minHeight: 5,
+            backgroundColor: const Color(0xFF21262D),
+            valueColor: AlwaysStoppedAnimation<Color>(col)))),
+        const SizedBox(width: 8),
+        Text('${e.score.toInt()}/100', style: TextStyle(
+          color: col, fontSize: 10, fontWeight: FontWeight.bold)),
+      ]),
+      const SizedBox(height: 10),
+      // Feature chips
+      Wrap(
+        spacing: 5, runSpacing: 5,
+        children: e.features.map((f) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A0C10),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFF30363D))),
+          child: Text(f, style: const TextStyle(
+            color: Color(0xFF8B949E), fontSize: 9)))).toList()),
+      const SizedBox(height: 10),
+      // What's New box
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0A0C10),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: col.withOpacity(0.2))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(s.ar ? '▶ الجديد في هذه النسخة'
+                    : '▶ What's New',
+            style: TextStyle(
+              color: col, fontSize: 9, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 5),
+          Text(s.ar ? e.whatsNewAr : e.whatsNewEn,
+            textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+            style: const TextStyle(
+              color: Color(0xFF8B949E), fontSize: 10, height: 1.55)),
+        ])),
+    ]),
+  );
 
   Color _badgeColor(String bc) => bc == 'gold' ? const Color(0xFFD4AF37)
       : bc == 'green' ? const Color(0xFF3FB950)
@@ -611,6 +723,786 @@ class _HomeScreenState extends State<HomeScreen>
       ]),
     ),
   );
+
+\
+  // ── S21: Info bottom sheet ──────────────────────────────────────────────────
+  void _showInfoSheet(BuildContext ctx) {
+    final s = LangProvider.strings(ctx);
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.78,
+        minChildSize: 0.40,
+        maxChildSize: 0.95,
+        builder: (_, ctrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1117),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF30363D),
+                borderRadius: BorderRadius.circular(2))),
+            // Sheet title
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20,4,20,12),
+              child: Row(children: [
+                const Icon(Icons.info_outline_rounded,
+                  color: Color(0xFFD4AF37), size: 18),
+                const SizedBox(width: 8),
+                Text(s.ar ? '\u0639\u0646 \u0627\u0644\u062a\u0637\u0628\u064a\u0642' : 'About',
+                  style: const TextStyle(
+                    color: Color(0xFFD4AF37),
+                    fontWeight: FontWeight.bold, fontSize: 16)),
+              ])),
+            Expanded(child: ListView(
+              controller: ctrl,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+              children: [
+                // ── YouTube channel ─────────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '\u{1F4FA} \u0642\u0646\u0627\u0629 \u064a\u0648\u062a\u064a\u0648\u0628'
+                       : '\u{1F4FA} YouTube Channel'),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://youtube.com/@carm-tv2hv'),
+                    mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A0A0A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFFF0000).withOpacity(0.3))),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF0000),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 26)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(s.ar ? '\u0642\u0646\u0627\u0629 \u064a\u0648\u062a\u064a\u0648\u0628' : 'YouTube Channel',
+                          style: const TextStyle(
+                            color: Color(0xFFC9D1D9),
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 2),
+                        const Text('@carm-tv2hv',
+                          style: TextStyle(
+                            color: Color(0xFF8B949E), fontSize: 11)),
+                      ])),
+                      const Icon(Icons.open_in_new_rounded,
+                        color: Color(0xFF484F58), size: 16),
+                    ]))),
+                // ── Reference standard ──────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '\u{1F3AF} \u0627\u0644\u0645\u0631\u062c\u0639 \u0627\u0644\u0635\u0648\u062a\u064a'
+                       : '\u{1F3AF} Reference Standard'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A1A0F),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF3FB950).withOpacity(0.3))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    Text(
+                      s.ar ? '\u0627\u0644\u0634\u064a\u062e \u064a\u0627\u0633\u0631 \u0627\u0644\u062f\u0648\u0633\u0631\u064a \u2014 1425\u0647\u0640'
+                           : 'Sheikh Yasser Al-Dossari \u2014 1425H',
+                      style: const TextStyle(
+                        color: Color(0xFF3FB950),
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'LUFS = -6.29  \u00b7  RMS = -10.01\nCrest = 10.25  \u00b7  LRA = 4.19',
+                      style: TextStyle(
+                        color: Color(0xFF8B949E),
+                        fontSize: 11, height: 1.7)),
+                    const SizedBox(height: 8),
+                    Text(
+                      s.ar
+                        ? '\u062b\u0644\u0627\u062b\u0629 \u0645\u0644\u0641\u0627\u062a \u0645\u0631\u062c\u0639\u064a\u0629: \u0627\u0644\u0623\u0639\u0631\u0627\u0641 \u00b7 \u0627\u0644\u0641\u062a\u062d \u00b7 \u0641\u0627\u0637\u0631'
+                        : 'Three reference files: Al-Araf \u00b7 Al-Fath \u00b7 Fatir',
+                      style: const TextStyle(
+                        color: Color(0xFF484F58), fontSize: 10)),
+                  ])),
+                // ── Engine comparison ───────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '\u{1F4CA} \u0645\u0642\u0627\u0631\u0646\u0629 \u0627\u0644\u0645\u062d\u0631\u0643\u0627\u062a'
+                       : '\u{1F4CA} Engine Comparison'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Column(
+                    children: _engines.map((e) {
+                      final col = _badgeColor(e.bc);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                          Row(children: [
+                            Text(e.id, style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(s.ar ? e.nameAr : e.nameEn,
+                              style: const TextStyle(
+                                color: Color(0xFF8B949E), fontSize: 10))),
+                            Text('\u2265${e.score.toInt()}', style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                          ]),
+                          const SizedBox(height: 5),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: LinearProgressIndicator(
+                              value: e.score / 100,
+                              minHeight: 4,
+                              backgroundColor: const Color(0xFF21262D),
+                              valueColor: AlwaysStoppedAnimation<Color>(col))),
+                        ]));
+                    }).toList())),
+                // ── App info ────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Row(children: [
+                    ClipOval(child: Image.asset('assets/images/logo.png',
+                      width: 44, height: 44, fit: BoxFit.cover,
+                      errorBuilder: (_,__,___) => Container(
+                        width: 44, height: 44,
+                        color: const Color(0xFF1A1500),
+                        child: const Icon(Icons.music_note,
+                          color: Color(0xFFD4AF37), size: 22)))),
+                    const SizedBox(width: 12),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      const Text('\u0645\u062d\u0633\u0650\u0651\u0646 \u0627\u0644\u062a\u0644\u0627\u0648\u0629',
+                        style: TextStyle(
+                          color: Color(0xFFD4AF37),
+                          fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(s.version, style: const TextStyle(
+                        color: Color(0xFF8B949E), fontSize: 11)),
+                    ]),
+                  ])),
+              ],
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoSectionLabel(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, top: 4),
+    child: Text(text, style: const TextStyle(
+      color: Color(0xFF8B949E), fontSize: 11,
+      fontWeight: FontWeight.bold, letterSpacing: 0.5)));
+
+\
+  // ── S21: Info bottom sheet ──────────────────────────────────────────────────
+  void _showInfoSheet(BuildContext ctx) {
+    final s = LangProvider.strings(ctx);
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.78,
+        minChildSize: 0.40,
+        maxChildSize: 0.95,
+        builder: (_, ctrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1117),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF30363D),
+                borderRadius: BorderRadius.circular(2))),
+            // Sheet title
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20,4,20,12),
+              child: Row(children: [
+                const Icon(Icons.info_outline_rounded,
+                  color: Color(0xFFD4AF37), size: 18),
+                const SizedBox(width: 8),
+                Text(s.ar ? '\u0639\u0646 \u0627\u0644\u062a\u0637\u0628\u064a\u0642' : 'About',
+                  style: const TextStyle(
+                    color: Color(0xFFD4AF37),
+                    fontWeight: FontWeight.bold, fontSize: 16)),
+              ])),
+            Expanded(child: ListView(
+              controller: ctrl,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+              children: [
+                // ── YouTube channel ─────────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '\u{1F4FA} \u0642\u0646\u0627\u0629 \u064a\u0648\u062a\u064a\u0648\u0628'
+                       : '\u{1F4FA} YouTube Channel'),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://youtube.com/@carm-tv2hv'),
+                    mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A0A0A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFFF0000).withOpacity(0.3))),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF0000),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 26)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(s.ar ? '\u0642\u0646\u0627\u0629 \u064a\u0648\u062a\u064a\u0648\u0628' : 'YouTube Channel',
+                          style: const TextStyle(
+                            color: Color(0xFFC9D1D9),
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 2),
+                        const Text('@carm-tv2hv',
+                          style: TextStyle(
+                            color: Color(0xFF8B949E), fontSize: 11)),
+                      ])),
+                      const Icon(Icons.open_in_new_rounded,
+                        color: Color(0xFF484F58), size: 16),
+                    ]))),
+                // ── Reference standard ──────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '\u{1F3AF} \u0627\u0644\u0645\u0631\u062c\u0639 \u0627\u0644\u0635\u0648\u062a\u064a'
+                       : '\u{1F3AF} Reference Standard'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A1A0F),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF3FB950).withOpacity(0.3))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    Text(
+                      s.ar ? '\u0627\u0644\u0634\u064a\u062e \u064a\u0627\u0633\u0631 \u0627\u0644\u062f\u0648\u0633\u0631\u064a \u2014 1425\u0647\u0640'
+                           : 'Sheikh Yasser Al-Dossari \u2014 1425H',
+                      style: const TextStyle(
+                        color: Color(0xFF3FB950),
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'LUFS = -6.29  \u00b7  RMS = -10.01\nCrest = 10.25  \u00b7  LRA = 4.19',
+                      style: TextStyle(
+                        color: Color(0xFF8B949E),
+                        fontSize: 11, height: 1.7)),
+                    const SizedBox(height: 8),
+                    Text(
+                      s.ar
+                        ? '\u062b\u0644\u0627\u062b\u0629 \u0645\u0644\u0641\u0627\u062a \u0645\u0631\u062c\u0639\u064a\u0629: \u0627\u0644\u0623\u0639\u0631\u0627\u0641 \u00b7 \u0627\u0644\u0641\u062a\u062d \u00b7 \u0641\u0627\u0637\u0631'
+                        : 'Three reference files: Al-Araf \u00b7 Al-Fath \u00b7 Fatir',
+                      style: const TextStyle(
+                        color: Color(0xFF484F58), fontSize: 10)),
+                  ])),
+                // ── Engine comparison ───────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '\u{1F4CA} \u0645\u0642\u0627\u0631\u0646\u0629 \u0627\u0644\u0645\u062d\u0631\u0643\u0627\u062a'
+                       : '\u{1F4CA} Engine Comparison'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Column(
+                    children: _engines.map((e) {
+                      final col = _badgeColor(e.bc);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                          Row(children: [
+                            Text(e.id, style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(s.ar ? e.nameAr : e.nameEn,
+                              style: const TextStyle(
+                                color: Color(0xFF8B949E), fontSize: 10))),
+                            Text('\u2265${e.score.toInt()}', style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                          ]),
+                          const SizedBox(height: 5),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: LinearProgressIndicator(
+                              value: e.score / 100,
+                              minHeight: 4,
+                              backgroundColor: const Color(0xFF21262D),
+                              valueColor: AlwaysStoppedAnimation<Color>(col))),
+                        ]));
+                    }).toList())),
+                // ── App info ────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Row(children: [
+                    ClipOval(child: Image.asset('assets/images/logo.png',
+                      width: 44, height: 44, fit: BoxFit.cover,
+                      errorBuilder: (_,__,___) => Container(
+                        width: 44, height: 44,
+                        color: const Color(0xFF1A1500),
+                        child: const Icon(Icons.music_note,
+                          color: Color(0xFFD4AF37), size: 22)))),
+                    const SizedBox(width: 12),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      const Text('\u0645\u062d\u0633\u0650\u0651\u0646 \u0627\u0644\u062a\u0644\u0627\u0648\u0629',
+                        style: TextStyle(
+                          color: Color(0xFFD4AF37),
+                          fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(s.version, style: const TextStyle(
+                        color: Color(0xFF8B949E), fontSize: 11)),
+                    ]),
+                  ])),
+              ],
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoSectionLabel(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, top: 4),
+    child: Text(text, style: const TextStyle(
+      color: Color(0xFF8B949E), fontSize: 11,
+      fontWeight: FontWeight.bold, letterSpacing: 0.5)));
+
+  // ── S21: Info bottom sheet ──────────────────────────────────────────────────
+  void _showInfoSheet(BuildContext ctx) {
+    final s = LangProvider.strings(ctx);
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.78,
+        minChildSize: 0.40,
+        maxChildSize: 0.95,
+        builder: (_, ctrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1117),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF30363D),
+                borderRadius: BorderRadius.circular(2))),
+            // Sheet title
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20,4,20,12),
+              child: Row(children: [
+                const Icon(Icons.info_outline_rounded,
+                  color: Color(0xFFD4AF37), size: 18),
+                const SizedBox(width: 8),
+                Text(s.ar ? 'عن التطبيق' : 'About',
+                  style: const TextStyle(
+                    color: Color(0xFFD4AF37),
+                    fontWeight: FontWeight.bold, fontSize: 16)),
+              ])),
+            Expanded(child: ListView(
+              controller: ctrl,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+              children: [
+                // ── YouTube channel ─────────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '📺 قناة يوتيوب'
+                       : '📺 YouTube Channel'),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://youtube.com/@carm-tv2hv'),
+                    mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A0A0A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFFF0000).withOpacity(0.3))),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF0000),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 26)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(s.ar ? 'قناة يوتيوب' : 'YouTube Channel',
+                          style: const TextStyle(
+                            color: Color(0xFFC9D1D9),
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 2),
+                        const Text('@carm-tv2hv',
+                          style: TextStyle(
+                            color: Color(0xFF8B949E), fontSize: 11)),
+                      ])),
+                      const Icon(Icons.open_in_new_rounded,
+                        color: Color(0xFF484F58), size: 16),
+                    ]))),
+                // ── Reference standard ──────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '🎯 المرجع الصوتي'
+                       : '🎯 Reference Standard'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A1A0F),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF3FB950).withOpacity(0.3))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    Text(
+                      s.ar ? 'الشيخ ياسر الدوسري — 1425هـ'
+                           : 'Sheikh Yasser Al-Dossari — 1425H',
+                      style: const TextStyle(
+                        color: Color(0xFF3FB950),
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'LUFS = -6.29  ·  RMS = -10.01
+Crest = 10.25  ·  LRA = 4.19',
+                      style: TextStyle(
+                        color: Color(0xFF8B949E),
+                        fontSize: 11, height: 1.7)),
+                    const SizedBox(height: 8),
+                    Text(
+                      s.ar
+                        ? 'ثلاثة ملفات مرجعية: الأعراف · الفتح · فاطر'
+                        : 'Three reference files: Al-Araf · Al-Fath · Fatir',
+                      style: const TextStyle(
+                        color: Color(0xFF484F58), fontSize: 10)),
+                  ])),
+                // ── Engine comparison ───────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '📊 مقارنة المحركات'
+                       : '📊 Engine Comparison'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Column(
+                    children: _engines.map((e) {
+                      final col = _badgeColor(e.bc);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                          Row(children: [
+                            Text(e.id, style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(s.ar ? e.nameAr : e.nameEn,
+                              style: const TextStyle(
+                                color: Color(0xFF8B949E), fontSize: 10))),
+                            Text('≥${e.score.toInt()}', style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                          ]),
+                          const SizedBox(height: 5),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: LinearProgressIndicator(
+                              value: e.score / 100,
+                              minHeight: 4,
+                              backgroundColor: const Color(0xFF21262D),
+                              valueColor: AlwaysStoppedAnimation<Color>(col))),
+                        ]));
+                    }).toList())),
+                // ── App info ────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Row(children: [
+                    ClipOval(child: Image.asset('assets/images/logo.png',
+                      width: 44, height: 44, fit: BoxFit.cover,
+                      errorBuilder: (_,__,___) => Container(
+                        width: 44, height: 44,
+                        color: const Color(0xFF1A1500),
+                        child: const Icon(Icons.music_note,
+                          color: Color(0xFFD4AF37), size: 22)))),
+                    const SizedBox(width: 12),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      const Text('محسِّن التلاوة',
+                        style: TextStyle(
+                          color: Color(0xFFD4AF37),
+                          fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(s.version, style: const TextStyle(
+                        color: Color(0xFF8B949E), fontSize: 11)),
+                    ]),
+                  ])),
+              ],
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoSectionLabel(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, top: 4),
+    child: Text(text, style: const TextStyle(
+      color: Color(0xFF8B949E), fontSize: 11,
+      fontWeight: FontWeight.bold, letterSpacing: 0.5)));
+
+  // ── S21: Info bottom sheet ──────────────────────────────────────────────────
+  void _showInfoSheet(BuildContext ctx) {
+    final s = LangProvider.strings(ctx);
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.78,
+        minChildSize: 0.40,
+        maxChildSize: 0.95,
+        builder: (_, ctrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1117),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF30363D),
+                borderRadius: BorderRadius.circular(2))),
+            // Sheet title
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20,4,20,12),
+              child: Row(children: [
+                const Icon(Icons.info_outline_rounded,
+                  color: Color(0xFFD4AF37), size: 18),
+                const SizedBox(width: 8),
+                Text(s.ar ? 'عن التطبيق' : 'About',
+                  style: const TextStyle(
+                    color: Color(0xFFD4AF37),
+                    fontWeight: FontWeight.bold, fontSize: 16)),
+              ])),
+            Expanded(child: ListView(
+              controller: ctrl,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+              children: [
+                // ── YouTube channel ─────────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '📺 قناة يوتيوب'
+                       : '📺 YouTube Channel'),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://youtube.com/@carm-tv2hv'),
+                    mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A0A0A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFFF0000).withOpacity(0.3))),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF0000),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 26)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(s.ar ? 'قناة يوتيوب' : 'YouTube Channel',
+                          style: const TextStyle(
+                            color: Color(0xFFC9D1D9),
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 2),
+                        const Text('@carm-tv2hv',
+                          style: TextStyle(
+                            color: Color(0xFF8B949E), fontSize: 11)),
+                      ])),
+                      const Icon(Icons.open_in_new_rounded,
+                        color: Color(0xFF484F58), size: 16),
+                    ]))),
+                // ── Reference standard ──────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '🎯 المرجع الصوتي'
+                       : '🎯 Reference Standard'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A1A0F),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF3FB950).withOpacity(0.3))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    Text(
+                      s.ar ? 'الشيخ ياسر الدوسري — 1425هـ'
+                           : 'Sheikh Yasser Al-Dossari — 1425H',
+                      style: const TextStyle(
+                        color: Color(0xFF3FB950),
+                        fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'LUFS = -6.29  ·  RMS = -10.01
+Crest = 10.25  ·  LRA = 4.19',
+                      style: TextStyle(
+                        color: Color(0xFF8B949E),
+                        fontSize: 11, height: 1.7)),
+                    const SizedBox(height: 8),
+                    Text(
+                      s.ar
+                        ? 'ثلاثة ملفات مرجعية: الأعراف · الفتح · فاطر'
+                        : 'Three reference files: Al-Araf · Al-Fath · Fatir',
+                      style: const TextStyle(
+                        color: Color(0xFF484F58), fontSize: 10)),
+                  ])),
+                // ── Engine comparison ───────────────────────────────
+                _infoSectionLabel(
+                  s.ar ? '📊 مقارنة المحركات'
+                       : '📊 Engine Comparison'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Column(
+                    children: _engines.map((e) {
+                      final col = _badgeColor(e.bc);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                          Row(children: [
+                            Text(e.id, style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(s.ar ? e.nameAr : e.nameEn,
+                              style: const TextStyle(
+                                color: Color(0xFF8B949E), fontSize: 10))),
+                            Text('≥${e.score.toInt()}', style: TextStyle(
+                              color: col,
+                              fontWeight: FontWeight.bold, fontSize: 12)),
+                          ]),
+                          const SizedBox(height: 5),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: LinearProgressIndicator(
+                              value: e.score / 100,
+                              minHeight: 4,
+                              backgroundColor: const Color(0xFF21262D),
+                              valueColor: AlwaysStoppedAnimation<Color>(col))),
+                        ]));
+                    }).toList())),
+                // ── App info ────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF21262D))),
+                  child: Row(children: [
+                    ClipOval(child: Image.asset('assets/images/logo.png',
+                      width: 44, height: 44, fit: BoxFit.cover,
+                      errorBuilder: (_,__,___) => Container(
+                        width: 44, height: 44,
+                        color: const Color(0xFF1A1500),
+                        child: const Icon(Icons.music_note,
+                          color: Color(0xFFD4AF37), size: 22)))),
+                    const SizedBox(width: 12),
+                    Column(crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      const Text('محسِّن التلاوة',
+                        style: TextStyle(
+                          color: Color(0xFFD4AF37),
+                          fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(s.version, style: const TextStyle(
+                        color: Color(0xFF8B949E), fontSize: 11)),
+                    ]),
+                  ])),
+              ],
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoSectionLabel(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 8, top: 4),
+    child: Text(text, style: const TextStyle(
+      color: Color(0xFF8B949E), fontSize: 11,
+      fontWeight: FontWeight.bold, letterSpacing: 0.5)));
 
   Widget _badge(String text, String bc) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -879,8 +1771,12 @@ class _HomeScreenState extends State<HomeScreen>
   );
 }
 
-// ── Engine data class ──────────────────────────────────────────────────────────
-class _Engine {
-  final String id, label, desc, badge, bc;
-  const _Engine(this.id, this.label, this.desc, this.badge, this.bc);
+// ── Engine data class (S21: rich model — score, features, what's-new) ───────────
+class _EngineData {
+  final String id, nameAr, nameEn, badge, bc;
+  final double score;
+  final List<String> features;
+  final String whatsNewAr, whatsNewEn;
+  const _EngineData(this.id, this.nameAr, this.nameEn, this.score,
+      this.badge, this.bc, this.features, this.whatsNewAr, this.whatsNewEn);
 }

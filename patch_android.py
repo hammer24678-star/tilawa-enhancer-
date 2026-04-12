@@ -32,8 +32,8 @@ android {
         applicationId "com.tilawa.tilawa_enhancer"
         minSdk 21
         targetSdk 34
-        versionCode 7
-        versionName "2.5.0"
+        versionCode 9
+        versionName "2.7.0"
     }
     buildTypes {
         release {
@@ -58,7 +58,7 @@ dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22"
 }
 """)
-print("  build.gradle OK (v11: versionCode=7, versionName=2.5.0)")
+print("  build.gradle OK (v11: versionCode=9, versionName=2.7.0)")
 
 # ── STEP 2: settings.gradle ───────────────────────────────────────────────────
 (ROOT / "settings.gradle").write_text("""
