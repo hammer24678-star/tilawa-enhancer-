@@ -27,15 +27,6 @@ jobs:
       - name: Regenerate android/
         run: flutter create --platforms=android --project-name tilawa_enhancer .
 
-      - name: Fix MainActivity package
-        run: |
-          OLD="android/app/src/main/kotlin/com/example/tilawa_enhancer"
-          NEW="android/app/src/main/kotlin/com/tilawa/tilawa_enhancer"
-          mkdir -p "$NEW"
-          mv "$OLD/MainActivity.kt" "$NEW/MainActivity.kt"
-          sed -i 's/package com.example.tilawa_enhancer/package com.tilawa.tilawa_enhancer/' "$NEW/MainActivity.kt"
-          echo "MainActivity.kt package fixed:"
-          head -1 "$NEW/MainActivity.kt"
 
       # S19: Pillow required for icon generation in patch_android.py
       - name: Install Pillow for icon generation
