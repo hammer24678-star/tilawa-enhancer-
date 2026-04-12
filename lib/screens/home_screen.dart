@@ -643,7 +643,7 @@ class _HomeScreenState extends State<HomeScreen>
           border: Border.all(color: col.withOpacity(0.2))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(s.ar ? '▶ الجديد في هذه النسخة'
-                    : '▶ What's New',
+                    : "▶ What's New",
             style: TextStyle(
               color: col, fontSize: 9, fontWeight: FontWeight.bold)),
           const SizedBox(height: 5),
