@@ -120,6 +120,16 @@ class ApiService {
     final res = await http
         .get(Uri.parse('$_base/status/$jobId'))
         .timeout(const Duration(seconds: 10));
+    // S22 BUG2: 404 = job gone (server restarted).
+    // Without this check, Flutter parses the error JSON as a normal
+    // response, no exception is thrown, _pollErrors never increments,
+    // and the 79% freeze survives even after the S22 catch fix.
+    if (res.statusCode == 404) {
+      return {'status': 'error', 'error': 'JOB_EXPIRED'};
+    }
+    if (res.statusCode != 200) {
+      throw Exception('HTTP ${res.statusCode}');
+    }
     return jsonDecode(res.body);
   }
 
