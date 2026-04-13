@@ -33,6 +33,8 @@ class _HomeScreenState extends State<HomeScreen>
   bool    _isLarge   = false;
   bool    _downloading = false; // RC3: prevent concurrent downloads
   bool    _isMerging  = false; // S20-A: true during server chunk-merge phase
+  int     _pollErrors = 0;     // S22: consecutive poll error counter
+  DateTime? _processStart;     // S22: start time for 25-min hard timeout
 
   // S19: Wake server state
   bool _waking       = false;
@@ -145,6 +147,8 @@ class _HomeScreenState extends State<HomeScreen>
       _status = LangProvider.strings(context).uploading;
       _output = null; _result = null;
     });
+    _processStart = DateTime.now(); // S22: start clock for timeout
+    _pollErrors = 0;               // S22: reset in case of re-process
     try {
       final resp = await ApiService.uploadFile(_file!, _engine,
           onProgress: (p, label) {
@@ -165,6 +169,7 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Polling — RC2 + RC3 fixes ──────────────────────────────────────────────
   void _startPolling() {
     _pollTimer?.cancel();
+    _pollErrors = 0; // S22: fresh counter for each new polling session
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (_jobId == null) return;
       try {
@@ -178,6 +183,7 @@ class _HomeScreenState extends State<HomeScreen>
             ? _progress
             : (0.68 + srv * 0.32).clamp(_progress, 1.0); // S21: monotonic — never regress
         // S20-A: _isMerging drives indeterminate mode in progress bar
+        _pollErrors = 0; // S22: reset on successful poll
         setState(() { _progress = display; _status = st['label'] ?? ''; _isMerging = isMerging && _busy; });
 
         if (status == 'error') {
@@ -202,7 +208,63 @@ class _HomeScreenState extends State<HomeScreen>
             _downloading = false;
           }
         }
-      } catch (_) {} // only poll errors silently ignored
+      } catch (_) {
+        // S22: surface poll errors -- do NOT silently swallow.
+        // Root cause of the 79% freeze: server restart kills the job.
+        // Every poll throws SocketException / returns bad JSON.
+        // Old catch(_){} hid this completely forever.
+        _pollErrors++;
+        if (_pollErrors >= 5 && mounted) {
+          // 5 errors = ~10 seconds of failure. Server is gone.
+          _pollTimer?.cancel();
+          final s = LangProvider.strings(context);
+          setState(() {
+            _busy = false; _isMerging = false;
+            _progress = 0; _status = '';
+          });
+          _checkServer(); // S22: immediately refresh server status banner
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              s.ar
+                ? '⚠️ انقطع الاتصال بالخادم. انتظر 30 ثانية، نبّه الخادم، ثم أعد المعالجة.'
+                : '⚠️ Lost connection to server. Wait 30s, wake the server, then retry.',
+              style: const TextStyle(fontSize: 12)),
+            backgroundColor: const Color(0xFF200D0D),
+            duration: const Duration(seconds: 10),
+            action: SnackBarAction(
+              label: s.ar ? 'حسناً' : 'OK',
+              textColor: const Color(0xFFD4AF37),
+              onPressed: () {})));
+          return;
+        }
+      }
+      // S22: 25-minute hard timeout. v8.0 on a large file runs 4 WAV
+      // passes which can take 20-40 min on free HF CPU. Show this
+      // instead of freezing at whatever % the server was at.
+      if (_busy && _processStart != null && mounted) {
+        final elapsed = DateTime.now().difference(_processStart!);
+        if (elapsed.inMinutes >= 25) {
+          _pollTimer?.cancel();
+          final s = LangProvider.strings(context);
+          setState(() {
+            _busy = false; _isMerging = false;
+            _progress = 0; _status = '';
+          });
+          _checkServer();
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              s.ar
+                ? '⏱️ استغرقت المعالجة أكثر من 25 دقيقة. جرّب محرك v7.0 أو أعد المحاولة لاحقاً.'
+                : '⏱️ Processing exceeded 25 min. Try v7.0 engine or retry later.',
+              style: const TextStyle(fontSize: 12)),
+            backgroundColor: const Color(0xFF200D0D),
+            duration: const Duration(seconds: 12),
+            action: SnackBarAction(
+              label: s.ar ? 'حسناً' : 'OK',
+              textColor: const Color(0xFFD4AF37),
+              onPressed: () {})));
+        }
+      }
     });
   }
 
