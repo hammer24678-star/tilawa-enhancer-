@@ -18,7 +18,7 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
-  String  _engine    = 'v8.0';
+  String  _engine    = 'v8.1';
   String  _status    = '';
   double  _progress  = 0;
   bool    _busy      = false;
@@ -43,27 +43,21 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _glowCtrl;
 
   // ── Engines (S21: full data from documentation) ─────────────────────────────
+  // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
     _EngineData(
+      'v8.1', 'محصَّن لأندرويد', 'Android Hardened', 98.0,
+      'LATEST', 'gold',
+      ['4-Pass WAV', 'MDS', 'Crest Guard', 'SFM-NR', 'EQ_RAMP', 'Safe TMP'],
+      'إصلاح حرج من v8.0: مسار /tmp غير قابل للوصول في أندرويد — الآن يستخدم دليل مؤقت آمن. جميع تحسينات v8.0 محفوظة. تحسين خطي في رمب EQ بدل الخطوات التدريجية.',
+      'Critical fix from v8.0: /tmp path inaccessible on Android — now uses safe tempfile workdir. All v8.0 improvements preserved. Linear EQ ramp replaces coarse step tiers.',
+    ),
+    _EngineData(
       'v8.0', 'دقة مُعايَرة', 'Calibrated Precision', 96.0,
-      'NEW', 'gold',
+      '', 'gold',
       ['4-Pass WAV', 'MDS', 'Crest Guard', 'SFM-NR', 'Single Compand', 'BIAS_V8'],
       'إصلاح 5 أخطاء حرجة من v7.6: انعكاس اتجاه SPECTRAL_BIAS في 250Hz/4kHz/8kHz، compand مزدوج يسحق Crest، 5 limiters تراكمية، خطأ DR→LRA، وحارس Crest مستقل لكل pass.',
       '5 critical fixes from v7.6: inverted SPECTRAL_BIAS in 250Hz/4kHz/8kHz, double-stacked compand crushing Crest, 5 cumulative limiters, wrong DR→LRA type, and independent Crest Guard per pass.',
-    ),
-    _EngineData(
-      'v7.6', 'تقييم ذكي', 'Intelligent Assessment', 94.0,
-      'MDS', 'blue',
-      ['MDS System', 'SFM-NR', 'DR-Calibrated', 'Spectral Dist EQ', '4-Pass WAV', 'A-Weighting'],
-      'أول نسخة بنظام MDS: الانبساط الطيفي SFM + النطاق الديناميكي + المسافة الطيفية + بصمة تلف الكودك. تشخيص مستمر 0-100 بدل 5 تصنيفات ثنائية.',
-      'First with MDS (Multi-Metric Damage Score): Spectral Flatness + Dynamic Range + Spectral Distance + Codec Damage Fingerprint. Continuous 0-100 diagnosis replacing 5 binary tiers.',
-    ),
-    _EngineData(
-      'v7.5', 'دقة منضبطة', 'Disciplined Precision', 94.0,
-      'BEST', 'green',
-      ['Do-No-Harm', 'Crest-Aware', 'Quality Gate', '4-Pass WAV', 'Bark EQ', 'Single Compand'],
-      'مبدأ "لا ضرر": Quality Gate يحمي الجودة بعد كل pass، Crest-Aware يمنع bass boost عند انهيار Crest، compand واحد نظيف فقط — لا تكديس. العودة لبنية v7.0 المُثبَّتة.',
-      '"Do-No-Harm": Quality Gate protects output after each pass, Crest-Aware blocks bass boost when Crest degrades, single clean compand only — no stacking. Return to proven v7.0 architecture.',
     ),
     _EngineData(
       'v7.0', 'كلاسيكي', 'Classic', 91.0,
@@ -1023,9 +1017,8 @@ class _HomeScreenState extends State<HomeScreen>
         : const Color(0xFFF85149); // red for scores below 80
 
     const engineNames = {
+      'v8.1': 'Android Hardened',
       'v8.0': 'Calibrated Precision',
-      'v7.6': 'Intelligent Assessment',
-      'v7.5': 'Disciplined Precision',
       'v7.0': 'Classic',
     };
     final engineName = engineNames[_engine] ?? _engine;
