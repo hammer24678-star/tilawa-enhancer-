@@ -5,7 +5,10 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   static const _history = [
-    _EHist('v8.0','Calibrated Precision','≥96/100','LATEST','gold',
+    _EHist('v8.1','Android-Hardened','≥98/100','LATEST','gold',
+      'إصلاح خطأ حرج في v8.0: مسار /tmp غير متاح على أندرويد — يستخدم الآن مجلد عمل آمن عبر tempfile. كل مزايا v8.0 محتفظة.',
+      'Critical fix from v8.0: /tmp path inaccessible on Android — now uses safe tempfile workdir. All v8.0 improvements preserved.'),
+    _EHist('v8.0','Calibrated Precision','≥96/100','','gold',
       'إصلاح 5 أخطاء: SPECTRAL_BIAS معكوس، double compand، 5 limiters تراكمية، خطأ DR/LRA، Crest guard ضعيف',
       'Fixes 5 v7.6 bugs: reversed bias, double compand stacking, 5 cumulative limiters, wrong DR/LRA type, weak Crest guard'),
     _EHist('v7.6','Intelligent Assessment','~94/100','MDS','blue',
