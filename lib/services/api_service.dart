@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const String _base = 'https://carm5333-tilawa-server.hf.space';
-  static const int _chunkSize = 8 * 1024 * 1024;
+  static const int _chunkSize = 4 * 1024 * 1024; // S25: 4MB — better mobile retry granularity
   static const _mediaChannel = MethodChannel('com.tilawa.tilawa_enhancer/media');
 
   // SharedPreferences key for locally persisted job records
@@ -41,11 +41,22 @@ class ApiService {
 
   static Future<Map<String, dynamic>> _uploadDirect(
       File file, String engine) async {
-    final req = http.MultipartRequest('POST', Uri.parse('$_base/upload'));
-    req.files.add(await http.MultipartFile.fromPath('file', file.path));
-    req.fields['engine'] = engine;
-    final res = await req.send().timeout(const Duration(seconds: 60));
-    return jsonDecode(await res.stream.bytesToString());
+    // S25-DART5: retry wrapper (was fire-and-forget)
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        final req = http.MultipartRequest('POST', Uri.parse('$_base/upload'));
+        req.files.add(await http.MultipartFile.fromPath('file', file.path));
+        req.fields['engine'] = engine;
+        final res = await req.send().timeout(const Duration(seconds: 60));
+        final body = await res.stream.bytesToString();
+        if (res.statusCode == 200) return jsonDecode(body);
+        throw Exception('direct upload HTTP ${res.statusCode}');
+      } catch (e) {
+        if (attempt == 2) rethrow;
+        await Future.delayed(Duration(seconds: 2 << attempt));
+      }
+    }
+    throw Exception('unreachable');
   }
 
   static Future<Map<String, dynamic>> _uploadChunked(
@@ -54,9 +65,10 @@ class ApiService {
     int fileSize, {
     void Function(double, String)? onProgress,
   }) async {
-    final totalChunks = (fileSize / _chunkSize).ceil();
     final filename = file.path.split('/').last;
     onProgress?.call(0.02, 'بدء الجلسة...');
+
+    // S25-DART2: use server-negotiated chunk size (server may differ)
     final startRes = await http
         .post(
           Uri.parse('$_base/upload_start'),
@@ -64,22 +76,26 @@ class ApiService {
           body: jsonEncode({
             'filename': filename,
             'total_size': fileSize,
-            'total_chunks': totalChunks,
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final jobId = (jsonDecode(startRes.body) as Map)['job_id'] as String;
+    final startData = jsonDecode(startRes.body) as Map;
+    final jobId = startData['job_id'] as String;
+    // Respect server chunk size; fall back to our default
+    final serverChunkSize = (startData['chunk_size'] as int?) ?? _chunkSize;
+    final totalChunks = (fileSize / serverChunkSize).ceil();
 
     final raf = await file.open(mode: FileMode.read);
     try {
       for (int i = 0; i < totalChunks; i++) {
-        final offset = i * _chunkSize;
-        final size = ((fileSize - offset) < _chunkSize)
+        final offset = i * serverChunkSize;
+        final size = ((fileSize - offset) < serverChunkSize)
             ? (fileSize - offset)
-            : _chunkSize;
+            : serverChunkSize;
         await raf.setPosition(offset);
         final bytes = await raf.read(size);
-        onProgress?.call(0.05 + (i / totalChunks) * 0.60, 'رفع ${i + 1}/$totalChunks...');
+
+        // S25-DART4: exponential backoff 2s → 4s → 8s
         for (int attempt = 0; attempt < 3; attempt++) {
           try {
             final req =
@@ -89,30 +105,42 @@ class ApiService {
             req.files.add(http.MultipartFile.fromBytes('chunk', bytes,
                 filename: 'chunk_$i'));
             final res = await req.send().timeout(const Duration(seconds: 60));
-            // S20-D: always drain — unread streams leave sockets in CLOSE_WAIT
-            await res.stream.drain<void>();
+            await res.stream.drain<void>(); // S20-D: drain to avoid CLOSE_WAIT
             if (res.statusCode == 200) break;
-            // S20-E: non-200 = throw so retry loop or rethrow fires
-            throw Exception('chunk_$i upload failed: HTTP ${res.statusCode}');
+            throw Exception('chunk_$i HTTP ${res.statusCode}');
           } catch (e) {
             if (attempt == 2) rethrow;
-            await Future.delayed(const Duration(seconds: 2));
+            // S25-DART4: 2s → 4s → 8s
+            await Future.delayed(Duration(seconds: 2 << attempt));
           }
         }
+        // S25-DART3: progress fires AFTER chunk confirmed (was before send)
+        onProgress?.call(0.05 + ((i + 1) / totalChunks) * 0.60,
+            'رفع ${i + 1}/$totalChunks...');
       }
     } finally {
       await raf.close();
     }
 
-    onProgress?.call(0.68, 'دمج الأجزاء...');
+    // S25-DART6: finalize — server now validates all chunks received
+    onProgress?.call(0.67, 'دمج الأجزاء...');
     final finalRes = await http
         .post(
           Uri.parse('$_base/upload_finalize'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'job_id': jobId, 'engine': engine}),
+          body: jsonEncode({
+            'job_id': jobId,
+            'engine': engine,
+            'total_chunks': totalChunks, // server cross-checks this
+          }),
         )
-        .timeout(const Duration(minutes: 3)); // S20-F: was 30s — HF cold start can exceed that
-    return jsonDecode(finalRes.body);
+        .timeout(const Duration(minutes: 3));
+    final finalData = jsonDecode(finalRes.body) as Map;
+    // Surface missing-chunks error clearly
+    if (finalData['error'] != null) {
+      throw Exception('finalize: ${finalData['error']}');
+    }
+    return finalData;
   }
 
   // ── Poll status ────────────────────────────────────────────────────────────
