@@ -140,7 +140,7 @@ class ApiService {
     if (finalData['error'] != null) {
       throw Exception('finalize: ${finalData['error']}');
     }
-    return finalData;
+    return Map<String, dynamic>.from(finalData);
   }
 
   // ── Poll status ────────────────────────────────────────────────────────────
