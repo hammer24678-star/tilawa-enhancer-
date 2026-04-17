@@ -49,7 +49,7 @@ class ApiService {
         req.fields['engine'] = engine;
         final res = await req.send().timeout(const Duration(seconds: 60));
         final body = await res.stream.bytesToString();
-        if (res.statusCode == 200) return jsonDecode(body);
+        if (res.statusCode == 200) return Map<String, dynamic>.from(jsonDecode(body) as Map);
         throw Exception('direct upload HTTP ${res.statusCode}');
       } catch (e) {
         if (attempt == 2) rethrow;
