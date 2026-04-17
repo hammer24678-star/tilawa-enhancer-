@@ -61,8 +61,10 @@ jobs:
         run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: softprops/action-gh-release@v2
         with:
-          name: Tilawa-Enhancer-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+          tag_name: latest
+          name: "Tilawa Enhancer - Latest"
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
