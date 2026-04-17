@@ -1017,7 +1017,7 @@ class _HomeScreenState extends State<HomeScreen>
         : const Color(0xFFF85149); // red for scores below 80
 
     const engineNames = {
-      'v8.1': 'Android Hardened',
+      'v8.4': 'Source Tier Intelligence',
       'v8.0': 'Calibrated Precision',
       'v7.0': 'Classic',
     };

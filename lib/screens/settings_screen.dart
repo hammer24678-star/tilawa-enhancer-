@@ -5,7 +5,10 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   static const _history = [
-    _EHist('v8.1','Android-Hardened','≥98/100','LATEST','gold',
+        _EHist('v8.4','Source Tier Intelligence','≥98/100','LATEST','gold',
+      'يحلِّل جودة المصدر: يكشف تردد قطع الكودك، نوع الضوضاء، والقطع. يضبط NR والـ EQ بناءً على التصنيف.',
+      'Analyzes source quality: detects codec cutoff, noise type, clipping. Adapts NR, EQ, LRA per tier.'),
+_EHist('v8.1','Android-Hardened','≥98/100','','gold',
       'إصلاح خطأ حرج في v8.0: مسار /tmp غير متاح على أندرويد — يستخدم الآن مجلد عمل آمن عبر tempfile. كل مزايا v8.0 محتفظة.',
       'Critical fix from v8.0: /tmp path inaccessible on Android — now uses safe tempfile workdir. All v8.0 improvements preserved.'),
     _EHist('v8.0','Calibrated Precision','≥96/100','','gold',
