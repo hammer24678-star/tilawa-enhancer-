@@ -80,10 +80,20 @@ jobs:
         run: python3 patch_signing.py
 
       - name: Build APK (release)
-        run: flutter build apk --release --no-tree-shake-icons
+        run: |
+          flutter build apk --release --no-tree-shake-icons \
+            -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.STORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
       - name: Build AAB (Play Store)
-        run: flutter build appbundle --release --no-tree-shake-icons
+        run: |
+          flutter build appbundle --release --no-tree-shake-icons \
+            -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.STORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
       - name: Upload APK + AAB to GitHub Release
         uses: softprops/action-gh-release@v2
