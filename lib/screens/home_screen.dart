@@ -18,7 +18,7 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
-  String  _engine    = 'v8.5';
+  String  _engine    = 'v8.9';
   String  _status    = '';
   double  _progress  = 0;
   bool    _busy      = false;
@@ -46,8 +46,15 @@ class _HomeScreenState extends State<HomeScreen>
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
     _EngineData(
-      'v8.5', 'تقييم صادق', 'Honest Ceiling', 99.0,
+      'v8.9', 'خطوط ناعمة', 'Soft Tiers + LPC', 99.0,
       'LATEST', 'gold',
+      ['Soft Tiers', 'LPC Sibilants', 'NR Guard', 'LUFS Fix', 'Smear EQ', 'dur_s'],
+      'فئات تدريجية بدلاً من الحدود الحادة — تحسين دقيق للحروف الاحتكاكية بـ LPC — إصلاح LUFS بعد BSR.',
+      'Soft tier boundaries, LPC sibilant EQ, LUFS fix after BSR, NR depth guard.',
+    ),
+    _EngineData(
+      'v8.5', 'تقييم صادق', 'Honest Ceiling', 99.0,
+      '', 'gold',
       ['Tier Scoring', 'Full-File Ref', 'Phrase LRA', 'Source Tier', 'MDS Weighted', '64K Honest'],
       'تقييم طبقي صادق: ملف 64kbps يضرب السقف الفيزيائي يحصل على 95/100 لا 75/100. الدرجة_الطبقية تُقاس مقابل ما يمكن تحقيقه فعلاً. Full-file spectral بدلاً من 40 ثانية أولى.',
       'Honest tier scoring: a 64kbps file hitting its physical ceiling scores 95/100, not 75/100. score_tier vs achievable targets. Full-file spectral analysis replaces 40s clip.',
