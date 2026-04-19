@@ -18,7 +18,7 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
-  String  _engine    = 'v8.9';
+  String  _engine    = 'v9.0';
   String  _status    = '';
   double  _progress  = 0;
   bool    _busy      = false;
@@ -47,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen>
   static const _engines = [
     _EngineData(
       'v8.9', 'خطوط ناعمة', 'Soft Tiers + LPC', 99.0,
-      'LATEST', 'gold',
+      '', 'gold',
       ['Soft Tiers', 'LPC Sibilants', 'NR Guard', 'LUFS Fix', 'Smear EQ', 'dur_s'],
       'فئات تدريجية بدلاً من الحدود الحادة — تحسين دقيق للحروف الاحتكاكية بـ LPC — إصلاح LUFS بعد BSR.',
       'Soft tier boundaries, LPC sibilant EQ, LUFS fix after BSR, NR depth guard.',
