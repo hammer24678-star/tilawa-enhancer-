@@ -67,13 +67,6 @@ class _HomeScreenState extends State<HomeScreen>
       'Honest tier scoring: a 64kbps file hitting its physical ceiling scores 95/100, not 75/100. score_tier vs achievable targets. Full-file spectral analysis replaces 40s clip.',
     ),
     _EngineData(
-      'v8.1', 'محصَّن لأندرويد', 'Android Hardened', 98.0,
-      '', 'gold',
-      ['4-Pass WAV', 'MDS', 'Crest Guard', 'SFM-NR', 'EQ_RAMP', 'Safe TMP'],
-      'إصلاح حرج من v8.0: مسار /tmp غير قابل للوصول في أندرويد — الآن يستخدم دليل مؤقت آمن. جميع تحسينات v8.0 محفوظة. تحسين خطي في رمب EQ بدل الخطوات التدريجية.',
-      'Critical fix from v8.0: /tmp path inaccessible on Android — now uses safe tempfile workdir. All v8.0 improvements preserved. Linear EQ ramp replaces coarse step tiers.',
-    ),
-    _EngineData(
       'v8.0', 'دقة مُعايَرة', 'Calibrated Precision', 96.0,
       '', 'gold',
       ['4-Pass WAV', 'MDS', 'Crest Guard', 'SFM-NR', 'Single Compand', 'BIAS_V8'],
