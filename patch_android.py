@@ -347,3 +347,21 @@ if dead.exists():
 
 print()
 print("patch_android.py v11: DONE")
+
+# S27: Apply Google Services plugin for Firebase
+import re as _re
+gradle = Path("android/app/build.gradle").read_text()
+if 'com.google.gms.google-services' not in gradle:
+    gradle = gradle.rstrip() + "\napply plugin: 'com.google.gms.google-services'\n"
+    Path("android/app/build.gradle").write_text(gradle)
+    print("✓ google-services plugin applied to build.gradle")
+
+root_gradle = Path("android/build.gradle").read_text()
+if 'com.google.gms:google-services' not in root_gradle:
+    root_gradle = root_gradle.replace(
+        "dependencies {",
+        "dependencies {\n        classpath 'com.google.gms:google-services:4.4.2'",
+        1
+    )
+    Path("android/build.gradle").write_text(root_gradle)
+    print("✓ google-services classpath added to root build.gradle")

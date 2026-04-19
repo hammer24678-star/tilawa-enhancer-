@@ -79,6 +79,11 @@ jobs:
       - name: Patch build.gradle for signing
         run: python3 patch_signing.py
 
+      - name: Write google-services.json
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+          echo "google-services.json written"
+
       - name: Build APK (release)
         run: |
           flutter build apk --release --no-tree-shake-icons \

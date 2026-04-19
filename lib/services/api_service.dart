@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -26,6 +27,17 @@ class ApiService {
   }
 
   // ── Upload — auto-selects direct or chunked ────────────────────────────────
+
+  /// Get FCM token for push notifications (null if not available)
+  static Future<String?> _getFcmToken() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      return await messaging.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>> uploadFile(
     File file,
     String engine, {
@@ -76,6 +88,7 @@ class ApiService {
           body: jsonEncode({
             'filename': filename,
             'total_size': fileSize,
+            'fcm_token': await _getFcmToken() ?? '',
           }),
         )
         .timeout(const Duration(seconds: 15));
