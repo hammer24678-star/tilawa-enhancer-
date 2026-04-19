@@ -9,9 +9,13 @@ import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  final messaging = FirebaseMessaging.instance;
-  await messaging.requestPermission(alert: true, badge: true, sound: true);
+  try {
+    await Firebase.initializeApp();
+    final messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission(alert: true, badge: true, sound: true);
+  } catch (_) {
+    // FCM not configured — app runs normally without push notifications
+  }
   FlutterError.onError = FlutterError.presentError;
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
