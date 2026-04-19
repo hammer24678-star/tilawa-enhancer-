@@ -46,6 +46,13 @@ class _HomeScreenState extends State<HomeScreen>
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
     _EngineData(
+      'v9.0', 'التطور', 'The Evolution', 99.0,
+      'LATEST', 'gold',
+      ['Joint Opt', 'LFS Fix', 'NR→EQ', 'Hash Cache', 'Confidence', 'Clean Arch'],
+      'إعادة بناء كاملة: NR دائماً قبل EQ — مُحسِّن LUFS+LRA مشترك — كشف LFS صريح — 1890 سطر.',
+      'Full rewrite: NR before EQ, joint LUFS+LRA optimizer, explicit LFS detection. 1890 lines.',
+    ),
+    _EngineData(
       'v8.9', 'خطوط ناعمة', 'Soft Tiers + LPC', 99.0,
       '', 'gold',
       ['Soft Tiers', 'LPC Sibilants', 'NR Guard', 'LUFS Fix', 'Smear EQ', 'dur_s'],
