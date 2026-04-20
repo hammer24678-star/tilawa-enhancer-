@@ -689,7 +689,10 @@ class _HomeScreenState extends State<HomeScreen>
     decoration: BoxDecoration(
       color: const Color(0xFF161B22),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: const Color(0xFF21262D))),
+      border: Border.all(color: const Color(0xFF21262D)),
+      boxShadow: const [BoxShadow(
+        color: Color(0x26000000),
+        blurRadius: 12, offset: Offset(0, 3))]),
     child: Column(children: [
       // ── Header row ──────────────────────────────────────────────────
       Padding(
