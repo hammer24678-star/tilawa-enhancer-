@@ -36,6 +36,8 @@ class _HomeScreenState extends State<HomeScreen>
   bool    _isMerging  = false; // S20-A: true during server chunk-merge phase
   int     _pollErrors = 0;     // S22: consecutive poll error counter
   int     _fileBytes  = 0;     // S28: file size in bytes for estimated time
+  int?    _latencyMs;              // S28-T2: server latency in ms
+  int?    _latencyMs;              // S28-T2: server latency in ms
   DateTime? _processStart;     // S22: start time for 25-min hard timeout
 
   // S19: Wake server state
@@ -93,6 +95,14 @@ class _HomeScreenState extends State<HomeScreen>
     _checkServer();
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
+    // S28-T2: restore last engine selection
+    ApiService.loadLastEngine().then((e) {
+      if (mounted) setState(() => _engine = e);
+    });
+    // S28-T2: restore last engine selection
+    ApiService.loadLastEngine().then((e) {
+      if (mounted) setState(() => _engine = e);
+    });
   }
 
   @override
@@ -106,8 +116,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Server check ───────────────────────────────────────────────────────────
   Future<void> _checkServer() async {
-    final up = await ApiService.isServerRunning();
-    if (mounted) setState(() => _serverUp = up);
+    final ms = await ApiService.checkServer();
+    if (mounted) setState(() { _serverUp = ms != null; _latencyMs = ms; });
   }
 
   // S19: Wake server — polls every 5s for up to 35s
@@ -119,14 +129,15 @@ class _HomeScreenState extends State<HomeScreen>
 
     _wakeTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       _wakeAttempts++;
-      final up = await ApiService.isServerRunning();
+      final ms = await ApiService.checkServer();
+      final up = ms != null;
       if (!mounted) {
         _wakeTimer?.cancel();
         return;
       }
       if (up || _wakeAttempts >= 7) { // max 35s
         _wakeTimer?.cancel();
-        setState(() { _serverUp = up; _waking = false; _wakeAttempts = 0; });
+        setState(() { _serverUp = up; _latencyMs = ms; _waking = false; _wakeAttempts = 0; });
       }
     });
   }
@@ -327,6 +338,7 @@ class _HomeScreenState extends State<HomeScreen>
         engine: _engine,
         score: score,
         filename: filename,
+        originalName: _file?.path.split('/').last, // S28-T2
         metrics: sd,
       );
     }
@@ -420,6 +432,42 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           backgroundColor: const Color(0xFF200D0D),
           duration: const Duration(seconds: 4),
+        ));
+      }
+    }
+  }
+
+  // ── S28-T2: Share via Android share sheet ────────────────────────────────
+  Future<void> _shareFile() async {
+    if (_output == null) return;
+    HapticFeedback.lightImpact();
+    try {
+      await ApiService.shareAudio(_output!.path);
+    } catch (e) {
+      if (mounted) {
+        final s = LangProvider.strings(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(s.ar ? 'فشل المشاركة' : 'Share failed: $e'),
+          backgroundColor: const Color(0xFF200D0D),
+          duration: const Duration(seconds: 3),
+        ));
+      }
+    }
+  }
+
+  // ── S28-T2: Share via Android share sheet ────────────────────────────────
+  Future<void> _shareFile() async {
+    if (_output == null) return;
+    HapticFeedback.lightImpact();
+    try {
+      await ApiService.shareAudio(_output!.path);
+    } catch (e) {
+      if (mounted) {
+        final s = LangProvider.strings(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(s.ar ? 'فشل المشاركة' : 'Share failed: $e'),
+          backgroundColor: const Color(0xFF200D0D),
+          duration: const Duration(seconds: 3),
         ));
       }
     }
@@ -576,7 +624,11 @@ class _HomeScreenState extends State<HomeScreen>
               child: Text(
                 _waking
                   ? s.waking
-                  : (_serverUp ? s.serverOnline : s.serverOffline),
+                  : _serverUp
+                    ? (_latencyMs != null
+                        ? '\${s.serverOnline} · \${_latencyMs}ms'
+                        : s.serverOnline)
+                    : s.serverOffline,
                 style: TextStyle(
                   color: _serverUp
                     ? const Color(0xFF3FB950)
@@ -659,7 +711,10 @@ class _HomeScreenState extends State<HomeScreen>
     final col = _badgeColor(e.bc);
     final bg  = _badgeBg(e.bc);
     return GestureDetector(
-      onTap: () => setState(() => _engine = e.id),
+      onTap: () {
+        setState(() => _engine = e.id);
+        ApiService.saveLastEngine(e.id); // S28-T2: persist
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.fromLTRB(8,3,8,3),
@@ -1238,6 +1293,40 @@ class _HomeScreenState extends State<HomeScreen>
             )),
         ],
 
+        // S28-T2: Share button (only for content:// URIs = API 29+)
+        if (_output?.path.startsWith('content://') ?? false) ...[
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _shareFile,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8B949E),
+                side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+              icon: const Icon(Icons.share_rounded, size: 18),
+              label: Text(s.shareBtn,
+                style: const TextStyle(fontSize: 13)),
+            )),
+        ],
+        // S28-T2: Share button (only for content:// URIs = API 29+)
+        if (_output?.path.startsWith('content://') ?? false) ...[
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _shareFile,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF8B949E),
+                side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+              icon: const Icon(Icons.share_rounded, size: 18),
+              label: Text(s.shareBtn,
+                style: const TextStyle(fontSize: 13)),
+            )),
+        ],
         // Saved indicator
         if (_output != null) ...[
           const SizedBox(height: 8),

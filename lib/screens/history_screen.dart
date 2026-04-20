@@ -244,7 +244,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              Text(ApiService.buildFilename(engine),
+              // S28-T2: show original source name if stored, else fall back
+              Text(
+                job['original_name'] as String?
+                  ?? ApiService.buildFilename(engine),
                 maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Color(0xFFC9D1D9), fontSize: 11,
