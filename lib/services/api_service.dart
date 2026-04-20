@@ -315,6 +315,14 @@ class ApiService {
     } catch (_) {}
   }
 
+  /// Remove ALL saved job records (used by History "Clear All").
+  static Future<void> clearAllJobRecords() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_jobsKey);
+    } catch (_) {}
+  }
+
   // ── Build proper download filename ─────────────────────────────────────────
   // S21 BUG2 FIX: optional originalPath — preserves original filename prefix.
   // With originalPath:  {basename}__Tilawa_{engine}_{name}_1425H.mp3

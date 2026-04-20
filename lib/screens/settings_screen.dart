@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -153,6 +154,25 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
                 style: TextStyle(
                   color: Color(0xFF484F58), fontSize: 11)),
             ])),
+          // S28: Privacy policy link
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => launchUrl(
+              Uri.parse('https://profound-cactus-00498c.netlify.app/privacy_policy.html'),
+              mode: LaunchMode.externalApplication),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.privacy_tip_outlined,
+                  color: Color(0xFF484F58), size: 14),
+                const SizedBox(width: 6),
+                Text(s.privacyPolicy,
+                  style: const TextStyle(
+                    color: Color(0xFF484F58),
+                    fontSize: 12,
+                    decoration: TextDecoration.underline,
+                    decorationColor: Color(0xFF484F58))),
+              ]))),
           const SizedBox(height: 40),
         ],
       ),

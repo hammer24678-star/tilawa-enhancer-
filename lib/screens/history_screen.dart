@@ -95,6 +95,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() {});
   }
 
+  // S28: Clear All confirmation dialog
+  Future<void> _clearAll() async {
+    final s = LangProvider.strings(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161B22),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14)),
+        title: Text(s.clearAll,
+          style: const TextStyle(color: Color(0xFFD4AF37))),
+        content: Text(s.clearAllConfirm,
+          style: const TextStyle(color: Color(0xFFC9D1D9))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(s.ar ? 'لا' : 'No',
+              style: const TextStyle(color: Color(0xFF8B949E)))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(s.ar ? 'احذف' : 'Delete',
+              style: const TextStyle(color: Color(0xFFF85149)))),
+        ]));
+    if (confirmed == true && mounted) {
+      await ApiService.clearAllJobRecords();
+      setState(() => _jobs = []);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
@@ -105,7 +134,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
           color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF0A0C10),
         iconTheme: const IconThemeData(color: Color(0xFFD4AF37)),
-        elevation: 0),
+        elevation: 0,
+        actions: [
+          if (_jobs.isNotEmpty)
+            TextButton(
+              onPressed: _clearAll,
+              child: Text(s.clearAll,
+                style: const TextStyle(
+                  color: Color(0xFFF85149), fontSize: 12))),
+        ]),
       body: _loading
         ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37)))
         : _jobs.isEmpty

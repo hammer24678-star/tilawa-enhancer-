@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
@@ -34,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen>
   bool    _downloading = false; // RC3: prevent concurrent downloads
   bool    _isMerging  = false; // S20-A: true during server chunk-merge phase
   int     _pollErrors = 0;     // S22: consecutive poll error counter
+  int     _fileBytes  = 0;     // S28: file size in bytes for estimated time
   DateTime? _processStart;     // S22: start time for 25-min hard timeout
 
   // S19: Wake server state
@@ -129,6 +131,28 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
+  // ── S28: Cancel processing ────────────────────────────────────────────────
+  void _cancelProcessing() {
+    _pollTimer?.cancel();
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _busy = false; _progress = 0;
+      _status = ''; _isMerging = false;
+      _jobId = null;
+    });
+  }
+
+  // ── S28: Reset for new file ────────────────────────────────────────────────
+  void _resetForNewFile() {
+    setState(() {
+      _file = null; _result = null; _output = null;
+      _progress = 0; _status = '';
+      _jobId = null; _busy = false;
+      _isMerging = false; _sizeLabel = '';
+      _isLarge = false; _fileBytes = 0;
+    });
+  }
+
   // ── File picker ────────────────────────────────────────────────────────────
   Future<void> _pickFile() async {
     final r = await FilePicker.platform.pickFiles(
@@ -143,6 +167,7 @@ class _HomeScreenState extends State<HomeScreen>
         _status = ''; _progress = 0;
         _sizeLabel = '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
         _isLarge = bytes > 8 * 1024 * 1024;
+        _fileBytes = bytes;
       });
     }
   }
@@ -150,6 +175,7 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Process ────────────────────────────────────────────────────────────────
   Future<void> _process() async {
     if (_file == null || !_serverUp) return;
+    HapticFeedback.mediumImpact();
     setState(() {
       _busy = true; _progress = 0.02;
       _status = LangProvider.strings(context).uploading;
@@ -397,6 +423,38 @@ class _HomeScreenState extends State<HomeScreen>
         ));
       }
     }
+  }
+
+  // ── S28: Copy metrics to clipboard ───────────────────────────────────────
+  Future<void> _copyMetrics() async {
+    if (_result == null) return;
+    HapticFeedback.lightImpact();
+    final parts = <String>[];
+    if (_result!['score'] != null) parts.add('Score: ${_result!['score']}/100');
+    if (_result!['lufs']  != null) parts.add('LUFS: ${_result!['lufs']}');
+    if (_result!['rms']   != null) parts.add('RMS: ${_result!['rms']}');
+    if (_result!['crest'] != null) parts.add('Crest: ${_result!['crest']}');
+    if (_result!['lra']   != null) parts.add('LRA: ${_result!['lra']}');
+    parts.add('Engine: $_engine');
+    await Clipboard.setData(ClipboardData(text: parts.join('  |  ')));
+    if (mounted) {
+      final s = LangProvider.strings(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(s.copiedMetrics),
+        backgroundColor: const Color(0xFF1A1500),
+        duration: const Duration(seconds: 2),
+      ));
+    }
+  }
+
+  // ── S28: Estimated processing time ────────────────────────────────────────
+  String _estimatedTime() {
+    final mb = _fileBytes / 1024 / 1024;
+    if (mb < 5)  return '~1 min';
+    if (mb < 15) return '~2-3 min';
+    if (mb < 30) return '~4-6 min';
+    if (mb < 50) return '~7-10 min';
+    return '~10-20 min';
   }
 
   // ── BUILD ──────────────────────────────────────────────────────────────────
@@ -768,6 +826,18 @@ class _HomeScreenState extends State<HomeScreen>
               _badge(s.chunkedBadge, 'gold'),
             ],
           ]),
+          // S28: Estimated processing time
+          if (_fileBytes > 0) ...[
+            const SizedBox(height: 4),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.timer_outlined, size: 11,
+                color: Color(0xFF484F58)),
+              const SizedBox(width: 4),
+              Text('${s.estTime}: ${_estimatedTime()}',
+                style: const TextStyle(
+                  color: Color(0xFF484F58), fontSize: 10)),
+            ]),
+          ],
         ],
         const SizedBox(height: 4),
         Text(s.sizeLimit,
@@ -1011,6 +1081,17 @@ class _HomeScreenState extends State<HomeScreen>
           value: _isMerging ? null : _progress, minHeight: 8,
           backgroundColor: const Color(0xFF21262D),
           valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)))),
+      // S28: Cancel button
+      const SizedBox(height: 10),
+      TextButton.icon(
+        onPressed: _cancelProcessing,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 4)),
+        icon: const Icon(Icons.cancel_outlined, size: 16,
+          color: Color(0xFF8B949E)),
+        label: Text(s.cancelBtn,
+          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
+      ),
     ]),
   );
 
@@ -1031,6 +1112,9 @@ class _HomeScreenState extends State<HomeScreen>
         : const Color(0xFFF85149); // red for scores below 80
 
     const engineNames = {
+      'v9.0': 'The Evolution',
+      'v8.9': 'Soft Tiers + LPC',
+      'v8.5': 'Honest Ceiling',
       'v8.4': 'Source Tier Intelligence',
       'v8.0': 'Calibrated Precision',
       'v7.0': 'Classic',
@@ -1166,18 +1250,42 @@ class _HomeScreenState extends State<HomeScreen>
                 color: Color(0xFF3FB950), fontSize: 11)),
           ]),
         ],
+        // S28: Process Another File button
+        const SizedBox(height: 12),
+        SizedBox(width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _resetForNewFile,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF58A6FF),
+              side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12))),
+            icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+            label: Text(s.processAnother,
+              style: const TextStyle(fontSize: 13)),
+          )),
       ]),
     );
   }
 
-  Widget _metricsRow() => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-    children: [
-      if (_result?['lufs']  != null) _metric('LUFS',  _result!['lufs'].toString()),
-      if (_result?['rms']   != null) _metric('RMS',   _result!['rms'].toString()),
-      if (_result?['crest'] != null) _metric('Crest', _result!['crest'].toString()),
-      if (_result?['lra']   != null) _metric('LRA',   _result!['lra'].toString()),
-    ],
+  // S28: Tappable metrics row — tap to copy all values to clipboard
+  Widget _metricsRow() => InkWell(
+    onTap: _copyMetrics,
+    borderRadius: BorderRadius.circular(8),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          if (_result?['lufs']  != null) _metric('LUFS',  _result!['lufs'].toString()),
+          if (_result?['rms']   != null) _metric('RMS',   _result!['rms'].toString()),
+          if (_result?['crest'] != null) _metric('Crest', _result!['crest'].toString()),
+          if (_result?['lra']   != null) _metric('LRA',   _result!['lra'].toString()),
+          const Icon(Icons.copy_rounded, size: 12, color: Color(0xFF484F58)),
+        ],
+      ),
+    ),
   );
 
   Widget _metric(String label, String value) => Column(children: [

@@ -59,6 +59,15 @@ class S {
        : 'Job expired — server has cleared the file';
   String get historyTitle => ar ? 'سجل الملفات المعالجة' : 'Processing History';
 
+  // S28: QoL strings
+  String get cancelBtn      => ar ? 'إلغاء'                          : 'Cancel';
+  String get processAnother => ar ? 'معالجة ملف آخر'               : 'Process Another File';
+  String get clearAll       => ar ? 'مسح الكل'                     : 'Clear All';
+  String get clearAllConfirm=> ar ? 'حذف سجل الملفات كاملاً؟'        : 'Delete all history?';
+  String get copiedMetrics  => ar ? 'تم نسخ القياسات'              : 'Metrics copied';
+  String get estTime        => ar ? 'وقت مقدر'                     : 'Est.';
+  String get privacyPolicy  => ar ? 'سياسة الخصوصية'               : 'Privacy Policy';
+
   // Welcome
   String get welcomeStart => ar ? 'ابدأ الآن'  : 'Get Started';
   String get howItWorks   => ar ? 'كيف يعمل؟' : 'How it works';
