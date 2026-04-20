@@ -65,50 +65,7 @@ class ApiService {
     } catch (_) {
       return 'v9.0';
     }
-  }
-
-  // ── S28-T2: Server latency check ──────────────────────────────────────────
-  /// Returns latency in ms if server is up, null if unreachable.
-  static Future<int?> checkServer() async {
-    try {
-      final t0 = DateTime.now().millisecondsSinceEpoch;
-      final res = await http
-          .get(Uri.parse('$_base/'))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        return DateTime.now().millisecondsSinceEpoch - t0;
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // ── S28-T2: Share audio file via Android share sheet ──────────────────────
-  static Future<void> shareAudio(String uri) async {
-    await _mediaChannel.invokeMethod<void>('shareFile', {'uri': uri});
-  }
-
-  // ── S28-T2: Persist last used engine ──────────────────────────────────────
-  static const _lastEngineKey = 'last_engine_v1';
-
-  static Future<void> saveLastEngine(String engine) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_lastEngineKey, engine);
-    } catch (_) {}
-  }
-
-  static Future<String> loadLastEngine() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_lastEngineKey) ?? 'v9.0';
-    } catch (_) {
-      return 'v9.0';
-    }
-  }
-
-  // ── Upload — auto-selects direct or chunked ────────────────────────────────
+  }  // ── Upload — auto-selects direct or chunked ────────────────────────────────
 
   /// Get FCM token for push notifications (null if not available)
   static Future<String?> _getFcmToken() async {

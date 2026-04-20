@@ -37,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen>
   int     _pollErrors = 0;     // S22: consecutive poll error counter
   int     _fileBytes  = 0;     // S28: file size in bytes for estimated time
   int?    _latencyMs;              // S28-T2: server latency in ms
-  int?    _latencyMs;              // S28-T2: server latency in ms
   DateTime? _processStart;     // S22: start time for 25-min hard timeout
 
   // S19: Wake server state
@@ -454,25 +453,6 @@ class _HomeScreenState extends State<HomeScreen>
       }
     }
   }
-
-  // ── S28-T2: Share via Android share sheet ────────────────────────────────
-  Future<void> _shareFile() async {
-    if (_output == null) return;
-    HapticFeedback.lightImpact();
-    try {
-      await ApiService.shareAudio(_output!.path);
-    } catch (e) {
-      if (mounted) {
-        final s = LangProvider.strings(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(s.ar ? 'فشل المشاركة' : 'Share failed: $e'),
-          backgroundColor: const Color(0xFF200D0D),
-          duration: const Duration(seconds: 3),
-        ));
-      }
-    }
-  }
-
   // ── S28: Copy metrics to clipboard ───────────────────────────────────────
   Future<void> _copyMetrics() async {
     if (_result == null) return;
