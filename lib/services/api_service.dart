@@ -299,7 +299,6 @@ class ApiService {
     required double score,
     required String filename,
     String? originalName,        // S28: original source file name
-    String? originalName,
     Map<String, dynamic>? metrics,
   }) async {
     try {

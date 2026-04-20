@@ -61,7 +61,6 @@ class S {
 
   // S28: QoL strings
   String get shareBtn       => ar ? 'مشاركة'                           : 'Share';
-  String get shareBtn       => ar ? 'مشاركة'                           : 'Share';
   String get cancelBtn      => ar ? 'إلغاء'                          : 'Cancel';
   String get processAnother => ar ? 'معالجة ملف آخر'               : 'Process Another File';
   String get clearAll       => ar ? 'مسح الكل'                     : 'Clear All';
