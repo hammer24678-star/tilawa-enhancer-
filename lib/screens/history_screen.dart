@@ -167,7 +167,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: _jobs.length,
-                itemBuilder: (_, i) => _jobCard(_jobs[i], s))));
+                itemBuilder: (_, i) {
+                  return TweenAnimationBuilder<double>(
+                    key: ValueKey(_jobs[i]['job_id']),
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: Duration(
+                      milliseconds: 280 + 55 * (i < 8 ? i : 8)),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, val, child) => Opacity(
+                      opacity: val,
+                      child: Transform.translate(
+                        offset: Offset(0, 16 * (1 - val)),
+                        child: child)),
+                    child: _jobCard(_jobs[i], s),
+                  );
+                })));
   }
 
   Widget _jobCard(Map<String, dynamic> job, S s) {

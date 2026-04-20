@@ -44,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen>
   int  _wakeAttempts = 0;
 
   late final AnimationController _glowCtrl;
+  late final AnimationController _resultCtrl; // S29: result card entrance
 
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
@@ -91,6 +92,8 @@ class _HomeScreenState extends State<HomeScreen>
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 2))
       ..repeat(reverse: true);
+    _resultCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
     _checkServer();
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
@@ -109,6 +112,7 @@ class _HomeScreenState extends State<HomeScreen>
     _serverTimer?.cancel();
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
+    _resultCtrl.dispose();
     _glowCtrl.dispose();
     super.dispose();
   }
@@ -330,6 +334,8 @@ class _HomeScreenState extends State<HomeScreen>
       _status = file != null ? s.done : 'فشل: $error';
     });
 
+    if (file != null) _resultCtrl.forward(from: 0); // S29: animate in
+
     // S19: Save job record locally for persistent re-download
     if (file != null && _jobId != null) {
       await ApiService.saveJobRecord(
@@ -490,20 +496,41 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     return Scaffold(
-      body: SafeArea(
-        child: CustomScrollView(slivers: [
-          SliverToBoxAdapter(child: _header(s)),
-          SliverToBoxAdapter(child: _serverBanner(s)),
-          SliverToBoxAdapter(child: _engineSelector(s)),
-          SliverToBoxAdapter(child: _fileCard(s)),
-          if (_busy || _progress > 0)
-            SliverToBoxAdapter(child: _progressCard(s)),
-          if (_result != null)
-            SliverToBoxAdapter(child: _resultCard(s)),
-          SliverToBoxAdapter(child: _bottomRow(s)),
-          SliverToBoxAdapter(child: _donationCard(s)),
-          const SliverToBoxAdapter(child: SizedBox(height: 40)),
-        ]),
+      backgroundColor: const Color(0xFF080A0E),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF080A0E), Color(0xFF0C1018)])),
+        child: SafeArea(
+          child: CustomScrollView(slivers: [
+            SliverToBoxAdapter(child: _header(s)),
+            SliverToBoxAdapter(child: _serverBanner(s)),
+            SliverToBoxAdapter(child: _engineSelector(s)),
+            SliverToBoxAdapter(child: _fileCard(s)),
+            if (_busy || _progress > 0)
+              SliverToBoxAdapter(child: _progressCard(s)),
+            if (_result != null)
+              SliverToBoxAdapter(
+                child: FadeTransition(
+                  opacity: CurvedAnimation(
+                    parent: _resultCtrl, curve: Curves.easeOut),
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.1),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: _resultCtrl, curve: Curves.easeOutCubic)),
+                    child: _resultCard(s),
+                  ),
+                ),
+              ),
+            SliverToBoxAdapter(child: _bottomRow(s)),
+            SliverToBoxAdapter(child: _donationCard(s)),
+            const SliverToBoxAdapter(child: SizedBox(height: 40)),
+          ]),
+        ),
       ),
     );
   }
@@ -543,20 +570,29 @@ class _HomeScreenState extends State<HomeScreen>
       Row(children: [
         _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
         const SizedBox(width: 6),
-        _iconBtn(Icons.settings_outlined, () => Navigator.push(
-          context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
+        _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const SettingsScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 220),
+          ))),
       ]),
     ]),
   );
 
-  Widget _iconBtn(IconData icon, VoidCallback onTap) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.all(9),
-      decoration: BoxDecoration(
-        color: const Color(0xFF161B22), shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFF21262D))),
-      child: Icon(icon, color: const Color(0xFF8B949E), size: 20)));
+  Widget _iconBtn(IconData icon, VoidCallback onTap) => Material(
+    color: const Color(0xFF161B22),
+    shape: const CircleBorder(
+      side: BorderSide(color: Color(0xFF21262D))),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      splashColor: const Color(0xFFD4AF37).withOpacity(0.18),
+      highlightColor: const Color(0xFFD4AF37).withOpacity(0.08),
+      child: Padding(
+        padding: const EdgeInsets.all(9),
+        child: Icon(icon, color: const Color(0xFF8B949E), size: 20))));
 
   // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
   Widget _serverBanner(S s) {
@@ -839,7 +875,10 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: _file != null ? const Color(0xFFD4AF37) : const Color(0xFF30363D),
-          width: 1.5)),
+          width: 1.5),
+        boxShadow: const [BoxShadow(
+          color: Color(0x26000000),
+          blurRadius: 12, offset: Offset(0, 3))]),
       child: Column(children: [
         Icon(_file != null ? Icons.audio_file : Icons.add_circle_outline,
           color: const Color(0xFFD4AF37), size: 52),
@@ -890,10 +929,20 @@ class _HomeScreenState extends State<HomeScreen>
                   borderRadius: BorderRadius.circular(10)),
                 disabledBackgroundColor:
                   const Color(0xFFD4AF37).withOpacity(0.3)),
-              child: Text(
-                _busy ? s.processing : '${s.process} — $_engine',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 15)))),
+              child: _busy
+                ? Row(mainAxisSize: MainAxisSize.min, children: [
+                    const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF0A0C10))),
+                    const SizedBox(width: 10),
+                    Text(s.processing,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15)),
+                  ])
+                : Text('${s.process} — $_engine',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 15)))),
         ],
       ]),
     ),
@@ -1097,7 +1146,10 @@ class _HomeScreenState extends State<HomeScreen>
     decoration: BoxDecoration(
       color: const Color(0xFF161B22),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: const Color(0xFF21262D))),
+      border: Border.all(color: const Color(0xFF21262D)),
+      boxShadow: const [BoxShadow(
+        color: Color(0x26000000),
+        blurRadius: 12, offset: Offset(0, 3))]),
     child: Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Flexible(child: Text(_status.isEmpty ? s.processing : _status,
@@ -1168,7 +1220,12 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: score < 80 ? const Color(0xFFF85149) : const Color(0xFF3FB950),
-          width: 1.2)),
+          width: 1.2),
+        boxShadow: [BoxShadow(
+          color: (score < 80
+              ? const Color(0xFFF85149)
+              : const Color(0xFF3FB950)).withOpacity(0.12),
+          blurRadius: 24, offset: const Offset(0, 6))]),
       child: Column(children: [
         // Score
         Row(
@@ -1176,14 +1233,28 @@ class _HomeScreenState extends State<HomeScreen>
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(label, style: TextStyle(
-              color: scoreColor,
-              fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(width: 10),
-            Text('${score.toStringAsFixed(1)}/100',
-              style: TextStyle(
+            // S29: label as badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: scoreColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: scoreColor.withOpacity(0.4))),
+              child: Text(label, style: TextStyle(
                 color: scoreColor,
-                fontWeight: FontWeight.w900, fontSize: 34)),
+                fontWeight: FontWeight.bold, fontSize: 13))),
+            const SizedBox(width: 12),
+            // S29: score counts up with result animation
+            AnimatedBuilder(
+              animation: _resultCtrl,
+              builder: (_, __) {
+                final t = Curves.easeOutCubic.transform(_resultCtrl.value);
+                return Text(
+                  '${(score * t).toStringAsFixed(1)}/100',
+                  style: TextStyle(
+                    color: scoreColor,
+                    fontWeight: FontWeight.w900, fontSize: 34));
+              }),
           ]),
         const SizedBox(height: 12),
 
@@ -1370,7 +1441,12 @@ class _HomeScreenState extends State<HomeScreen>
     padding: const EdgeInsets.fromLTRB(16,10,16,4),
     child: GestureDetector(
       onTap: () => Navigator.push(context,
-        MaterialPageRoute(builder: (_) => const HistoryScreen())),
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const HistoryScreen(),
+          transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 220),
+        )),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
