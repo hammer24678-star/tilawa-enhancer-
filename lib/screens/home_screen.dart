@@ -639,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen>
                   ? s.waking
                   : _serverUp
                     ? (_latencyMs != null
-                        '${s.serverOnline} · ${_latencyMs}ms' // S30-S
+                        ? '${s.serverOnline} · ${_latencyMs}ms' // S30-S
                         : s.serverOnline)
                     : s.serverOffline,
                 style: TextStyle(
