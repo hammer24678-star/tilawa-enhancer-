@@ -153,7 +153,9 @@ class _TilawaAppState extends State<TilawaApp> {
                   themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
                   darkTheme: _buildDarkTheme(),
                   theme: _buildLightTheme(),
-                  home: const WelcomeScreen(), // S31-F1: always show on launch
+                  home: widget.seenWelcome
+                      ? const HomeScreen()
+                      : const WelcomeScreen(),
                 );
               },
             );
