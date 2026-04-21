@@ -243,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen>
           setState(() {
             _busy = false;
             _isMerging = false;  // S20-B: clear merge animation on server error
-            _status = 'فشل: ${st['error']}';
+            _status = 'فشل: ${st['''error'''] ?? '''خطأ غير معروف'''}';
           });
           return;
         }
