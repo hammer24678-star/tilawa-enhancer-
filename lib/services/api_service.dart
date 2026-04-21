@@ -61,7 +61,7 @@ class ApiService {
   static Future<String> loadLastEngine() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_lastEngineKey) ?? 'v9.0';
+      return prefs.getString(_lastEngineKey) ?? 'v10.0'; // S31
     } catch (_) {
       return 'v9.0';
     }

@@ -20,7 +20,7 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
-  String  _engine    = 'v9.0';
+  String  _engine    = 'v10.0';
   String  _status    = '';
   double  _progress  = 0;
   bool    _busy      = false;
@@ -51,19 +51,20 @@ class _HomeScreenState extends State<HomeScreen>
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
     _EngineData(
+      'v10.0', 'الأثيريون — الأساس', 'Aetherion Foundation', 99.0,
+      'NEW', 'gold',
+      ['24 Fixes', 'Two-Stage NR', 'L-BFGS-B EQ', 'Joint Opt', 'Declip', 'v10 NR'],
+      '٢٤ إصلاحاً تراكمياً من v9.0: تخفيض ضوضاء ثنائي — تحسين طيفي L-BFGS-B — 8 إصلاحات حرجة في LUFS وLRA ومدى التضخيم.',
+      '24 cumulative fixes from v9.0: two-stage NR (hum + broadband), L-BFGS-B spectral EQ, 8 critical bug fixes including LUFS measurement and ±18dB joint gain range.',
+    ),
+    _EngineData(
       'v9.0', 'التطور', 'The Evolution', 99.0,
-      'LATEST', 'gold',
+      '', 'gold', // v9.0 badge cleared S31
       ['Joint Opt', 'LFS Fix', 'NR→EQ', 'Hash Cache', 'Confidence', 'Clean Arch'],
       'إعادة بناء كاملة: NR دائماً قبل EQ — مُحسِّن LUFS+LRA مشترك — كشف LFS صريح — 1890 سطر.',
       'Full rewrite: NR before EQ, joint LUFS+LRA optimizer, explicit LFS detection. 1890 lines.',
     ),
-    _EngineData(
-      'v8.9', 'خطوط ناعمة', 'Soft Tiers + LPC', 99.0,
-      '', 'gold',
-      ['Soft Tiers', 'LPC Sibilants', 'NR Guard', 'LUFS Fix', 'Smear EQ', 'dur_s'],
-      'فئات تدريجية بدلاً من الحدود الحادة — تحسين دقيق للحروف الاحتكاكية بـ LPC — إصلاح LUFS بعد BSR.',
-      'Soft tier boundaries, LPC sibilant EQ, LUFS fix after BSR, NR depth guard.',
-    ),
+    // v8.9 removed S31
     _EngineData(
       'v8.5', 'تقييم صادق', 'Honest Ceiling', 99.0,
       '', 'gold',
@@ -1214,6 +1215,7 @@ class _HomeScreenState extends State<HomeScreen>
         : const Color(0xFFF85149); // red for scores below 80
 
     const engineNames = {
+      'v10.0': 'Aetherion Foundation',
       'v9.0': 'The Evolution',
       'v8.9': 'Soft Tiers + LPC',
       'v8.5': 'Honest Ceiling',
