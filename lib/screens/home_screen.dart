@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:async';
-import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
 import 'dart:math' show pi; // S30-R1
 import 'package:flutter/material.dart';
+import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -489,6 +489,18 @@ class _HomeScreenState extends State<HomeScreen>
     if (mb < 50) return '~7-10 min';
     return '~10-20 min';
   }
+
+  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
+  // Dart library-private functions (_name) can't cross library boundaries, so
+  // we define them here inside the class instead of importing from main.dart.
+  bool  _isDark(BuildContext ctx)   => ThemeProvider.isDark(ctx);
+  Color _cBg(BuildContext ctx)      => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+  Color _cCard(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx)  => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
+  Color _cText(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
+  Color _cSub(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
+  Color _cDim(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
+  Color _cGold(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
 
   // ── BUILD ──────────────────────────────────────────────────────────────────
   @override

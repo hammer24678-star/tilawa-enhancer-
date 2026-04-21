@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
+import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart'; // S30-P8
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
@@ -126,6 +126,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() => _jobs = []);
     }
   }
+
+  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
+  bool  _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
+  Color _cBg(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+  Color _cGold(BuildContext ctx)  => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
 
   @override
   Widget build(BuildContext context) {

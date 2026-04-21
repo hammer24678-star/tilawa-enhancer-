@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
+import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/lang_provider.dart';
@@ -66,6 +66,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       ),
     );
   }
+
+  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
+  bool  _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
+  Color _cBg(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
 
   @override
   Widget build(BuildContext context) {

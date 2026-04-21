@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
 import 'package:shared_preferences/shared_preferences.dart'; // S31-F1
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
@@ -47,6 +46,11 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
       'البداية: De-Clipping + A-Weighting + Bark Scale EQ (24 نطاق) + Two-Pass LUFS. أساس كل شيء',
       'The beginning: De-Clipping + A-Weighting + Bark Scale EQ (24 bands) + Two-Pass LUFS. The foundation'),
   ];
+
+  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
+  bool  _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
+  Color _cBg(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+  Color _cGold(BuildContext ctx)  => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
 
   @override
   Widget build(BuildContext context) {
