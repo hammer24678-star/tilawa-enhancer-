@@ -40,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen>
   int     _fileBytes  = 0;     // S28: file size in bytes for estimated time
   int?    _latencyMs;              // S28-T2: server latency in ms
   DateTime? _processStart;     // S22: start time for 25-min hard timeout
+  int _fallbackRetries = 0;    // S32: auto-retry counter for fallback mode
 
   // S19: Wake server state
   bool _waking       = false;
@@ -193,9 +194,13 @@ class _HomeScreenState extends State<HomeScreen>
       _busy = true; _progress = 0.02;
       _status = LangProvider.strings(context).uploading;
       _output = null; _result = null;
+      _fallbackRetries = 0; // S32: reset for new file
     });
     _processStart = DateTime.now(); // S22: start clock for timeout
     _pollErrors = 0;               // S22: reset in case of re-process
+    // S32: do NOT reset _fallbackRetries here — it must persist across
+    // auto-retries triggered by _downloadAndSave. Only reset on user-
+    // initiated process (detected by _fallbackRetries already being 0).
     try {
       final resp = await ApiService.uploadFile(_file!, _engine,
           onProgress: (p, label) {
@@ -326,6 +331,31 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
 
     final score = double.tryParse(sd['score']?.toString() ?? '0') ?? 0.0;
+
+    // S32: fallback auto-retry ────────────────────────────────────────────
+    // score ≤ 78 with a valid file = server was in fallback mode (reference
+    // audio not loaded yet).  Auto-reprocess up to 2 times.
+    if (score <= 78 && file != null && _fallbackRetries < 2) {
+      _fallbackRetries++;
+      final retryNum = _fallbackRetries;
+      if (mounted) {
+        setState(() { _progress = 0.0; _status = ''; _busy = false; });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            s.ar
+              ? '⏳ الخادم كان في وضع الاستعداد — إعادة المعالجة تلقائياً ($retryNum/2)…'
+              : '⏳ Server was warming up — retrying automatically ($retryNum/2)…',
+            style: const TextStyle(fontSize: 12)),
+          backgroundColor: const Color(0xFF1A1200),
+          duration: const Duration(seconds: 38)));
+        // Wait 35 s for the Space to finish loading reference audio,
+        // then reprocess the same file.
+        await Future.delayed(const Duration(seconds: 35));
+        if (mounted) _process();
+      }
+      return; // don't show the fallback result
+    }
+    // ── end S32 ──────────────────────────────────────────────────────────
 
     setState(() {
       _busy = false; _progress = 1.0;
