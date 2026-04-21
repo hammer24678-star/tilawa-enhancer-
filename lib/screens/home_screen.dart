@@ -773,7 +773,7 @@ class _HomeScreenState extends State<HomeScreen>
                   Text(e.id, style: TextStyle(
                     // S31-F2b
                     color: sel ? col
-                      : (e.colorCode == 'gold'
+                      : (e.bc == 'gold'
                           ? const Color(0xFF8B7535)
                           : const Color(0xFFC9D1D9)),
                     fontWeight: FontWeight.bold, fontSize: 13)),
@@ -796,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen>
                 Text('≥${e.score.toInt()}', style: TextStyle(
                   // S31-F2: gold engines → muted gold when unselected
                   color: sel ? col
-                    : (e.colorCode == 'gold'
+                    : (e.bc == 'gold'
                         ? const Color(0xFF6B5A2A)
                         : const Color(0xFF484F58)),
                   fontWeight: FontWeight.w800, fontSize: 15)),
