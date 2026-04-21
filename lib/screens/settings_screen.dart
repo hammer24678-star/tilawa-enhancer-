@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
 import 'package:shared_preferences/shared_preferences.dart'; // S31-F1
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
@@ -52,13 +53,15 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
     final s = LangProvider.strings(context);
     final isAr = s.ar;
 
+    final cBg   = _cBg(context);
+    final cGold = _cGold(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0C10),
+      backgroundColor: cBg,
       appBar: AppBar(
-        title: Text(s.settings, style: const TextStyle(
-          color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF0A0C10),
-        iconTheme: const IconThemeData(color: Color(0xFFD4AF37)),
+        title: Text(s.settings, style: TextStyle(
+          color: cGold, fontWeight: FontWeight.bold)),
+        backgroundColor: cBg,
+        iconTheme: IconThemeData(color: cGold),
         elevation: 0,
         actions: [
           // Language toggle — uses InheritedWidget, instant rebuild

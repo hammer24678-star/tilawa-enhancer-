@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
 import 'package:flutter/services.dart'; // S30-P8
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
@@ -129,13 +130,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
+    final cBg   = _cBg(context);
+    final cGold = _cGold(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0C10),
+      backgroundColor: cBg,
       appBar: AppBar(
-        title: Text(s.historyTitle, style: const TextStyle(
-          color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF0A0C10),
-        iconTheme: const IconThemeData(color: Color(0xFFD4AF37)),
+        title: Text(s.historyTitle, style: TextStyle(
+          color: cGold, fontWeight: FontWeight.bold)),
+        backgroundColor: cBg,
+        iconTheme: IconThemeData(color: cGold),
         elevation: 0,
         actions: [
           if (_jobs.isNotEmpty)

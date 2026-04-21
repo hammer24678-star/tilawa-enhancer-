@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
 import 'dart:math' show pi; // S30-R1
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -500,14 +501,24 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
+    final dark = _isDark(context);
+    final cBg     = _cBg(context);
+    final cCard   = _cCard(context);
+    final cBorder = _cBorder(context);
+    final cText   = _cText(context);
+    final cSub    = _cSub(context);
+    final cDim    = _cDim(context);
+    final cGold   = _cGold(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF080A0E),
+      backgroundColor: cBg,
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFF080A0E), Color(0xFF0C1018)])),
+            colors: dark
+              ? [const Color(0xFF080A0E), const Color(0xFF0C1018)]
+              : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         child: SafeArea(
           child: CustomScrollView(slivers: [
             SliverToBoxAdapter(child: _header(s)),
@@ -772,10 +783,7 @@ class _HomeScreenState extends State<HomeScreen>
                 Row(children: [
                   Text(e.id, style: TextStyle(
                     // S31-F2b
-                    color: sel ? col
-                      : (e.bc == 'gold'
-                          ? const Color(0xFF8B7535)
-                          : const Color(0xFFC9D1D9)),
+                    color: sel ? col : const Color(0xFFC9D1D9), // S31-F4
                     fontWeight: FontWeight.bold, fontSize: 13)),
                   if (e.badge.isNotEmpty) ...[
                     const SizedBox(width: 6),
@@ -795,10 +803,7 @@ class _HomeScreenState extends State<HomeScreen>
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text('≥${e.score.toInt()}', style: TextStyle(
                   // S31-F2: gold engines → muted gold when unselected
-                  color: sel ? col
-                    : (e.bc == 'gold'
-                        ? const Color(0xFF6B5A2A)
-                        : const Color(0xFF484F58)),
+                  color: sel ? col : const Color(0xFF484F58), // S31-F4
                   fontWeight: FontWeight.w800, fontSize: 15)),
                 Text('/100', style: TextStyle(
                   color: sel ? col.withOpacity(0.45) : const Color(0xFF484F58),

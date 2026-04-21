@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart' show _isDark, _cBg, _cCard, _cBorder, _cText, _cSub, _cDim, _cGold; // S31-F2
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/lang_provider.dart';
@@ -70,7 +71,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0C10),
+      backgroundColor: _cBg(context),
       body: SafeArea(
         child: FadeTransition(
           opacity: _fade,
