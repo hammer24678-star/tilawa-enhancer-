@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // S31-F1
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
+import '../main.dart' show ThemeProvider; // S31-F4b
+import 'welcome_screen.dart'; // S31-F1
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -98,6 +101,12 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
                 onTap: () { if (isAr) LangProvider.toggle(context); }),
             ])),
 
+          // ── S31-F4b: Dark / Light mode toggle ─────────────────────────────
+          _themeTile(context, s),
+          const SizedBox(height: 4),
+          // ── S31-F1: Show Tutorial button ───────────────────────────────────
+          _tutorialTile(context, s),
+          const SizedBox(height: 4),
           // ── Target info ────────────────────────────────────────────────────
           Container(
             margin: const EdgeInsets.only(bottom: 20),
@@ -183,6 +192,68 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
     padding: const EdgeInsets.only(bottom: 8, top: 4),
     child: Text(title, style: const TextStyle(
       color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 1.5)));
+
+  // S31-F4b
+  Widget _themeTile(BuildContext context, S s) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: ThemeProvider.of(context),
+      builder: (ctx, dark, _) => Container(
+        margin: const EdgeInsets.only(bottom: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161B22),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF21262D))),
+        child: SwitchListTile(
+          secondary: Icon(
+            dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+            color: const Color(0xFFD4AF37)),
+          title: Text(
+            s.ar ? 'الوضع الداكن' : 'Dark Mode',
+            style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 14)),
+          subtitle: Text(
+            dark
+              ? (s.ar ? 'الوضع الحالي' : 'Currently active')
+              : (s.ar ? 'الوضع الفاتح نشط' : 'Light mode active'),
+            style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
+          value: dark,
+          activeColor: const Color(0xFFD4AF37),
+          onChanged: (_) => ThemeProvider.toggle(ctx),
+        ),
+      ),
+    );
+  }
+
+  // S31-F1-btn
+  Widget _tutorialTile(BuildContext context, S s) => Container(
+    margin: const EdgeInsets.only(bottom: 18),
+    decoration: BoxDecoration(
+      color: const Color(0xFF161B22),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFF21262D))),
+    child: ListTile(
+      leading: const Icon(Icons.play_lesson_rounded,
+        color: Color(0xFFD4AF37)),
+      title: Text(
+        s.ar ? 'عرض شاشة الترحيب' : 'Show Welcome Screen',
+        style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 14)),
+      subtitle: Text(
+        s.ar ? 'عرض دليل البداية مرة أخرى' : 'Re-show the onboarding guide',
+        style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
+      trailing: const Icon(Icons.arrow_forward_ios_rounded,
+        size: 14, color: Color(0xFF484F58)),
+      onTap: () async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('seen_welcome');
+        if (!context.mounted) return;
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const WelcomeScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 400),
+          ));
+      },
+    ));
 
   Widget _langPill(BuildContext context, String label,
       {required bool active, required VoidCallback onTap}) =>

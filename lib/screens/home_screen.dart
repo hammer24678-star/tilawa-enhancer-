@@ -66,6 +66,13 @@ class _HomeScreenState extends State<HomeScreen>
     ),
     // v8.9 removed S31
     _EngineData(
+      'v8.7', 'سقف مدروس', 'Studied Ceiling', 99.0,
+      '', 'gold',
+      ['Bitrate Floor', 'Phrase 3s Min', 'Do-No-Harm Fix', 'LUFS ±18dB', 'LRA Sliding', 'Joint ±18dB'],
+      'إصلاح 6 أخطاء حرجة من v8.5: حد أدنى لمعدل البت يمنع تصنيف الملفات الهادئة خطأً، لا يُشغِّل تقدير LRA إلا لمقاطع أطول من 3 ثوانٍ، مقارنة Do-No-Harm بـ Crest القابل للتحقيق، نطاق قطع LUFS ±18dB، نافذة انزلاق وسيطة لـ LRA، نطاق ±18dB للكسب المشترك.',
+      '6 critical fixes from v8.5: bitrate floor stops quiet-file misclassification, phrase LRA requires 3s minimum, Do-No-Harm compares to achievable Crest, ±18dB LUFS trim range, sliding window median for LRA, ±18dB joint gain range.',
+    ),
+    _EngineData(
       'v8.5', 'تقييم صادق', 'Honest Ceiling', 99.0,
       '', 'gold',
       ['Tier Scoring', 'Full-File Ref', 'Phrase LRA', 'Source Tier', 'MDS Weighted', '64K Honest'],
@@ -764,7 +771,11 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                 Row(children: [
                   Text(e.id, style: TextStyle(
-                    color: sel ? col : const Color(0xFFC9D1D9),
+                    // S31-F2b
+                    color: sel ? col
+                      : (e.colorCode == 'gold'
+                          ? const Color(0xFF8B7535)
+                          : const Color(0xFFC9D1D9)),
                     fontWeight: FontWeight.bold, fontSize: 13)),
                   if (e.badge.isNotEmpty) ...[
                     const SizedBox(width: 6),
@@ -783,10 +794,15 @@ class _HomeScreenState extends State<HomeScreen>
               ])),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text('≥${e.score.toInt()}', style: TextStyle(
-                  color: sel ? col : const Color(0xFF484F58),
+                  // S31-F2: gold engines → muted gold when unselected
+                  color: sel ? col
+                    : (e.colorCode == 'gold'
+                        ? const Color(0xFF6B5A2A)
+                        : const Color(0xFF484F58)),
                   fontWeight: FontWeight.w800, fontSize: 15)),
-                Text('/100', style: const TextStyle(
-                  color: Color(0xFF484F58), fontSize: 8)),
+                Text('/100', style: TextStyle(
+                  color: sel ? col.withOpacity(0.45) : const Color(0xFF484F58),
+                  fontSize: 8)),
               ]),
             ])),
           // ── Expanded details (selected engine only) ──────────────────

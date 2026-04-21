@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../state/lang_provider.dart';
 import 'home_screen.dart';
@@ -10,33 +11,48 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
+    with TickerProviderStateMixin {
+  late final AnimationController _fadeCtrl;
+  late final AnimationController _pulseCtrl;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
+  late final Animation<double> _pulse;
   int _page = 0;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 700));
-    _fade  = CurvedAnimation(parent: _ctrl, curve: Curves.easeIn);
-    _slide = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
-    _ctrl.forward();
+    _fadeCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _pulseCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2200))
+      ..repeat(reverse: true);
+
+    _fade  = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeIn);
+    _slide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOutCubic));
+    _pulse = Tween<double>(begin: 0.85, end: 1.15)
+        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+
+    _fadeCtrl.forward();
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _fadeCtrl.dispose();
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
 
-  void _nextPage() {
-    _ctrl.reset();
-    setState(() => _page = 1);
-    _ctrl.forward();
+  void _goPage(int p) {
+    HapticFeedback.selectionClick();
+    _fadeCtrl.reset();
+    setState(() => _page = p);
+    _fadeCtrl.forward();
   }
 
   Future<void> _finish() async {
+    HapticFeedback.lightImpact();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('seen_welcome', true);
     if (!mounted) return;
@@ -60,74 +76,93 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           opacity: _fade,
           child: SlideTransition(
             position: _slide,
-            child: _page == 0 ? _page0(s) : _page1(s),
+            child: _page == 0 ? _page0(s) : _page == 1 ? _page1(s) : _page2(s),
           ),
         ),
       ),
     );
   }
 
+  // ── Page 0: Brand splash ──────────────────────────────────────────────────
   Widget _page0(S s) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 32),
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Logo with glow
-        Container(
-          width: 150, height: 150,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFD4AF37).withOpacity(0.35),
-                blurRadius: 50, spreadRadius: 8),
-            ],
-          ),
-          child: ClipOval(
-            child: Image.asset('assets/images/logo.png', fit: BoxFit.cover,
-              errorBuilder: (_,__,___) => Container(
-                color: const Color(0xFF1A1500),
-                child: const Icon(Icons.music_note,
-                  color: Color(0xFFD4AF37), size: 70))))),
-        const SizedBox(height: 36),
+        // Pulsing gold ring around logo
+        AnimatedBuilder(
+          animation: _pulse,
+          builder: (_, child) => Container(
+            width: 160, height: 160,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFD4AF37)
+                      .withOpacity(0.15 * _pulse.value),
+                  blurRadius: 50 * _pulse.value,
+                  spreadRadius: 10 * _pulse.value),
+              ],
+            ),
+            child: child),
+          child: Container(
+            width: 160, height: 160,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFFD4AF37).withOpacity(0.4),
+                width: 1.5)),
+            child: ClipOval(
+              child: Image.asset('assets/images/logo.png', fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: const Color(0xFF1A1500),
+                  child: const Icon(Icons.music_note,
+                    color: Color(0xFFD4AF37), size: 70))))),
+        ),
+        const SizedBox(height: 40),
         Text(s.appName,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            fontSize: 34, fontWeight: FontWeight.bold,
-            color: Color(0xFFD4AF37), height: 1.2)),
-        const SizedBox(height: 10),
+            fontSize: 36, fontWeight: FontWeight.bold,
+            color: Color(0xFFD4AF37), height: 1.2,
+            letterSpacing: -0.5)),
+        const SizedBox(height: 8),
         Text(s.subtitle,
           style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 12, letterSpacing: 2.5)),
-        const SizedBox(height: 32),
+            color: Color(0xFF8B949E), fontSize: 11,
+            letterSpacing: 3.0)),
+        const SizedBox(height: 36),
         Text(s.welcomeDesc,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            color: Color(0xFFC9D1D9), fontSize: 14, height: 1.8)),
-        const SizedBox(height: 44),
-        _primaryBtn(s.howItWorks, _nextPage),
-        const SizedBox(height: 12),
+            color: Color(0xFFC9D1D9), fontSize: 14, height: 1.9)),
+        const SizedBox(height: 48),
+        _primaryBtn(s.howItWorks, () => _goPage(1)),
+        const SizedBox(height: 14),
         TextButton(
           onPressed: _finish,
           child: Text(s.welcomeStart,
             style: const TextStyle(
               color: Color(0xFF8B949E), fontSize: 13))),
-        const SizedBox(height: 12),
-        // Language toggle on welcome
+        const SizedBox(height: 14),
         _langToggle(context),
+        const SizedBox(height: 8),
+        // Page dots
+        _dots(0),
       ],
     ),
   );
 
+  // ── Page 1: How it works ──────────────────────────────────────────────────
   Widget _page1(S s) {
     final steps = [
-      (Icons.audio_file_outlined, s.step1),
-      (Icons.tune_rounded,        s.step2),
-      (Icons.cloud_sync_outlined, s.step3),
-      (Icons.download_done_rounded, s.step4),
+      (Icons.audio_file_outlined,    s.step1),
+      (Icons.tune_rounded,           s.step2),
+      (Icons.cloud_sync_outlined,    s.step3),
+      (Icons.download_done_rounded,  s.step4),
     ];
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -135,36 +170,141 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             style: const TextStyle(
               color: Color(0xFFD4AF37),
               fontSize: 26, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 36),
+          const SizedBox(height: 32),
           ...steps.asMap().entries.map((entry) => Padding(
-            padding: const EdgeInsets.only(bottom: 22),
+            padding: const EdgeInsets.only(bottom: 18),
             child: Row(
               textDirection: TextDirection.rtl,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 50, height: 50,
+                  width: 44, height: 44,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: const Color(0xFFD4AF37), width: 1.5),
+                      color: const Color(0xFFD4AF37), width: 1.3),
                     color: const Color(0xFF1A1500)),
                   child: Icon(entry.value.$1,
-                    color: const Color(0xFFD4AF37), size: 22)),
-                const SizedBox(width: 16),
-                Expanded(child: Text(entry.value.$2,
-                  textDirection: TextDirection.rtl,
-                  style: const TextStyle(
-                    color: Color(0xFFC9D1D9),
-                    fontSize: 14, height: 1.4))),
+                    color: const Color(0xFFD4AF37), size: 20)),
+                const SizedBox(width: 14),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      s.ar
+                        ? 'الخطوة ${entry.key + 1}'
+                        : 'Step ${entry.key + 1}',
+                      textDirection: TextDirection.rtl,
+                      style: const TextStyle(
+                        color: Color(0xFF484F58),
+                        fontSize: 9, letterSpacing: 0.5)),
+                    const SizedBox(height: 2),
+                    Text(entry.value.\$2,
+                      textDirection: TextDirection.rtl,
+                      style: const TextStyle(
+                        color: Color(0xFFC9D1D9),
+                        fontSize: 13, height: 1.45)),
+                  ],
+                )),
               ],
             ),
           )),
-          const SizedBox(height: 20),
-          _primaryBtn(s.welcomeStart, _finish),
+          const SizedBox(height: 12),
+          _primaryBtn(s.ar ? 'التالي' : 'Next', () => _goPage(2)),
+          const SizedBox(height: 10),
+          _dots(1),
         ],
       ),
     );
   }
+
+  // ── Page 2: Engine tiers overview ────────────────────────────────────────
+  Widget _page2(S s) {
+    final tiers = [
+      ('v10.0', s.ar ? 'الأثيريون — الأساس' : 'Aetherion Foundation',
+        s.ar ? '٢٤ إصلاحاً — NR ثنائي — L-BFGS-B'
+              : '24 fixes — Two-stage NR — L-BFGS-B EQ',
+        const Color(0xFFD4AF37)),
+      ('v9.0',  s.ar ? 'التطور' : 'The Evolution',
+        s.ar ? 'بناء كامل — مُحسِّن مشترك LUFS+LRA'
+              : 'Full rewrite — joint LUFS+LRA optimizer',
+        const Color(0xFFD4AF37)),
+      ('v8.x',  s.ar ? 'سلسلة الدقة' : 'Precision Series',
+        s.ar ? 'v8.7 · v8.5 · v8.0 — تقدم تراكمي'
+              : 'v8.7 · v8.5 · v8.0 — cumulative gains',
+        const Color(0xFFC9A227)),
+      ('v7.0',  s.ar ? 'كلاسيكي' : 'Classic',
+        s.ar ? 'البنية المُثبَّتة الأساس — STABLE'
+              : 'Proven foundational architecture — STABLE',
+        const Color(0xFF8B949E)),
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(s.ar ? 'محركات التحسين' : 'Enhancement Engines',
+            style: const TextStyle(
+              color: Color(0xFFD4AF37),
+              fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text(s.ar
+            ? 'اختر محركك من الصفحة الرئيسية'
+            : 'Choose your engine from the home screen',
+            style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
+          const SizedBox(height: 24),
+          ...tiers.map((t) => Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161B22),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: t.\$4.withOpacity(0.25))),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: t.\$4.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(5)),
+                child: Text(t.\$1, style: TextStyle(
+                  color: t.\$4, fontSize: 10,
+                  fontWeight: FontWeight.bold))),
+              const SizedBox(width: 12),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t.\$2, style: TextStyle(
+                    color: t.\$4, fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+                  Text(t.\$3, style: const TextStyle(
+                    color: Color(0xFF8B949E), fontSize: 10,
+                    height: 1.4)),
+                ])),
+            ]))),
+          const SizedBox(height: 16),
+          _primaryBtn(s.welcomeStart, _finish),
+          const SizedBox(height: 10),
+          _dots(2),
+        ],
+      ),
+    );
+  }
+
+  Widget _dots(int active) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: List.generate(3, (i) => AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      width:  i == active ? 20 : 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: i == active
+          ? const Color(0xFFD4AF37)
+          : const Color(0xFF30363D),
+        borderRadius: BorderRadius.circular(3)))));
 
   Widget _primaryBtn(String label, VoidCallback onTap) =>
     SizedBox(width: double.infinity,
@@ -177,7 +317,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14))),
         child: Text(label,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))));
+          style: const TextStyle(
+            fontWeight: FontWeight.bold, fontSize: 16))));
 
   Widget _langToggle(BuildContext context) {
     final langNotifier = LangProvider.of(context);
