@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:math' show pi; // S30-R1
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -638,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen>
                   ? s.waking
                   : _serverUp
                     ? (_latencyMs != null
-                        ? '\${s.serverOnline} · \${_latencyMs}ms'
+                        '${s.serverOnline} · ${_latencyMs}ms' // S30-S
                         : s.serverOnline)
                     : s.serverOffline,
                 style: TextStyle(
@@ -1241,42 +1242,52 @@ class _HomeScreenState extends State<HomeScreen>
               : const Color(0xFF3FB950)).withOpacity(0.12),
           blurRadius: 24, offset: const Offset(0, 6))]),
       child: Column(children: [
-        // Score
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            // S29: label as badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: scoreColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: scoreColor.withOpacity(0.4))),
-              child: Text(label, style: TextStyle(
-                color: scoreColor,
-                fontWeight: FontWeight.bold, fontSize: 13))),
-            const SizedBox(width: 12),
-            // S29: score counts up with result animation
-            AnimatedBuilder( // S30-P7: scale-pulse at finish
-              animation: _resultCtrl,
-              builder: (_, __) {
-                final t = Curves.easeOutCubic.transform(_resultCtrl.value);
-                // Pulse: scale slightly above 1 at ~90% then settle to 1
-                final pulse = _resultCtrl.value > 0.85
-                    ? 1.0 + 0.06 * (1 - (_resultCtrl.value - 0.85) / 0.15)
-                    : 1.0;
-                return Transform.scale(
-                  scale: pulse,
-                  child: Text(
-                    '${(score * t).toStringAsFixed(1)}/100',
-                    style: TextStyle(
-                      color: scoreColor,
-                      fontWeight: FontWeight.w900, fontSize: 34)));
-              }),
-          ]),
-        const SizedBox(height: 12),
+        // S30-R1: score arc gauge
+        AnimatedBuilder(
+          animation: _resultCtrl,
+          builder: (_, __) {
+            final t = Curves.easeOutCubic.transform(_resultCtrl.value);
+            final pulse = _resultCtrl.value > 0.85
+                ? 1.0 + 0.05 * (1 - (_resultCtrl.value - 0.85) / 0.15)
+                : 1.0;
+            return Column(mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(
+                width: 148, height: 148,
+                child: CustomPaint(
+                  painter: _ScoreArcPainter(
+                    progress: t, score: score, color: scoreColor),
+                  child: Center(child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Transform.scale(
+                        scale: pulse,
+                        child: Text(
+                          '${(score * t).toStringAsFixed(1)}',
+                          style: TextStyle(
+                            color: scoreColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 40,
+                            letterSpacing: -1))),
+                      Text('/100', style: TextStyle(
+                        color: scoreColor.withOpacity(0.55),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold)),
+                    ])),
+                )),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  color: scoreColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: scoreColor.withOpacity(0.4))),
+                child: Text(label, style: TextStyle(
+                  color: scoreColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13, letterSpacing: 0.5))),
+            ]);
+          }),
+        const SizedBox(height: 14),
 
         // Engine used
         Container(
@@ -1291,17 +1302,14 @@ class _HomeScreenState extends State<HomeScreen>
               color: Color(0xFFD4AF37), fontSize: 11))),
         const SizedBox(height: 12),
 
-        // Metrics (with target deltas)
-        _metricsRow(),
-        const SizedBox(height: 6),
+        // S30-R2: metrics 2×2 grid
+        _metricGrid(),
+        const SizedBox(height: 12),
 
-        // Target reference line
-        Text(
-          s.ar
-            ? 'الهدف: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19'
-            : 'Target: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19',
-          style: const TextStyle(color: Color(0xFF484F58), fontSize: 9)),
-        const SizedBox(height: 16),
+        // S30-R4: section divider
+        Container(height: 1,
+          color: const Color(0xFF21262D),
+          margin: const EdgeInsets.only(bottom: 14)),
 
         // S19 FALLBACK WARNING: shown when score ≤ 78
         if (score <= 78) ...[
@@ -1346,41 +1354,38 @@ class _HomeScreenState extends State<HomeScreen>
               ]),
           )),
 
-        // S19: Open in player button (only when content:// URI available)
-        if (hasContentUri) ...[
+        // S30-R3: Open + Share in one row
+        if (hasContentUri || (_output?.path.startsWith('content://') ?? false)) ...[
           const SizedBox(height: 8),
-          SizedBox(width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _openInPlayer,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF58A6FF),
-                side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12))),
-              icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-              label: Text(s.openInPlayer,
-                style: const TextStyle(fontSize: 13)),
-            )),
+          Row(children: [
+            if (hasContentUri) Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openInPlayer,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF58A6FF),
+                  side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+                icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
+                label: Text(s.openInPlayer,
+                  style: const TextStyle(fontSize: 12)))),
+            if (hasContentUri && (_output?.path.startsWith('content://') ?? false))
+              const SizedBox(width: 8),
+            if (_output?.path.startsWith('content://') ?? false) Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _shareFile,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF8B949E),
+                  side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+                icon: const Icon(Icons.share_rounded, size: 16),
+                label: Text(s.shareBtn,
+                  style: const TextStyle(fontSize: 12)))),
+          ]),
         ],
-
-        // S28-T2: Share button (only for content:// URIs = API 29+)
-        if (_output?.path.startsWith('content://') ?? false) ...[
-          const SizedBox(height: 8),
-          SizedBox(width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _shareFile,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF8B949E),
-                side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12))),
-              icon: const Icon(Icons.share_rounded, size: 18),
-              label: Text(s.shareBtn,
-                style: const TextStyle(fontSize: 13)),
-            )),
-        ], // S30-F2: duplicate share block removed
         // Saved indicator
         if (_output != null) ...[
           const SizedBox(height: 8),
@@ -1404,7 +1409,7 @@ class _HomeScreenState extends State<HomeScreen>
               padding: const EdgeInsets.symmetric(vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12))),
-            icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+            icon: const Icon(Icons.refresh_rounded, size: 18), // S30-X1
             label: Text(s.processAnother,
               style: const TextStyle(fontSize: 13)),
           )),
@@ -1412,61 +1417,85 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // S28: Tappable metrics row — tap to copy all values to clipboard
-  Widget _metricsRow() => InkWell(
+  // S30-R2: 2×2 metric grid
+  Widget _metricGrid() => GestureDetector(
     onTap: _copyMetrics,
-    borderRadius: BorderRadius.circular(8),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          if (_result?['lufs']  != null) _metric('LUFS',  _result!['lufs'].toString()),
-          if (_result?['rms']   != null) _metric('RMS',   _result!['rms'].toString()),
-          if (_result?['crest'] != null) _metric('Crest', _result!['crest'].toString()),
-          if (_result?['lra']   != null) _metric('LRA',   _result!['lra'].toString()),
-          const Icon(Icons.copy_rounded, size: 12, color: Color(0xFF484F58)),
-        ],
-      ),
+    child: Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D1117),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF21262D))),
+      child: Column(children: [
+        IntrinsicHeight(child: Row(children: [
+          Expanded(child: _metricTile(
+            'LUFS',  _result?['lufs']?.toString()  ?? '—', -6.29)),
+          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
+          Expanded(child: _metricTile(
+            'RMS',   _result?['rms']?.toString()   ?? '—', -10.01)),
+        ])),
+        const Divider(height: 1, color: Color(0xFF21262D)),
+        IntrinsicHeight(child: Row(children: [
+          Expanded(child: _metricTile(
+            'Crest', _result?['crest']?.toString() ?? '—', 10.25)),
+          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
+          Expanded(child: _metricTile(
+            'LRA',   _result?['lra']?.toString()   ?? '—', 4.19)),
+        ])),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.copy_rounded, size: 10,
+              color: Color(0xFF484F58)),
+            const SizedBox(width: 4),
+            const Text('tap to copy',
+              style: TextStyle(color: Color(0xFF484F58), fontSize: 9)),
+          ])),
+      ]),
     ),
   );
 
-  // S30-P6: metric widget with delta arrow vs reference target
-  static const _metricTargets = {
-    'LUFS': -6.29, 'RMS': -10.01, 'Crest': 10.25, 'LRA': 4.19
-  };
-
-  Widget _metric(String label, String value) {
+  Widget _metricTile(String label, String value, double target) {
     final num = double.tryParse(value);
-    final target = _metricTargets[label];
+    String delta = '';
     String arrow = '';
-    Color arrowColor = const Color(0xFF484F58);
-    if (num != null && target != null) {
+    Color tileColor = const Color(0xFF484F58);
+    if (num != null && value != '—') {
       final diff = num - target;
+      delta = '${diff >= 0 ? "+" : ""}${diff.toStringAsFixed(2)}';
       if (diff.abs() <= 0.5) {
-        arrow = ' ✓';
-        arrowColor = const Color(0xFF3FB950);
+        arrow = '✓'; tileColor = const Color(0xFF3FB950);
       } else if (diff > 0) {
-        arrow = ' ▲';
-        arrowColor = const Color(0xFFD4AF37);
+        arrow = '▲'; tileColor = const Color(0xFFD4AF37);
       } else {
-        arrow = ' ▼';
-        arrowColor = const Color(0xFF58A6FF);
+        arrow = '▼'; tileColor = const Color(0xFF58A6FF);
       }
     }
-    return Column(children: [
-      Text(label,
-        style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
-      const SizedBox(height: 2),
-      Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(value, style: const TextStyle(
-          color: Color(0xFFD4AF37),
-          fontWeight: FontWeight.bold, fontSize: 13)),
-        Text(arrow, style: TextStyle(
-          color: arrowColor, fontSize: 10,
-          fontWeight: FontWeight.bold)),
-      ]),
-    ]);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(label, style: const TextStyle(
+            color: Color(0xFF8B949E),
+            fontSize: 10, letterSpacing: 0.5)),
+          const SizedBox(height: 5),
+          Text(value, style: const TextStyle(
+            color: Color(0xFFD4AF37),
+            fontWeight: FontWeight.bold, fontSize: 18)),
+          if (delta.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(arrow, style: TextStyle(
+                color: tileColor, fontSize: 9,
+                fontWeight: FontWeight.bold)),
+              const SizedBox(width: 2),
+              Text(delta, style: TextStyle(
+                color: tileColor, fontSize: 9,
+                fontWeight: FontWeight.w600)),
+            ]),
+          ],
+        ]),
+    );
   }
 
   // ── BOTTOM ROW ─────────────────────────────────────────────────────────────
@@ -1542,6 +1571,54 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // S30-P5-close
+// ── S30-R1: Score arc painter ──────────────────────────────────────────────────
+class _ScoreArcPainter extends CustomPainter {
+  final double progress;
+  final double score;
+  final Color  color;
+  const _ScoreArcPainter({
+    required this.progress,
+    required this.score,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2 - 12.0;
+    const start = pi * 0.75;   // 135° — bottom-left
+    const sweep = pi * 1.5;    // 270° arc
+
+    // Background track
+    canvas.drawArc(
+      Rect.fromCircle(center: c, radius: r),
+      start, sweep, false,
+      Paint()
+        ..color = const Color(0xFF21262D)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 12
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Score fill
+    if (progress > 0.01) {
+      canvas.drawArc(
+        Rect.fromCircle(center: c, radius: r),
+        start, sweep * (score / 100) * progress, false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 12
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ScoreArcPainter o) =>
+      o.progress != progress || o.color != color;
+}
+
 // ── Engine data class (S21: rich model — score, features, what's-new) ───────────
 class _EngineData {
   final String id, nameAr, nameEn, badge, bc;
