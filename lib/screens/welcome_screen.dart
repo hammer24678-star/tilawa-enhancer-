@@ -199,7 +199,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         color: Color(0xFF484F58),
                         fontSize: 9, letterSpacing: 0.5)),
                     const SizedBox(height: 2),
-                    Text(entry.value.\$2,
+                    Text(entry.value.$2,
                       textDirection: TextDirection.rtl,
                       style: const TextStyle(
                         color: Color(0xFFC9D1D9),
@@ -261,25 +261,25 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               color: const Color(0xFF161B22),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: t.\$4.withOpacity(0.25))),
+                color: t.$4.withOpacity(0.25))),
             child: Row(children: [
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                  color: t.\$4.withOpacity(0.15),
+                  color: t.$4.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(5)),
-                child: Text(t.\$1, style: TextStyle(
-                  color: t.\$4, fontSize: 10,
+                child: Text(t.$1, style: TextStyle(
+                  color: t.$4, fontSize: 10,
                   fontWeight: FontWeight.bold))),
               const SizedBox(width: 12),
               Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(t.\$2, style: TextStyle(
-                    color: t.\$4, fontSize: 12,
+                  Text(t.$2, style: TextStyle(
+                    color: t.$4, fontSize: 12,
                     fontWeight: FontWeight.w600)),
-                  Text(t.\$3, style: const TextStyle(
+                  Text(t.$3, style: const TextStyle(
                     color: Color(0xFF8B949E), fontSize: 10,
                     height: 1.4)),
                 ])),
