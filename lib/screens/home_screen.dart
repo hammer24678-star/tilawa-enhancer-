@@ -97,11 +97,7 @@ class _HomeScreenState extends State<HomeScreen>
     _checkServer();
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
-    // S28-T2: restore last engine selection
-    ApiService.loadLastEngine().then((e) {
-      if (mounted) setState(() => _engine = e);
-    });
-    // S28-T2: restore last engine selection
+    // S30-F1: restored — one loadLastEngine call
     ApiService.loadLastEngine().then((e) {
       if (mounted) setState(() => _engine = e);
     });
@@ -731,6 +727,7 @@ class _HomeScreenState extends State<HomeScreen>
     final bg  = _badgeBg(e.bc);
     return GestureDetector(
       onTap: () {
+        HapticFeedback.selectionClick(); // S30-P1
         setState(() => _engine = e.id);
         ApiService.saveLastEngine(e.id); // S28-T2: persist
       },
@@ -883,8 +880,15 @@ class _HomeScreenState extends State<HomeScreen>
           color: Color(0x26000000),
           blurRadius: 12, offset: Offset(0, 3))]),
       child: Column(children: [
-        Icon(_file != null ? Icons.audio_file : Icons.add_circle_outline,
-          color: const Color(0xFFD4AF37), size: 52),
+        AnimatedSwitcher( // S30-P3
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOutBack,
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim, child: FadeTransition(opacity: anim, child: child)),
+          child: Icon(
+            _file != null ? Icons.audio_file : Icons.add_circle_outline,
+            key: ValueKey(_file != null),
+            color: const Color(0xFFD4AF37), size: 52)),
         const SizedBox(height: 12),
         Text(_file != null ? _file!.path.split('/').last : s.pickFile,
           textDirection: TextDirection.rtl,
@@ -1155,8 +1159,15 @@ class _HomeScreenState extends State<HomeScreen>
         blurRadius: 12, offset: Offset(0, 3))]),
     child: Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Flexible(child: Text(_status.isEmpty ? s.processing : _status,
-          style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 13))),
+        Flexible(child: AnimatedSwitcher( // S30-P2
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim, child: child),
+          child: Text(
+            _status.isEmpty ? s.processing : _status,
+            key: ValueKey(_status),
+            style: const TextStyle(
+              color: Color(0xFFC9D1D9), fontSize: 13)))),
         // S20-A: '...' when merging — frozen '68%' looks like a crash
         Text(_isMerging ? '...' : '${(_progress * 100).toInt()}%',
           style: const TextStyle(
@@ -1248,15 +1259,21 @@ class _HomeScreenState extends State<HomeScreen>
                 fontWeight: FontWeight.bold, fontSize: 13))),
             const SizedBox(width: 12),
             // S29: score counts up with result animation
-            AnimatedBuilder(
+            AnimatedBuilder( // S30-P7: scale-pulse at finish
               animation: _resultCtrl,
               builder: (_, __) {
                 final t = Curves.easeOutCubic.transform(_resultCtrl.value);
-                return Text(
-                  '${(score * t).toStringAsFixed(1)}/100',
-                  style: TextStyle(
-                    color: scoreColor,
-                    fontWeight: FontWeight.w900, fontSize: 34));
+                // Pulse: scale slightly above 1 at ~90% then settle to 1
+                final pulse = _resultCtrl.value > 0.85
+                    ? 1.0 + 0.06 * (1 - (_resultCtrl.value - 0.85) / 0.15)
+                    : 1.0;
+                return Transform.scale(
+                  scale: pulse,
+                  child: Text(
+                    '${(score * t).toStringAsFixed(1)}/100',
+                    style: TextStyle(
+                      color: scoreColor,
+                      fontWeight: FontWeight.w900, fontSize: 34)));
               }),
           ]),
         const SizedBox(height: 12),
@@ -1363,24 +1380,7 @@ class _HomeScreenState extends State<HomeScreen>
               label: Text(s.shareBtn,
                 style: const TextStyle(fontSize: 13)),
             )),
-        ],
-        // S28-T2: Share button (only for content:// URIs = API 29+)
-        if (_output?.path.startsWith('content://') ?? false) ...[
-          const SizedBox(height: 8),
-          SizedBox(width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _shareFile,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF8B949E),
-                side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12))),
-              icon: const Icon(Icons.share_rounded, size: 18),
-              label: Text(s.shareBtn,
-                style: const TextStyle(fontSize: 13)),
-            )),
-        ],
+        ], // S30-F2: duplicate share block removed
         // Saved indicator
         if (_output != null) ...[
           const SizedBox(height: 8),
@@ -1431,38 +1431,73 @@ class _HomeScreenState extends State<HomeScreen>
     ),
   );
 
-  Widget _metric(String label, String value) => Column(children: [
-    Text(label,
-      style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
-    const SizedBox(height: 2),
-    Text(value, style: const TextStyle(
-      color: Color(0xFFD4AF37), fontWeight: FontWeight.bold, fontSize: 13)),
-  ]);
+  // S30-P6: metric widget with delta arrow vs reference target
+  static const _metricTargets = {
+    'LUFS': -6.29, 'RMS': -10.01, 'Crest': 10.25, 'LRA': 4.19
+  };
+
+  Widget _metric(String label, String value) {
+    final num = double.tryParse(value);
+    final target = _metricTargets[label];
+    String arrow = '';
+    Color arrowColor = const Color(0xFF484F58);
+    if (num != null && target != null) {
+      final diff = num - target;
+      if (diff.abs() <= 0.5) {
+        arrow = ' ✓';
+        arrowColor = const Color(0xFF3FB950);
+      } else if (diff > 0) {
+        arrow = ' ▲';
+        arrowColor = const Color(0xFFD4AF37);
+      } else {
+        arrow = ' ▼';
+        arrowColor = const Color(0xFF58A6FF);
+      }
+    }
+    return Column(children: [
+      Text(label,
+        style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
+      const SizedBox(height: 2),
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(value, style: const TextStyle(
+          color: Color(0xFFD4AF37),
+          fontWeight: FontWeight.bold, fontSize: 13)),
+        Text(arrow, style: TextStyle(
+          color: arrowColor, fontSize: 10,
+          fontWeight: FontWeight.bold)),
+      ]),
+    ]);
+  }
 
   // ── BOTTOM ROW ─────────────────────────────────────────────────────────────
   Widget _bottomRow(S s) => Padding(
     padding: const EdgeInsets.fromLTRB(16,10,16,4),
-    child: GestureDetector(
-      onTap: () => Navigator.push(context,
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const HistoryScreen(),
-          transitionsBuilder: (_, anim, __, child) =>
-            FadeTransition(opacity: anim, child: child),
-          transitionDuration: const Duration(milliseconds: 220),
-        )),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF161B22),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF21262D))),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(Icons.history_rounded,
-            color: Color(0xFF8B949E), size: 18),
-          const SizedBox(width: 8),
-          Text(s.history, style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 13)),
-        ]),
+    child: Material( // S30-P4
+      color: const Color(0xFF161B22),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const HistoryScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 220),
+          )),
+        splashColor: const Color(0xFFD4AF37).withOpacity(0.12),
+        highlightColor: const Color(0xFFD4AF37).withOpacity(0.06),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF21262D))),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.history_rounded,
+              color: Color(0xFF8B949E), size: 18),
+            const SizedBox(width: 8),
+            Text(s.history, style: const TextStyle(
+              color: Color(0xFF8B949E), fontSize: 13)),
+          ]),
+        ),
       ),
     ),
   );
@@ -1470,17 +1505,24 @@ class _HomeScreenState extends State<HomeScreen>
   // ── DONATION CARD ──────────────────────────────────────────────────────────
   Widget _donationCard(S s) => Padding(
     padding: const EdgeInsets.fromLTRB(16,4,16,4),
-    child: GestureDetector(
-      onTap: () => launchUrl(
-        Uri.parse('https://buymeacoffee.com/tilawa'),
-        mode: LaunchMode.externalApplication),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1500),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color(0xFFD4AF37).withOpacity(0.3))),
+    child: Material( // S30-P5
+      color: const Color(0xFF1A1500),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          launchUrl(
+            Uri.parse('https://buymeacoffee.com/tilawa'),
+            mode: LaunchMode.externalApplication);
+        },
+        splashColor: const Color(0xFFD4AF37).withOpacity(0.18),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFD4AF37).withOpacity(0.3))),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.volunteer_activism,
             color: Color(0xFFD4AF37), size: 18),
@@ -1495,9 +1537,11 @@ class _HomeScreenState extends State<HomeScreen>
         ]),
       ),
     ),
+  ),
   );
 }
 
+// S30-P5-close
 // ── Engine data class (S21: rich model — score, features, what's-new) ───────────
 class _EngineData {
   final String id, nameAr, nameEn, badge, bc;

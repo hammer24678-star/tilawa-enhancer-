@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // S30-P8
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 
@@ -42,6 +43,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final filename = job['filename'] as String? ?? ApiService.buildFilename(job['engine'] ?? 'v8.0');
     final s = LangProvider.strings(context);
 
+    HapticFeedback.lightImpact(); // S30-P8
     setState(() => _downloading.add(jobId));
     final (file, error) = await ApiService.downloadFile(jobId, filename);
     if (!mounted) return;
