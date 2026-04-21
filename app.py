@@ -37,6 +37,18 @@ for d in [UPLOAD_DIR, CHUNK_DIR, OUTPUT_DIR]:
 BASE = Path(__file__).parent
 # S25: v8.4 added (Source Tier Intelligence); v8.1 replaced
 ENGINE_SCRIPTS = {
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
+    "v8.7":  BASE / "engine_v87.py",
     "v8.5":  BASE / "engine_v85.py",
     "v8.4": BASE / "engine_v84.py",
     "v8.0": BASE / "engine_v80.py",
@@ -87,7 +99,7 @@ def upload_start():
         "status": "uploading",
         "progress": 0,
         "label": "جارٍ الرفع...",
-        "engine": "v8.5",
+        "engine": "v8.7",
         "filename": f"enhanced_{job_id}_1425h.mp3",
         "in_path": str(UPLOAD_DIR / f"{job_id}_input{suffix}"),
         "out_path": str(OUTPUT_DIR / f"enhanced_{job_id}_1425h.mp3"),
@@ -144,7 +156,7 @@ def upload_finalize():
     """All chunks uploaded. Merge them and start processing."""
     data = request.get_json(silent=True) or {}
     job_id = data.get("job_id")
-    engine = data.get("engine", "v8.4")
+    engine = data.get("engine", "v8.7")
 
     if not job_id or job_id not in JOBS:
         return jsonify({"error": "invalid job_id"}), 400
