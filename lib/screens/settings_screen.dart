@@ -217,21 +217,21 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
       builder: (ctx, dark, _) => Container(
         margin: const EdgeInsets.only(bottom: 18),
         decoration: BoxDecoration(
-          color: _cCard(context),
+          color: _cCard(ctx),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _cBorder(context))),
+          border: Border.all(color: _cBorder(ctx))),
         child: SwitchListTile(
           secondary: Icon(
             dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
             color: const Color(0xFFD4AF37)),
           title: Text(
             s.ar ? 'الوضع الداكن' : 'Dark Mode',
-            style: TextStyle(color: _cText(context), fontSize: 14)),
+            style: TextStyle(color: _cText(ctx), fontSize: 14)),
           subtitle: Text(
             dark
               ? (s.ar ? 'الوضع الحالي' : 'Currently active')
               : (s.ar ? 'الوضع الفاتح نشط' : 'Light mode active'),
-            style: TextStyle(color: _cSub(context), fontSize: 11)),
+            style: TextStyle(color: _cSub(ctx), fontSize: 11)),
           value: dark,
           activeColor: const Color(0xFFD4AF37),
           onChanged: (_) => ThemeProvider.toggle(ctx),
