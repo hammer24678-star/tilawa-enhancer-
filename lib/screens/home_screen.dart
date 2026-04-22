@@ -46,13 +46,13 @@ class _HomeScreenState extends State<HomeScreen>
   // S32: theme cache — updated at top of every build() so ALL sub-methods
   // (which are instance methods) can read current theme colors directly.
   // Initialized to dark-mode defaults; updated before any widget is built.
-  Color _tBg     = _tBg;
-  Color _tCard   = _tCard;
-  Color _tBorder = _tBorder;
-  Color _tText   = _tText;
-  Color _tSub    = _tSub;
-  Color _tDim    = _tDim;
-  Color _tGold   = _tGold;
+  Color _tBg     = const Color(0xFF080A0E);
+  Color _tCard   = const Color(0xFF161B22);
+  Color _tBorder = const Color(0xFF21262D);
+  Color _tText   = const Color(0xFFC9D1D9);
+  Color _tSub    = const Color(0xFF8B949E);
+  Color _tDim    = const Color(0xFF484F58);
+  Color _tGold   = const Color(0xFFD4AF37);
   bool  _tDark   = true;
   // S19: Wake server state
   bool _waking       = false;
