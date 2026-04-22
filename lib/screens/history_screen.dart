@@ -30,13 +30,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
 
   // S32: theme cache (see home_screen.dart for rationale)
-  Color _tBg     = _tBg;
-  Color _tCard   = _tCard;
-  Color _tBorder = _tBorder;
-  Color _tText   = _tText;
-  Color _tSub    = _tSub;
-  Color _tDim    = _tDim;
-  Color _tGold   = _tGold;
+  Color _tBg     = const Color(0xFF080A0E);
+  Color _tCard   = const Color(0xFF161B22);
+  Color _tBorder = const Color(0xFF21262D);
+  Color _tText   = const Color(0xFFC9D1D9);
+  Color _tSub    = const Color(0xFF8B949E);
+  Color _tDim    = const Color(0xFF484F58);
+  Color _tGold   = const Color(0xFFD4AF37);
   bool  _tDark   = true;
   @override
   void initState() {

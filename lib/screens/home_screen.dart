@@ -1321,7 +1321,8 @@ class _HomeScreenState extends State<HomeScreen>
                 width: 148, height: 148,
                 child: CustomPaint(
                   painter: _ScoreArcPainter(
-                    progress: t, score: score, color: scoreColor),
+                    progress: t, score: score, color: scoreColor,
+                    trackColor: _tBorder),
                   child: Center(child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1642,10 +1643,12 @@ class _ScoreArcPainter extends CustomPainter {
   final double progress;
   final double score;
   final Color  color;
-  const _ScoreArcPainter({
+  final Color  trackColor; // S32-fix: passed from State, was incorrectly _tBorder
+  _ScoreArcPainter({
     required this.progress,
     required this.score,
     required this.color,
+    required this.trackColor,
   });
 
   @override
@@ -1660,7 +1663,7 @@ class _ScoreArcPainter extends CustomPainter {
       Rect.fromCircle(center: c, radius: r),
       start, sweep, false,
       Paint()
-        ..color = _tBorder
+        ..color = trackColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = 12
         ..strokeCap = StrokeCap.round,
@@ -1682,7 +1685,7 @@ class _ScoreArcPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_ScoreArcPainter o) =>
-      o.progress != progress || o.color != color;
+      o.progress != progress || o.color != color || o.trackColor != trackColor;
 }
 
 // ── Engine data class (S21: rich model — score, features, what's-new) ───────────
