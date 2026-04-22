@@ -817,8 +817,7 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                 Row(children: [
                   Text(e.id, style: TextStyle(
-                    // S31-F2b
-                    color: sel ? col : const Color(0xFFC9D1D9), // S31-F4
+                    color: sel ? col : col.withOpacity(0.55), // S31-F5: per-engine colour
                     fontWeight: FontWeight.bold, fontSize: 13)),
                   if (e.badge.isNotEmpty) ...[
                     const SizedBox(width: 6),
@@ -837,11 +836,10 @@ class _HomeScreenState extends State<HomeScreen>
               ])),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text('≥${e.score.toInt()}', style: TextStyle(
-                  // S31-F2: gold engines → muted gold when unselected
-                  color: sel ? col : const Color(0xFF484F58), // S31-F4
+                  color: sel ? col : col.withOpacity(0.40), // S31-F5
                   fontWeight: FontWeight.w800, fontSize: 15)),
                 Text('/100', style: TextStyle(
-                  color: sel ? col.withOpacity(0.45) : const Color(0xFF484F58),
+                  color: col.withOpacity(sel ? 0.45 : 0.25), // S31-F5
                   fontSize: 8)),
               ]),
             ])),
