@@ -28,6 +28,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // Track which jobs are confirmed expired (404 from server)
   final Set<String> _expired = {};
 
+
+  // S32: theme cache (see home_screen.dart for rationale)
+  Color _tBg     = _tBg;
+  Color _tCard   = _tCard;
+  Color _tBorder = _tBorder;
+  Color _tText   = _tText;
+  Color _tSub    = _tSub;
+  Color _tDim    = _tDim;
+  Color _tGold   = _tGold;
+  bool  _tDark   = true;
   @override
   void initState() {
     super.initState();
@@ -104,7 +114,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF161B22),
+        backgroundColor: _tCard,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14)),
         title: Text(s.clearAll,
@@ -127,16 +137,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
-  bool  _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
-  Color _cGold(BuildContext ctx)  => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
+  // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
+  bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
+  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
+  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
+  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
+  Color _cDim(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
+  Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
+  // S32-COLORS-APPLIED
 
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
-    final cBg   = _cBg(context);
-    final cGold = _cGold(context);
+    // S32: update theme cache
+    _tDark = _isDark(context); _tBg = _cBg(context); _tCard = _cCard(context);
+    _tBorder = _cBorder(context); _tText = _cText(context);
+    _tSub = _cSub(context); _tDim = _cDim(context); _tGold = _cGold(context);
+    final cBg = _tBg; final cGold = _tGold;
     return Scaffold(
       backgroundColor: cBg,
       appBar: AppBar(
@@ -173,7 +192,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ]))
           : RefreshIndicator(
               onRefresh: _load,
-              color: const Color(0xFFD4AF37),
+              color: _tGold,
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: _jobs.length,
@@ -219,7 +238,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         : s.fair;
 
     final scoreColor = score >= 90 ? const Color(0xFF3FB950)
-        : score >= 80 ? const Color(0xFFD4AF37)
+        : score >= 80 ? _tGold
         : const Color(0xFFF85149);
 
     return Dismissible(
@@ -238,10 +257,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isExpired ? const Color(0xFF1A0808) : const Color(0xFF161B22),
+          color: isExpired ? const Color(0xFF1A0808) : _tCard,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isExpired ? const Color(0xFFF85149).withOpacity(0.3) : const Color(0xFF21262D))),
+            color: isExpired ? const Color(0xFFF85149).withOpacity(0.3) : _tBorder)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             // Score circle
@@ -249,7 +268,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               width: 50, height: 50,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF0A0C10),
+                color: _tBg,
                 border: Border.all(color: scoreColor, width: 2)),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -284,7 +303,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     color: const Color(0xFF1A1500),
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                      color: const Color(0xFFD4AF37).withOpacity(0.4))),
+                      color: _tGold.withOpacity(0.4))),
                   child: Text(engine, style: const TextStyle(
                     color: Color(0xFFD4AF37), fontSize: 9,
                     fontWeight: FontWeight.bold))),
@@ -342,7 +361,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: ElevatedButton.icon(
                 onPressed: isLoading ? null : () => _reDownload(job),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF161B22),
+                  backgroundColor: _tCard,
                   foregroundColor: const Color(0xFF3FB950),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   side: const BorderSide(color: Color(0xFF3FB950), width: 0.8),

@@ -47,18 +47,28 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
       'The beginning: De-Clipping + A-Weighting + Bark Scale EQ (24 bands) + Two-Pass LUFS. The foundation'),
   ];
 
-  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
-  bool  _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
-  Color _cGold(BuildContext ctx)  => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
+  // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
+  bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
+  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
+  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
+  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
+  Color _cDim(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
+  Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
 
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     final isAr = s.ar;
 
-    final cBg   = _cBg(context);
-    final cGold = _cGold(context);
+    final cBg     = _cBg(context);
+    final cCard   = _cCard(context);
+    final cBorder = _cBorder(context);
+    final cText   = _cText(context);
+    final cSub    = _cSub(context);
+    final cDim    = _cDim(context);
+    final cGold   = _cGold(context);
     return Scaffold(
       backgroundColor: cBg,
       appBar: AppBar(
@@ -75,32 +85,32 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
               margin: const EdgeInsets.only(right: 14),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1500),
+                color: _isDark(context) ? const Color(0xFF1A1500) : const Color(0xFFF3EED9),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: const Color(0xFFD4AF37), width: 0.8)),
+                  color: cGold, width: 0.8)),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(isAr ? 'EN' : 'ع',
-                  style: const TextStyle(
-                    color: Color(0xFFD4AF37),
+                  style: TextStyle(
+                    color: cGold,
                     fontWeight: FontWeight.bold, fontSize: 13)),
                 const SizedBox(width: 4),
-                const Icon(Icons.language,
-                  color: Color(0xFFD4AF37), size: 14),
+                Icon(Icons.language,
+                  color: cGold, size: 14),
               ]))),
         ]),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // ── Language toggle ────────────────────────────────────────────────
-          _section(s.language),
+          _section(context, s.language),
           Container(
             margin: const EdgeInsets.only(bottom: 18),
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: cCard,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF21262D))),
+              border: Border.all(color: cBorder)),
             child: Row(children: [
               _langPill(context, s.arabic,  active: isAr,
                 onTap: () { if (!isAr) LangProvider.toggle(context); }),
@@ -130,18 +140,18 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
                 color: Color(0xFF3FB950), fontSize: 11))),
 
           // ── Engine History ─────────────────────────────────────────────────
-          _section(s.engineHistory),
-          ..._history.map((e) => _eCard(e, isAr)),
+          _section(context, s.engineHistory),
+          ..._history.map((e) => _eCard(context, e, isAr)),
 
           // ── About ──────────────────────────────────────────────────────────
           const SizedBox(height: 8),
-          _section(s.about),
+          _section(context, s.about),
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: cCard,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF21262D))),
+              border: Border.all(color: cBorder)),
             child: Column(children: [
               // Small logo in About
               Container(
@@ -158,17 +168,17 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
                     child: const Icon(Icons.music_note,
                       color: Color(0xFFD4AF37), size: 30))))),
               const SizedBox(height: 12),
-              const Text('محسِّن التلاوة', style: TextStyle(
-                color: Color(0xFFD4AF37),
+              Text('محسِّن التلاوة', style: TextStyle(
+                color: cGold,
                 fontWeight: FontWeight.bold, fontSize: 18)),
               const SizedBox(height: 4),
               Text(s.version,
-                style: const TextStyle(
-                  color: Color(0xFF8B949E), fontSize: 12)),
-              const SizedBox(height: 2),
-              const Text('Yasser Al-Dossari · 1425H',
                 style: TextStyle(
-                  color: Color(0xFF484F58), fontSize: 11)),
+                  color: cSub, fontSize: 12)),
+              const SizedBox(height: 2),
+              Text('Yasser Al-Dossari · 1425H',
+                style: TextStyle(
+                  color: cDim, fontSize: 11)),
             ])),
           // S28: Privacy policy link
           const SizedBox(height: 12),
@@ -195,10 +205,10 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
     );
   }
 
-  Widget _section(String title) => Padding(
+  Widget _section(BuildContext ctx, String title) => Padding(
     padding: const EdgeInsets.only(bottom: 8, top: 4),
-    child: Text(title, style: const TextStyle(
-      color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 1.5)));
+    child: Text(title, style: TextStyle(
+      color: _cSub(ctx), fontSize: 11, letterSpacing: 1.5)));
 
   // S31-F4b
   Widget _themeTile(BuildContext context, S s) {
@@ -207,21 +217,21 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
       builder: (ctx, dark, _) => Container(
         margin: const EdgeInsets.only(bottom: 18),
         decoration: BoxDecoration(
-          color: const Color(0xFF161B22),
+          color: _cCard(context),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF21262D))),
+          border: Border.all(color: _cBorder(context))),
         child: SwitchListTile(
           secondary: Icon(
             dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
             color: const Color(0xFFD4AF37)),
           title: Text(
             s.ar ? 'الوضع الداكن' : 'Dark Mode',
-            style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 14)),
+            style: TextStyle(color: _cText(context), fontSize: 14)),
           subtitle: Text(
             dark
               ? (s.ar ? 'الوضع الحالي' : 'Currently active')
               : (s.ar ? 'الوضع الفاتح نشط' : 'Light mode active'),
-            style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
+            style: TextStyle(color: _cSub(context), fontSize: 11)),
           value: dark,
           activeColor: const Color(0xFFD4AF37),
           onChanged: (_) => ThemeProvider.toggle(ctx),
@@ -234,23 +244,23 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
   Widget _tutorialTile(BuildContext context, S s) => Container(
     margin: const EdgeInsets.only(bottom: 18),
     decoration: BoxDecoration(
-      color: const Color(0xFF161B22),
+      color: _cCard(context),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFF21262D))),
+      border: Border.all(color: _cBorder(context))),
     child: ListTile(
       leading: const Icon(Icons.play_lesson_rounded,
         color: Color(0xFFD4AF37)),
       title: Text(
         s.ar ? 'عرض شاشة الترحيب' : 'Show Welcome Screen',
-        style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 14)),
+        style: TextStyle(color: _cText(context), fontSize: 14)),
       subtitle: Text(
         s.ar ? 'عرض دليل البداية مرة أخرى' : 'Re-show the onboarding guide',
-        style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
+        style: TextStyle(color: _cSub(context), fontSize: 11)),
       trailing: const Icon(Icons.arrow_forward_ios_rounded,
         size: 14, color: Color(0xFF484F58)),
       onTap: () async {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('seen_welcome');
+        await prefs.remove('seen_welcome_v2'); // S32
         if (!context.mounted) return;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
@@ -275,11 +285,11 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
         child: Text(label,
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: active ? const Color(0xFF0A0C10) : const Color(0xFF8B949E),
+            color: active ? const Color(0xFF0A0C10) : _cSub(context),
             fontWeight: active ? FontWeight.bold : FontWeight.normal,
             fontSize: 14)))));
 
-  Widget _eCard(_EHist e, bool isAr) {
+  Widget _eCard(BuildContext ctx, _EHist e, bool isAr) {
     Color bc() => e.bc == 'gold' ? const Color(0xFFD4AF37)
         : e.bc == 'green' ? const Color(0xFF3FB950)
         : e.bc == 'blue'  ? const Color(0xFF58A6FF)
@@ -292,16 +302,18 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
     final isLatest = e.badge == 'LATEST';
     final desc = isAr ? e.ar : e.en;
 
+    final _ec = _cCard(ctx);
+    final _eb = _cBorder(ctx);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isLatest ? const Color(0xFF1A1200) : const Color(0xFF161B22),
+        color: isLatest ? const Color(0xFF1A1200) : _ec,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isLatest
-            ? const Color(0xFFD4AF37)
-            : const Color(0xFF21262D),
+            ? _cGold(ctx)
+            : _eb,
           width: isLatest ? 1.2 : 0.8)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -310,8 +322,8 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
             fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(width: 8),
           Expanded(child: Text(e.name,
-            style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 12))),
+            style: TextStyle(
+              color: _cSub(ctx), fontSize: 12))),
           if (e.badge.isNotEmpty)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -328,8 +340,8 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
         const SizedBox(height: 8),
         Text(desc,
           textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 11, height: 1.5)),
+          style: TextStyle(
+            color: _cSub(ctx), fontSize: 11, height: 1.5)),
       ]));
   }
 }

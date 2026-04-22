@@ -55,7 +55,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   Future<void> _finish() async {
     HapticFeedback.lightImpact();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('seen_welcome', true);
+    await prefs.setBool('seen_welcome_v2', true); // S32
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
@@ -67,9 +67,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     );
   }
 
-  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
-  bool  _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+  // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
+  bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
+  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
+  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
 
   @override
   Widget build(BuildContext context) {
@@ -256,14 +259,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           Text(s.ar
             ? 'اختر محركك من الصفحة الرئيسية'
             : 'Choose your engine from the home screen',
-            style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
+            style: TextStyle(color: _cSub(context), fontSize: 12)),
           const SizedBox(height: 24),
           ...tiers.map((t) => Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.symmetric(
               horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: _cCard(context),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: t.$4.withOpacity(0.25))),

@@ -42,6 +42,18 @@ class _HomeScreenState extends State<HomeScreen>
   DateTime? _processStart;     // S22: start time for 25-min hard timeout
   int _fallbackRetries = 0;    // S32: auto-retry counter for fallback mode
 
+
+  // S32: theme cache — updated at top of every build() so ALL sub-methods
+  // (which are instance methods) can read current theme colors directly.
+  // Initialized to dark-mode defaults; updated before any widget is built.
+  Color _tBg     = _tBg;
+  Color _tCard   = _tCard;
+  Color _tBorder = _tBorder;
+  Color _tText   = _tText;
+  Color _tSub    = _tSub;
+  Color _tDim    = _tDim;
+  Color _tGold   = _tGold;
+  bool  _tDark   = true;
   // S19: Wake server state
   bool _waking       = false;
   int  _wakeAttempts = 0;
@@ -285,7 +297,7 @@ class _HomeScreenState extends State<HomeScreen>
             duration: const Duration(seconds: 10),
             action: SnackBarAction(
               label: s.ar ? 'حسناً' : 'OK',
-              textColor: const Color(0xFFD4AF37),
+              textColor: _tGold,
               onPressed: () {})));
           return;
         }
@@ -313,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen>
             duration: const Duration(seconds: 12),
             action: SnackBarAction(
               label: s.ar ? 'حسناً' : 'OK',
-              textColor: const Color(0xFFD4AF37),
+              textColor: _tGold,
               onPressed: () {})));
         }
       }
@@ -524,26 +536,24 @@ class _HomeScreenState extends State<HomeScreen>
   // Dart library-private functions (_name) can't cross library boundaries, so
   // we define them here inside the class instead of importing from main.dart.
   bool  _isDark(BuildContext ctx)   => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)      => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
-  Color _cCard(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx)  => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
-  Color _cText(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-  Color _cSub(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
-  Color _cDim(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
-  Color _cGold(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
+  Color _cBg(BuildContext ctx)      => _isDark(ctx) ? _tBg : const Color(0xFFFAF7EE);
+  Color _cCard(BuildContext ctx)    => _isDark(ctx) ? _tCard : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx)  => _isDark(ctx) ? _tBorder : const Color(0xFFD4C99A);
+  Color _cText(BuildContext ctx)    => _isDark(ctx) ? _tText : const Color(0xFF1A1400);
+  Color _cSub(BuildContext ctx)     => _isDark(ctx) ? _tSub : const Color(0xFF6B5E40);
+  Color _cDim(BuildContext ctx)     => _isDark(ctx) ? _tDim : const Color(0xFF8B7B5A);
+  Color _cGold(BuildContext ctx)    => _isDark(ctx) ? _tGold : const Color(0xFFB8941F);
 
   // ── BUILD ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
-    final dark = _isDark(context);
-    final cBg     = _cBg(context);
-    final cCard   = _cCard(context);
-    final cBorder = _cBorder(context);
-    final cText   = _cText(context);
-    final cSub    = _cSub(context);
-    final cDim    = _cDim(context);
-    final cGold   = _cGold(context);
+    // S32: populate theme cache so sub-methods see current colors
+    _tDark = _isDark(context); _tBg = _cBg(context); _tCard = _cCard(context);
+    _tBorder = _cBorder(context); _tText = _cText(context);
+    _tSub = _cSub(context); _tDim = _cDim(context); _tGold = _cGold(context);
+    final dark = _tDark; // used in gradient below
+    final cBg = _tBg;   // used in Scaffold backgroundColor
     return Scaffold(
       backgroundColor: cBg,
       body: Container(
@@ -552,7 +562,7 @@ class _HomeScreenState extends State<HomeScreen>
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: dark
-              ? [const Color(0xFF080A0E), const Color(0xFF0C1018)]
+              ? [_tBg, const Color(0xFF0C1018)]
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         child: SafeArea(
           child: CustomScrollView(slivers: [
@@ -595,7 +605,7 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           boxShadow: [BoxShadow(
-            color: const Color(0xFFD4AF37).withOpacity(0.25),
+            color: _tGold.withOpacity(0.25),
             blurRadius: 16)]),
         child: ClipOval(child: Image.asset('assets/images/logo.png',
           fit: BoxFit.cover,
@@ -611,7 +621,7 @@ class _HomeScreenState extends State<HomeScreen>
             style: TextStyle(
               fontSize: 24, fontWeight: FontWeight.bold,
               color: Color.lerp(
-                const Color(0xFFD4AF37),
+                _tGold,
                 const Color(0xFFFFF4B0),
                 _glowCtrl.value)))),
         Text(s.subtitle,
@@ -633,17 +643,17 @@ class _HomeScreenState extends State<HomeScreen>
   );
 
   Widget _iconBtn(IconData icon, VoidCallback onTap) => Material(
-    color: const Color(0xFF161B22),
+    color: _tCard,
     shape: const CircleBorder(
       side: BorderSide(color: Color(0xFF21262D))),
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       onTap: onTap,
-      splashColor: const Color(0xFFD4AF37).withOpacity(0.18),
-      highlightColor: const Color(0xFFD4AF37).withOpacity(0.08),
+      splashColor: _tGold.withOpacity(0.18),
+      highlightColor: _tGold.withOpacity(0.08),
       child: Padding(
         padding: const EdgeInsets.all(9),
-        child: Icon(icon, color: const Color(0xFF8B949E), size: 20))));
+        child: Icon(icon, color: _tSub, size: 20))));
 
   // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
   Widget _serverBanner(S s) {
@@ -664,7 +674,7 @@ class _HomeScreenState extends State<HomeScreen>
           color: _serverUp
             ? const Color(0xFF3FB950)
             : _waking
-              ? const Color(0xFFD4AF37)
+              ? _tGold
               : const Color(0xFFF85149),
           width: 0.8)),
       child: Column(
@@ -700,7 +710,7 @@ class _HomeScreenState extends State<HomeScreen>
                   color: _serverUp
                     ? const Color(0xFF3FB950)
                     : _waking
-                      ? const Color(0xFFD4AF37)
+                      ? _tGold
                       : const Color(0xFFF85149),
                   fontSize: 12)),
             ),
@@ -714,7 +724,7 @@ class _HomeScreenState extends State<HomeScreen>
                     color: const Color(0xFF1A1000),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: const Color(0xFFD4AF37).withOpacity(0.6))),
+                      color: _tGold.withOpacity(0.6))),
                   child: Text(s.wakeServer,
                     style: const TextStyle(
                       color: Color(0xFFD4AF37),
@@ -738,9 +748,9 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _engineSelector(S s) => Container(
     margin: const EdgeInsets.fromLTRB(16,10,16,4),
     decoration: BoxDecoration(
-      color: const Color(0xFF161B22),
+      color: _tCard,
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: const Color(0xFF21262D)),
+      border: Border.all(color: _tBorder),
       boxShadow: const [BoxShadow(
         color: Color(0x26000000),
         blurRadius: 12, offset: Offset(0, 3))]),
@@ -790,10 +800,10 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.fromLTRB(8,3,8,3),
         decoration: BoxDecoration(
-          color: sel ? const Color(0xFF0D1117) : Colors.transparent,
+          color: sel ? _tCard : Colors.transparent,
           borderRadius: BorderRadius.circular(11),
           border: Border.all(
-            color: sel ? col : const Color(0xFF21262D),
+            color: sel ? col : _tBorder,
             width: sel ? 1.4 : 0.8)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // ── Collapsed header (always visible) ───────────────────────
@@ -806,7 +816,7 @@ class _HomeScreenState extends State<HomeScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: sel ? col : const Color(0xFF30363D), width: 2),
+                    color: sel ? col : _tBorder, width: 2),
                   color: sel ? col : Colors.transparent),
                 child: sel
                   ? const Icon(Icons.check, size: 10, color: Color(0xFF0A0C10))
@@ -860,7 +870,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _engineExpanded(_EngineData e, S s, Color col) => Padding(
     padding: const EdgeInsets.fromLTRB(12,0,12,12),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(height: 1, color: const Color(0xFF21262D),
+      Container(height: 1, color: _tBorder,
         margin: const EdgeInsets.only(bottom: 10)),
       // Score bar
       Row(children: [
@@ -869,7 +879,7 @@ class _HomeScreenState extends State<HomeScreen>
           child: LinearProgressIndicator(
             value: e.score / 100,
             minHeight: 5,
-            backgroundColor: const Color(0xFF21262D),
+            backgroundColor: _tBorder,
             valueColor: AlwaysStoppedAnimation<Color>(col)))),
         const SizedBox(width: 8),
         Text('${e.score.toInt()}/100', style: TextStyle(
@@ -884,7 +894,7 @@ class _HomeScreenState extends State<HomeScreen>
           decoration: BoxDecoration(
             color: const Color(0xFF0A0C10),
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: const Color(0xFF30363D))),
+            border: Border.all(color: _tBorder)),
           child: Text(f, style: const TextStyle(
             color: Color(0xFF8B949E), fontSize: 9)))).toList()),
       const SizedBox(height: 10),
@@ -910,15 +920,15 @@ class _HomeScreenState extends State<HomeScreen>
     ]),
   );
 
-  Color _badgeColor(String bc) => bc == 'gold' ? const Color(0xFFD4AF37)
+  Color _badgeColor(String bc) => bc == 'gold' ? _tGold
       : bc == 'green' ? const Color(0xFF3FB950)
       : bc == 'blue'  ? const Color(0xFF58A6FF)
-      : const Color(0xFF484F58);
+      : _tDim;
 
   Color _badgeBg(String bc) => bc == 'gold' ? const Color(0xFF1A1200)
       : bc == 'green' ? const Color(0xFF0D2015)
       : bc == 'blue'  ? const Color(0xFF0D1B2E)
-      : const Color(0xFF1C1C1C);
+      : _tCard;
 
   // ── FILE CARD ──────────────────────────────────────────────────────────────
   Widget _fileCard(S s) => GestureDetector(
@@ -927,10 +937,10 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: _tCard,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _file != null ? const Color(0xFFD4AF37) : const Color(0xFF30363D),
+          color: _file != null ? _tGold : _tBorder,
           width: 1.5),
         boxShadow: const [BoxShadow(
           color: Color(0x26000000),
@@ -944,13 +954,13 @@ class _HomeScreenState extends State<HomeScreen>
           child: Icon(
             _file != null ? Icons.audio_file : Icons.add_circle_outline,
             key: ValueKey(_file != null),
-            color: const Color(0xFFD4AF37), size: 52)),
+            color: _tGold, size: 52)),
         const SizedBox(height: 12),
         Text(_file != null ? _file!.path.split('/').last : s.pickFile,
           textDirection: TextDirection.rtl,
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: _file != null ? const Color(0xFFC9D1D9) : const Color(0xFF8B949E),
+            color: _file != null ? _tText : _tSub,
             fontSize: _file != null ? 13 : 16,
             fontWeight: _file != null ? FontWeight.normal : FontWeight.bold)),
         if (_file != null) ...[
@@ -985,13 +995,13 @@ class _HomeScreenState extends State<HomeScreen>
             child: ElevatedButton(
               onPressed: (_busy || !_serverUp) ? null : _process,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFD4AF37),
+                backgroundColor: _tGold,
                 foregroundColor: const Color(0xFF0A0C10),
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
                 disabledBackgroundColor:
-                  const Color(0xFFD4AF37).withOpacity(0.3)),
+                  _tGold.withOpacity(0.3)),
               child: _busy
                 ? Row(mainAxisSize: MainAxisSize.min, children: [
                     const SizedBox(width: 16, height: 16,
@@ -1031,7 +1041,7 @@ class _HomeScreenState extends State<HomeScreen>
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: const Color(0xFF30363D),
+                color: _tBorder,
                 borderRadius: BorderRadius.circular(2))),
             Padding(
               padding: const EdgeInsets.fromLTRB(20,4,20,12),
@@ -1121,9 +1131,9 @@ class _HomeScreenState extends State<HomeScreen>
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161B22),
+                    color: _tCard,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF21262D))),
+                    border: Border.all(color: _tBorder)),
                   child: Column(
                     children: _engines.map((e) {
                       final col = _badgeColor(e.bc);
@@ -1150,16 +1160,16 @@ class _HomeScreenState extends State<HomeScreen>
                             child: LinearProgressIndicator(
                               value: e.score / 100,
                               minHeight: 4,
-                              backgroundColor: const Color(0xFF21262D),
+                              backgroundColor: _tBorder,
                               valueColor: AlwaysStoppedAnimation<Color>(col))),
                         ]));
                     }).toList())),
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161B22),
+                    color: _tCard,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF21262D))),
+                    border: Border.all(color: _tBorder)),
                   child: Row(children: [
                     ClipOval(child: Image.asset('assets/images/logo.png',
                       width: 44, height: 44, fit: BoxFit.cover,
@@ -1207,9 +1217,9 @@ class _HomeScreenState extends State<HomeScreen>
     margin: const EdgeInsets.fromLTRB(16,10,16,4),
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      color: const Color(0xFF161B22),
+      color: _tCard,
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: const Color(0xFF21262D)),
+      border: Border.all(color: _tBorder),
       boxShadow: const [BoxShadow(
         color: Color(0x26000000),
         blurRadius: 12, offset: Offset(0, 3))]),
@@ -1236,7 +1246,7 @@ class _HomeScreenState extends State<HomeScreen>
         // S20-A: null = indeterminate (animated pulse) during server merge
         child: LinearProgressIndicator(
           value: _isMerging ? null : _progress, minHeight: 8,
-          backgroundColor: const Color(0xFF21262D),
+          backgroundColor: _tBorder,
           valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)))),
       // S28: Cancel button
       const SizedBox(height: 10),
@@ -1265,7 +1275,7 @@ class _HomeScreenState extends State<HomeScreen>
         : s.fair;                     // Fair — covers the 75 fallback case
 
     final scoreColor = score >= 90 ? const Color(0xFF3FB950)
-        : score >= 80 ? const Color(0xFFD4AF37)
+        : score >= 80 ? _tGold
         : const Color(0xFFF85149); // red for scores below 80
 
     const engineNames = {
@@ -1352,7 +1362,7 @@ class _HomeScreenState extends State<HomeScreen>
             color: const Color(0xFF1A1200),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: const Color(0xFFD4AF37).withOpacity(0.3))),
+              color: _tGold.withOpacity(0.3))),
           child: Text('$_engine — $engineName',
             style: const TextStyle(
               color: Color(0xFFD4AF37), fontSize: 11))),
@@ -1364,7 +1374,7 @@ class _HomeScreenState extends State<HomeScreen>
 
         // S30-R4: section divider
         Container(height: 1,
-          color: const Color(0xFF21262D),
+          color: _tBorder,
           margin: const EdgeInsets.only(bottom: 14)),
 
         // S19 FALLBACK WARNING: shown when score ≤ 78
@@ -1432,7 +1442,7 @@ class _HomeScreenState extends State<HomeScreen>
               child: OutlinedButton.icon(
                 onPressed: _shareFile,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF8B949E),
+                  foregroundColor: _tSub,
                   side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
@@ -1478,9 +1488,9 @@ class _HomeScreenState extends State<HomeScreen>
     onTap: _copyMetrics,
     child: Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: _tCard,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF21262D))),
+        border: Border.all(color: _tBorder)),
       child: Column(children: [
         IntrinsicHeight(child: Row(children: [
           Expanded(child: _metricTile(
@@ -1514,14 +1524,14 @@ class _HomeScreenState extends State<HomeScreen>
     final num = double.tryParse(value);
     String delta = '';
     String arrow = '';
-    Color tileColor = const Color(0xFF484F58);
+    Color tileColor = _tDim;
     if (num != null && value != '—') {
       final diff = num - target;
       delta = '${diff >= 0 ? "+" : ""}${diff.toStringAsFixed(2)}';
       if (diff.abs() <= 0.5) {
         arrow = '✓'; tileColor = const Color(0xFF3FB950);
       } else if (diff > 0) {
-        arrow = '▲'; tileColor = const Color(0xFFD4AF37);
+        arrow = '▲'; tileColor = _tGold;
       } else {
         arrow = '▼'; tileColor = const Color(0xFF58A6FF);
       }
@@ -1558,7 +1568,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _bottomRow(S s) => Padding(
     padding: const EdgeInsets.fromLTRB(16,10,16,4),
     child: Material( // S30-P4
-      color: const Color(0xFF161B22),
+      color: _tCard,
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -1569,12 +1579,12 @@ class _HomeScreenState extends State<HomeScreen>
               FadeTransition(opacity: anim, child: child),
             transitionDuration: const Duration(milliseconds: 220),
           )),
-        splashColor: const Color(0xFFD4AF37).withOpacity(0.12),
-        highlightColor: const Color(0xFFD4AF37).withOpacity(0.06),
+        splashColor: _tGold.withOpacity(0.12),
+        highlightColor: _tGold.withOpacity(0.06),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFF21262D))),
+            border: Border.all(color: _tBorder)),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.history_rounded,
               color: Color(0xFF8B949E), size: 18),
@@ -1601,13 +1611,13 @@ class _HomeScreenState extends State<HomeScreen>
             Uri.parse('https://buymeacoffee.com/tilawa'),
             mode: LaunchMode.externalApplication);
         },
-        splashColor: const Color(0xFFD4AF37).withOpacity(0.18),
+        splashColor: _tGold.withOpacity(0.18),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: const Color(0xFFD4AF37).withOpacity(0.3))),
+              color: _tGold.withOpacity(0.3))),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.volunteer_activism,
             color: Color(0xFFD4AF37), size: 18),
@@ -1650,7 +1660,7 @@ class _ScoreArcPainter extends CustomPainter {
       Rect.fromCircle(center: c, radius: r),
       start, sweep, false,
       Paint()
-        ..color = const Color(0xFF21262D)
+        ..color = _tBorder
         ..style = PaintingStyle.stroke
         ..strokeWidth = 12
         ..strokeCap = StrokeCap.round,
