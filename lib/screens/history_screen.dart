@@ -120,12 +120,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: Text(s.clearAll,
           style: const TextStyle(color: Color(0xFFD4AF37))),
         content: Text(s.clearAllConfirm,
-          style: const TextStyle(color: Color(0xFFC9D1D9))),
+          style: TextStyle(color: _tText)), // S32-BUG6-FIX: theme-aware
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(s.ar ? 'لا' : 'No',
-              style: const TextStyle(color: Color(0xFF8B949E)))),
+              style: TextStyle(color: _tSub))), // S32-BUG6-FIX
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(s.ar ? 'احذف' : 'Delete',
@@ -292,8 +292,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 job['original_name'] as String?
                   ?? ApiService.buildFilename(engine),
                 maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFFC9D1D9), fontSize: 11,
+                style: TextStyle(
+                  color: _tText, fontSize: 11, // S32-BUG7-FIX: theme-aware
                   fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Row(children: [

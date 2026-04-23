@@ -1,9 +1,6 @@
 import 'dart:io';
 import 'dart:async';
-import 'dart:math' show pi; // S30-R1
 import 'package:flutter/material.dart';
-import '../main.dart' show ThemeProvider; // S31-F2c
-import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
@@ -21,7 +18,7 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
-  String  _engine    = 'v10.0';
+  String  _engine    = 'v8.0';
   String  _status    = '';
   double  _progress  = 0;
   bool    _busy      = false;
@@ -36,62 +33,35 @@ class _HomeScreenState extends State<HomeScreen>
   bool    _isLarge   = false;
   bool    _downloading = false; // RC3: prevent concurrent downloads
   bool    _isMerging  = false; // S20-A: true during server chunk-merge phase
-  int     _pollErrors = 0;     // S22: consecutive poll error counter
-  int     _fileBytes  = 0;     // S28: file size in bytes for estimated time
-  int?    _latencyMs;              // S28-T2: server latency in ms
-  DateTime? _processStart;     // S22: start time for 25-min hard timeout
-  int _fallbackRetries = 0;    // S32: auto-retry counter for fallback mode
 
-
-  // S32: theme cache — updated at top of every build() so ALL sub-methods
-  // (which are instance methods) can read current theme colors directly.
-  // Initialized to dark-mode defaults; updated before any widget is built.
-  Color _tBg     = const Color(0xFF080A0E);
-  Color _tCard   = const Color(0xFF161B22);
-  Color _tBorder = const Color(0xFF21262D);
-  Color _tText   = const Color(0xFFC9D1D9);
-  Color _tSub    = const Color(0xFF8B949E);
-  Color _tDim    = const Color(0xFF484F58);
-  Color _tGold   = const Color(0xFFD4AF37);
-  bool  _tDark   = true;
   // S19: Wake server state
   bool _waking       = false;
   int  _wakeAttempts = 0;
 
   late final AnimationController _glowCtrl;
-  late final AnimationController _resultCtrl; // S29: result card entrance
 
   // ── Engines (S21: full data from documentation) ─────────────────────────────
-  // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
     _EngineData(
-      'v10.0', 'الأثيريون — الأساس', 'Aetherion Foundation', 99.0,
-      'NEW', 'gold',
-      ['24 Fixes', 'Two-Stage NR', 'L-BFGS-B EQ', 'Joint Opt', 'Declip', 'v10 NR'],
-      '٢٤ إصلاحاً تراكمياً من v9.0: تخفيض ضوضاء ثنائي — تحسين طيفي L-BFGS-B — 8 إصلاحات حرجة في LUFS وLRA ومدى التضخيم.',
-      '24 cumulative fixes from v9.0: two-stage NR (hum + broadband), L-BFGS-B spectral EQ, 8 critical bug fixes including LUFS measurement and ±18dB joint gain range.',
-    ),
-    _EngineData(
-      'v9.0', 'التطور', 'The Evolution', 99.0,
-      '', 'gold', // v9.0 badge cleared S31
-      ['Joint Opt', 'LFS Fix', 'NR→EQ', 'Hash Cache', 'Confidence', 'Clean Arch'],
-      'إعادة بناء كاملة: NR دائماً قبل EQ — مُحسِّن LUFS+LRA مشترك — كشف LFS صريح — 1890 سطر.',
-      'Full rewrite: NR before EQ, joint LUFS+LRA optimizer, explicit LFS detection. 1890 lines.',
-    ),
-    // v8.9 removed S31 | v8.7 removed S31-F3
-    _EngineData(
-      'v8.5', 'تقييم صادق', 'Honest Ceiling', 99.0,
-      '', 'gold',
-      ['Tier Scoring', 'Full-File Ref', 'Phrase LRA', 'Source Tier', 'MDS Weighted', '64K Honest'],
-      'تقييم طبقي صادق: ملف 64kbps يضرب السقف الفيزيائي يحصل على 95/100 لا 75/100. الدرجة_الطبقية تُقاس مقابل ما يمكن تحقيقه فعلاً. Full-file spectral بدلاً من 40 ثانية أولى.',
-      'Honest tier scoring: a 64kbps file hitting its physical ceiling scores 95/100, not 75/100. score_tier vs achievable targets. Full-file spectral analysis replaces 40s clip.',
-    ),
-    _EngineData(
       'v8.0', 'دقة مُعايَرة', 'Calibrated Precision', 96.0,
-      '', 'gold',
+      'NEW', 'gold',
       ['4-Pass WAV', 'MDS', 'Crest Guard', 'SFM-NR', 'Single Compand', 'BIAS_V8'],
       'إصلاح 5 أخطاء حرجة من v7.6: انعكاس اتجاه SPECTRAL_BIAS في 250Hz/4kHz/8kHz، compand مزدوج يسحق Crest، 5 limiters تراكمية، خطأ DR→LRA، وحارس Crest مستقل لكل pass.',
       '5 critical fixes from v7.6: inverted SPECTRAL_BIAS in 250Hz/4kHz/8kHz, double-stacked compand crushing Crest, 5 cumulative limiters, wrong DR→LRA type, and independent Crest Guard per pass.',
+    ),
+    _EngineData(
+      'v7.6', 'تقييم ذكي', 'Intelligent Assessment', 94.0,
+      'MDS', 'blue',
+      ['MDS System', 'SFM-NR', 'DR-Calibrated', 'Spectral Dist EQ', '4-Pass WAV', 'A-Weighting'],
+      'أول نسخة بنظام MDS: الانبساط الطيفي SFM + النطاق الديناميكي + المسافة الطيفية + بصمة تلف الكودك. تشخيص مستمر 0-100 بدل 5 تصنيفات ثنائية.',
+      'First with MDS (Multi-Metric Damage Score): Spectral Flatness + Dynamic Range + Spectral Distance + Codec Damage Fingerprint. Continuous 0-100 diagnosis replacing 5 binary tiers.',
+    ),
+    _EngineData(
+      'v7.5', 'دقة منضبطة', 'Disciplined Precision', 94.0,
+      'BEST', 'green',
+      ['Do-No-Harm', 'Crest-Aware', 'Quality Gate', '4-Pass WAV', 'Bark EQ', 'Single Compand'],
+      'مبدأ "لا ضرر": Quality Gate يحمي الجودة بعد كل pass، Crest-Aware يمنع bass boost عند انهيار Crest، compand واحد نظيف فقط — لا تكديس. العودة لبنية v7.0 المُثبَّتة.',
+      '"Do-No-Harm": Quality Gate protects output after each pass, Crest-Aware blocks bass boost when Crest degrades, single clean compand only — no stacking. Return to proven v7.0 architecture.',
     ),
     _EngineData(
       'v7.0', 'كلاسيكي', 'Classic', 91.0,
@@ -108,15 +78,9 @@ class _HomeScreenState extends State<HomeScreen>
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 2))
       ..repeat(reverse: true);
-    _resultCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
     _checkServer();
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
-    // S30-F1: restored — one loadLastEngine call
-    ApiService.loadLastEngine().then((e) {
-      if (mounted) setState(() => _engine = e);
-    });
   }
 
   @override
@@ -124,15 +88,14 @@ class _HomeScreenState extends State<HomeScreen>
     _serverTimer?.cancel();
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
-    _resultCtrl.dispose();
     _glowCtrl.dispose();
     super.dispose();
   }
 
   // ── Server check ───────────────────────────────────────────────────────────
   Future<void> _checkServer() async {
-    final ms = await ApiService.checkServer();
-    if (mounted) setState(() { _serverUp = ms != null; _latencyMs = ms; });
+    final up = await ApiService.isServerRunning();
+    if (mounted) setState(() => _serverUp = up);
   }
 
   // S19: Wake server — polls every 5s for up to 35s
@@ -144,38 +107,15 @@ class _HomeScreenState extends State<HomeScreen>
 
     _wakeTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       _wakeAttempts++;
-      final ms = await ApiService.checkServer();
-      final up = ms != null;
+      final up = await ApiService.isServerRunning();
       if (!mounted) {
         _wakeTimer?.cancel();
         return;
       }
       if (up || _wakeAttempts >= 7) { // max 35s
         _wakeTimer?.cancel();
-        setState(() { _serverUp = up; _latencyMs = ms; _waking = false; _wakeAttempts = 0; });
+        setState(() { _serverUp = up; _waking = false; _wakeAttempts = 0; });
       }
-    });
-  }
-
-  // ── S28: Cancel processing ────────────────────────────────────────────────
-  void _cancelProcessing() {
-    _pollTimer?.cancel();
-    HapticFeedback.mediumImpact();
-    setState(() {
-      _busy = false; _progress = 0;
-      _status = ''; _isMerging = false;
-      _jobId = null;
-    });
-  }
-
-  // ── S28: Reset for new file ────────────────────────────────────────────────
-  void _resetForNewFile() {
-    setState(() {
-      _file = null; _result = null; _output = null;
-      _progress = 0; _status = '';
-      _jobId = null; _busy = false;
-      _isMerging = false; _sizeLabel = '';
-      _isLarge = false; _fileBytes = 0;
     });
   }
 
@@ -193,26 +133,18 @@ class _HomeScreenState extends State<HomeScreen>
         _status = ''; _progress = 0;
         _sizeLabel = '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
         _isLarge = bytes > 8 * 1024 * 1024;
-        _fileBytes = bytes;
       });
     }
   }
 
   // ── Process ────────────────────────────────────────────────────────────────
-  // S32-BUG2-FIX: userInitiated=true for button tap, false for auto-retry.
-  // Previously _fallbackRetries was reset inside setState() unconditionally,
-  // meaning auto-retries always reset the counter → limit of 2 was never hit.
-  Future<void> _process({bool userInitiated = true}) async {
+  Future<void> _process() async {
     if (_file == null || !_serverUp) return;
-    HapticFeedback.mediumImpact();
-    if (userInitiated) _fallbackRetries = 0; // reset only on fresh user action
     setState(() {
       _busy = true; _progress = 0.02;
       _status = LangProvider.strings(context).uploading;
       _output = null; _result = null;
     });
-    _processStart = DateTime.now(); // S22: start clock for timeout
-    _pollErrors = 0;               // S22: reset in case of re-process
     try {
       final resp = await ApiService.uploadFile(_file!, _engine,
           onProgress: (p, label) {
@@ -233,7 +165,6 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Polling — RC2 + RC3 fixes ──────────────────────────────────────────────
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollErrors = 0; // S22: fresh counter for each new polling session
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (_jobId == null) return;
       try {
@@ -245,9 +176,8 @@ class _HomeScreenState extends State<HomeScreen>
         final isMerging = (status == 'uploading' || status == 'merging');
         final display = isMerging
             ? _progress
-            : (0.68 + srv * 0.32).clamp(_progress, 1.0); // S21: monotonic — never regress
+            : (0.68 + srv * 0.32).clamp(0.0, 1.0);
         // S20-A: _isMerging drives indeterminate mode in progress bar
-        _pollErrors = 0; // S22: reset on successful poll
         setState(() { _progress = display; _status = st['label'] ?? ''; _isMerging = isMerging && _busy; });
 
         if (status == 'error') {
@@ -255,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen>
           setState(() {
             _busy = false;
             _isMerging = false;  // S20-B: clear merge animation on server error
-            _status = 'فشل: ${st['''error'''] ?? '''خطأ غير معروف'''}';
+            _status = 'فشل: ${st['error']}';
           });
           return;
         }
@@ -272,63 +202,7 @@ class _HomeScreenState extends State<HomeScreen>
             _downloading = false;
           }
         }
-      } catch (_) {
-        // S22: surface poll errors -- do NOT silently swallow.
-        // Root cause of the 79% freeze: server restart kills the job.
-        // Every poll throws SocketException / returns bad JSON.
-        // Old catch(_){} hid this completely forever.
-        _pollErrors++;
-        if (_pollErrors >= 5 && mounted) {
-          // 5 errors = ~10 seconds of failure. Server is gone.
-          _pollTimer?.cancel();
-          final s = LangProvider.strings(context);
-          setState(() {
-            _busy = false; _isMerging = false;
-            _progress = 0; _status = '';
-          });
-          _checkServer(); // S22: immediately refresh server status banner
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-              s.ar
-                ? '⚠️ انقطع الاتصال بالخادم. انتظر 30 ثانية، نبّه الخادم، ثم أعد المعالجة.'
-                : '⚠️ Lost connection to server. Wait 30s, wake the server, then retry.',
-              style: const TextStyle(fontSize: 12)),
-            backgroundColor: const Color(0xFF200D0D),
-            duration: const Duration(seconds: 10),
-            action: SnackBarAction(
-              label: s.ar ? 'حسناً' : 'OK',
-              textColor: _tGold,
-              onPressed: () {})));
-          return;
-        }
-      }
-      // S22: 25-minute hard timeout. v8.0 on a large file runs 4 WAV
-      // passes which can take 20-40 min on free HF CPU. Show this
-      // instead of freezing at whatever % the server was at.
-      if (_busy && _processStart != null && mounted) {
-        final elapsed = DateTime.now().difference(_processStart!);
-        if (elapsed.inMinutes >= 25) {
-          _pollTimer?.cancel();
-          final s = LangProvider.strings(context);
-          setState(() {
-            _busy = false; _isMerging = false;
-            _progress = 0; _status = '';
-          });
-          _checkServer();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-              s.ar
-                ? '⏱️ استغرقت المعالجة أكثر من 25 دقيقة. جرّب محرك v7.0 أو أعد المحاولة لاحقاً.'
-                : '⏱️ Processing exceeded 25 min. Try v7.0 engine or retry later.',
-              style: const TextStyle(fontSize: 12)),
-            backgroundColor: const Color(0xFF200D0D),
-            duration: const Duration(seconds: 12),
-            action: SnackBarAction(
-              label: s.ar ? 'حسناً' : 'OK',
-              textColor: _tGold,
-              onPressed: () {})));
-        }
-      }
+      } catch (_) {} // only poll errors silently ignored
     });
   }
 
@@ -337,45 +211,18 @@ class _HomeScreenState extends State<HomeScreen>
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
 
-    final filename = ApiService.buildFilename(_engine, originalPath: _file?.path); // S21 BUG2
+    final filename = ApiService.buildFilename(_engine);
     final (file, error) = await ApiService.downloadFile(_jobId!, filename);
 
     if (!mounted) return;
 
     final score = double.tryParse(sd['score']?.toString() ?? '0') ?? 0.0;
 
-    // S32: fallback auto-retry ────────────────────────────────────────────
-    // score ≤ 78 with a valid file = server was in fallback mode (reference
-    // audio not loaded yet).  Auto-reprocess up to 2 times.
-    if (score <= 78 && file != null && _fallbackRetries < 2) {
-      _fallbackRetries++;
-      final retryNum = _fallbackRetries;
-      if (mounted) {
-        setState(() { _progress = 0.0; _status = ''; _busy = false; });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            s.ar
-              ? '⏳ الخادم كان في وضع الاستعداد — إعادة المعالجة تلقائياً ($retryNum/2)…'
-              : '⏳ Server was warming up — retrying automatically ($retryNum/2)…',
-            style: const TextStyle(fontSize: 12)),
-          backgroundColor: const Color(0xFF1A1200),
-          duration: const Duration(seconds: 38)));
-        // Wait 35 s for the Space to finish loading reference audio,
-        // then reprocess the same file.
-        await Future.delayed(const Duration(seconds: 35));
-        if (mounted) _process(userInitiated: false);
-      }
-      return; // don't show the fallback result
-    }
-    // ── end S32 ──────────────────────────────────────────────────────────
-
     setState(() {
       _busy = false; _progress = 1.0;
       _output = file; _result = sd;
       _status = file != null ? s.done : 'فشل: $error';
     });
-
-    if (file != null) _resultCtrl.forward(from: 0); // S29: animate in
 
     // S19: Save job record locally for persistent re-download
     if (file != null && _jobId != null) {
@@ -384,7 +231,6 @@ class _HomeScreenState extends State<HomeScreen>
         engine: _engine,
         score: score,
         filename: filename,
-        originalName: _file?.path.split('/').last, // S28-T2
         metrics: sd,
       );
     }
@@ -423,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen>
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
 
-    final filename = ApiService.buildFilename(_engine, originalPath: _file?.path); // S21 BUG2
+    final filename = ApiService.buildFilename(_engine);
     final (file, error) = await ApiService.downloadFile(_jobId!, filename);
 
     if (!mounted) return;
@@ -483,115 +329,25 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ── S28-T2: Share via Android share sheet ────────────────────────────────
-  Future<void> _shareFile() async {
-    if (_output == null) return;
-    HapticFeedback.lightImpact();
-    try {
-      await ApiService.shareAudio(_output!.path);
-    } catch (e) {
-      if (mounted) {
-        final s = LangProvider.strings(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(s.ar ? 'فشل المشاركة' : 'Share failed: $e'),
-          backgroundColor: const Color(0xFF200D0D),
-          duration: const Duration(seconds: 3),
-        ));
-      }
-    }
-  }
-  // ── S28: Copy metrics to clipboard ───────────────────────────────────────
-  Future<void> _copyMetrics() async {
-    if (_result == null) return;
-    HapticFeedback.lightImpact();
-    final parts = <String>[];
-    if (_result!['score'] != null) parts.add('Score: ${_result!['score']}/100');
-    if (_result!['lufs']  != null) parts.add('LUFS: ${_result!['lufs']}');
-    if (_result!['rms']   != null) parts.add('RMS: ${_result!['rms']}');
-    if (_result!['crest'] != null) parts.add('Crest: ${_result!['crest']}');
-    if (_result!['lra']   != null) parts.add('LRA: ${_result!['lra']}');
-    parts.add('Engine: $_engine');
-    await Clipboard.setData(ClipboardData(text: parts.join('  |  ')));
-    if (mounted) {
-      final s = LangProvider.strings(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(s.copiedMetrics),
-        backgroundColor: const Color(0xFF1A1500),
-        duration: const Duration(seconds: 2),
-      ));
-    }
-  }
-
-  // ── S28: Estimated processing time ────────────────────────────────────────
-  String _estimatedTime() {
-    final mb = _fileBytes / 1024 / 1024;
-    if (mb < 5)  return '~1 min';
-    if (mb < 15) return '~2-3 min';
-    if (mb < 30) return '~4-6 min';
-    if (mb < 50) return '~7-10 min';
-    return '~10-20 min';
-  }
-
-  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
-  // Dart library-private functions (_name) can't cross library boundaries, so
-  // we define them here inside the class instead of importing from main.dart.
-  bool  _isDark(BuildContext ctx)   => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)      => _isDark(ctx) ? _tBg : const Color(0xFFFAF7EE);
-  Color _cCard(BuildContext ctx)    => _isDark(ctx) ? _tCard : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx)  => _isDark(ctx) ? _tBorder : const Color(0xFFD4C99A);
-  Color _cText(BuildContext ctx)    => _isDark(ctx) ? _tText : const Color(0xFF1A1400);
-  Color _cSub(BuildContext ctx)     => _isDark(ctx) ? _tSub : const Color(0xFF6B5E40);
-  Color _cDim(BuildContext ctx)     => _isDark(ctx) ? _tDim : const Color(0xFF8B7B5A);
-  Color _cGold(BuildContext ctx)    => _isDark(ctx) ? _tGold : const Color(0xFFB8941F);
-
   // ── BUILD ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
-    // S32: populate theme cache so sub-methods see current colors
-    _tDark = _isDark(context); _tBg = _cBg(context); _tCard = _cCard(context);
-    _tBorder = _cBorder(context); _tText = _cText(context);
-    _tSub = _cSub(context); _tDim = _cDim(context); _tGold = _cGold(context);
-    final dark = _tDark; // used in gradient below
-    final cBg = _tBg;   // used in Scaffold backgroundColor
     return Scaffold(
-      backgroundColor: cBg,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: dark
-              ? [_tBg, const Color(0xFF0C1018)]
-              : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
-        child: SafeArea(
-          child: CustomScrollView(slivers: [
-            SliverToBoxAdapter(child: _header(s)),
-            SliverToBoxAdapter(child: _serverBanner(s)),
-            SliverToBoxAdapter(child: _engineSelector(s)),
-            SliverToBoxAdapter(child: _fileCard(s)),
-            if (_busy || _progress > 0)
-              SliverToBoxAdapter(child: _progressCard(s)),
-            if (_result != null)
-              SliverToBoxAdapter(
-                child: FadeTransition(
-                  opacity: CurvedAnimation(
-                    parent: _resultCtrl, curve: Curves.easeOut),
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.1),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                      parent: _resultCtrl, curve: Curves.easeOutCubic)),
-                    child: _resultCard(s),
-                  ),
-                ),
-              ),
-            SliverToBoxAdapter(child: _bottomRow(s)),
-            SliverToBoxAdapter(child: _donationCard(s)),
-            const SliverToBoxAdapter(child: SizedBox(height: 40)),
-          ]),
-        ),
+      body: SafeArea(
+        child: CustomScrollView(slivers: [
+          SliverToBoxAdapter(child: _header(s)),
+          SliverToBoxAdapter(child: _serverBanner(s)),
+          SliverToBoxAdapter(child: _engineSelector(s)),
+          SliverToBoxAdapter(child: _fileCard(s)),
+          if (_busy || _progress > 0)
+            SliverToBoxAdapter(child: _progressCard(s)),
+          if (_result != null)
+            SliverToBoxAdapter(child: _resultCard(s)),
+          SliverToBoxAdapter(child: _bottomRow(s)),
+          SliverToBoxAdapter(child: _donationCard(s)),
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+        ]),
       ),
     );
   }
@@ -605,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           boxShadow: [BoxShadow(
-            color: _tGold.withOpacity(0.25),
+            color: const Color(0xFFD4AF37).withOpacity(0.25),
             blurRadius: 16)]),
         child: ClipOval(child: Image.asset('assets/images/logo.png',
           fit: BoxFit.cover,
@@ -621,7 +377,7 @@ class _HomeScreenState extends State<HomeScreen>
             style: TextStyle(
               fontSize: 24, fontWeight: FontWeight.bold,
               color: Color.lerp(
-                _tGold,
+                const Color(0xFFD4AF37),
                 const Color(0xFFFFF4B0),
                 _glowCtrl.value)))),
         Text(s.subtitle,
@@ -631,29 +387,20 @@ class _HomeScreenState extends State<HomeScreen>
       Row(children: [
         _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
         const SizedBox(width: 6),
-        _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const SettingsScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 220),
-          ))),
+        _iconBtn(Icons.settings_outlined, () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const SettingsScreen()))),
       ]),
     ]),
   );
 
-  Widget _iconBtn(IconData icon, VoidCallback onTap) => Material(
-    color: _tCard,
-    shape: const CircleBorder(
-      side: BorderSide(color: Color(0xFF21262D))),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      splashColor: _tGold.withOpacity(0.18),
-      highlightColor: _tGold.withOpacity(0.08),
-      child: Padding(
-        padding: const EdgeInsets.all(9),
-        child: Icon(icon, color: _tSub, size: 20))));
+  Widget _iconBtn(IconData icon, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.all(9),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161B22), shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFF21262D))),
+      child: Icon(icon, color: const Color(0xFF8B949E), size: 20)));
 
   // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
   Widget _serverBanner(S s) {
@@ -674,7 +421,7 @@ class _HomeScreenState extends State<HomeScreen>
           color: _serverUp
             ? const Color(0xFF3FB950)
             : _waking
-              ? _tGold
+              ? const Color(0xFFD4AF37)
               : const Color(0xFFF85149),
           width: 0.8)),
       child: Column(
@@ -701,16 +448,12 @@ class _HomeScreenState extends State<HomeScreen>
               child: Text(
                 _waking
                   ? s.waking
-                  : _serverUp
-                    ? (_latencyMs != null
-                        ? '${s.serverOnline} · ${_latencyMs}ms' // S30-S
-                        : s.serverOnline)
-                    : s.serverOffline,
+                  : (_serverUp ? s.serverOnline : s.serverOffline),
                 style: TextStyle(
                   color: _serverUp
                     ? const Color(0xFF3FB950)
                     : _waking
-                      ? _tGold
+                      ? const Color(0xFFD4AF37)
                       : const Color(0xFFF85149),
                   fontSize: 12)),
             ),
@@ -724,7 +467,7 @@ class _HomeScreenState extends State<HomeScreen>
                     color: const Color(0xFF1A1000),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: _tGold.withOpacity(0.6))),
+                      color: const Color(0xFFD4AF37).withOpacity(0.6))),
                   child: Text(s.wakeServer,
                     style: const TextStyle(
                       color: Color(0xFFD4AF37),
@@ -748,12 +491,9 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _engineSelector(S s) => Container(
     margin: const EdgeInsets.fromLTRB(16,10,16,4),
     decoration: BoxDecoration(
-      color: _tCard,
+      color: const Color(0xFF161B22),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _tBorder),
-      boxShadow: const [BoxShadow(
-        color: Color(0x26000000),
-        blurRadius: 12, offset: Offset(0, 3))]),
+      border: Border.all(color: const Color(0xFF21262D))),
     child: Column(children: [
       // ── Header row ──────────────────────────────────────────────────
       Padding(
@@ -791,19 +531,15 @@ class _HomeScreenState extends State<HomeScreen>
     final col = _badgeColor(e.bc);
     final bg  = _badgeBg(e.bc);
     return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick(); // S30-P1
-        setState(() => _engine = e.id);
-        ApiService.saveLastEngine(e.id); // S28-T2: persist
-      },
+      onTap: () => setState(() => _engine = e.id),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.fromLTRB(8,3,8,3),
         decoration: BoxDecoration(
-          color: sel ? _tCard : Colors.transparent,
+          color: sel ? const Color(0xFF0D1117) : Colors.transparent,
           borderRadius: BorderRadius.circular(11),
           border: Border.all(
-            color: sel ? col : _tBorder,
+            color: sel ? col : const Color(0xFF21262D),
             width: sel ? 1.4 : 0.8)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // ── Collapsed header (always visible) ───────────────────────
@@ -816,7 +552,7 @@ class _HomeScreenState extends State<HomeScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: sel ? col : _tBorder, width: 2),
+                    color: sel ? col : const Color(0xFF30363D), width: 2),
                   color: sel ? col : Colors.transparent),
                 child: sel
                   ? const Icon(Icons.check, size: 10, color: Color(0xFF0A0C10))
@@ -827,7 +563,7 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                 Row(children: [
                   Text(e.id, style: TextStyle(
-                    color: sel ? col : col.withOpacity(0.55), // S31-F5: per-engine colour
+                    color: sel ? col : const Color(0xFFC9D1D9),
                     fontWeight: FontWeight.bold, fontSize: 13)),
                   if (e.badge.isNotEmpty) ...[
                     const SizedBox(width: 6),
@@ -846,11 +582,10 @@ class _HomeScreenState extends State<HomeScreen>
               ])),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text('≥${e.score.toInt()}', style: TextStyle(
-                  color: sel ? col : col.withOpacity(0.40), // S31-F5
+                  color: sel ? col : const Color(0xFF484F58),
                   fontWeight: FontWeight.w800, fontSize: 15)),
-                Text('/100', style: TextStyle(
-                  color: col.withOpacity(sel ? 0.45 : 0.25), // S31-F5
-                  fontSize: 8)),
+                Text('/100', style: const TextStyle(
+                  color: Color(0xFF484F58), fontSize: 8)),
               ]),
             ])),
           // ── Expanded details (selected engine only) ──────────────────
@@ -870,7 +605,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _engineExpanded(_EngineData e, S s, Color col) => Padding(
     padding: const EdgeInsets.fromLTRB(12,0,12,12),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(height: 1, color: _tBorder,
+      Container(height: 1, color: const Color(0xFF21262D),
         margin: const EdgeInsets.only(bottom: 10)),
       // Score bar
       Row(children: [
@@ -879,7 +614,7 @@ class _HomeScreenState extends State<HomeScreen>
           child: LinearProgressIndicator(
             value: e.score / 100,
             minHeight: 5,
-            backgroundColor: _tBorder,
+            backgroundColor: const Color(0xFF21262D),
             valueColor: AlwaysStoppedAnimation<Color>(col)))),
         const SizedBox(width: 8),
         Text('${e.score.toInt()}/100', style: TextStyle(
@@ -894,7 +629,7 @@ class _HomeScreenState extends State<HomeScreen>
           decoration: BoxDecoration(
             color: const Color(0xFF0A0C10),
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: _tBorder)),
+            border: Border.all(color: const Color(0xFF30363D))),
           child: Text(f, style: const TextStyle(
             color: Color(0xFF8B949E), fontSize: 9)))).toList()),
       const SizedBox(height: 10),
@@ -920,15 +655,15 @@ class _HomeScreenState extends State<HomeScreen>
     ]),
   );
 
-  Color _badgeColor(String bc) => bc == 'gold' ? _tGold
+  Color _badgeColor(String bc) => bc == 'gold' ? const Color(0xFFD4AF37)
       : bc == 'green' ? const Color(0xFF3FB950)
       : bc == 'blue'  ? const Color(0xFF58A6FF)
-      : _tDim;
+      : const Color(0xFF484F58);
 
   Color _badgeBg(String bc) => bc == 'gold' ? const Color(0xFF1A1200)
       : bc == 'green' ? const Color(0xFF0D2015)
       : bc == 'blue'  ? const Color(0xFF0D1B2E)
-      : _tCard;
+      : const Color(0xFF1C1C1C);
 
   // ── FILE CARD ──────────────────────────────────────────────────────────────
   Widget _fileCard(S s) => GestureDetector(
@@ -937,30 +672,20 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: _tCard,
+        color: const Color(0xFF161B22),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _file != null ? _tGold : _tBorder,
-          width: 1.5),
-        boxShadow: const [BoxShadow(
-          color: Color(0x26000000),
-          blurRadius: 12, offset: Offset(0, 3))]),
+          color: _file != null ? const Color(0xFFD4AF37) : const Color(0xFF30363D),
+          width: 1.5)),
       child: Column(children: [
-        AnimatedSwitcher( // S30-P3
-          duration: const Duration(milliseconds: 350),
-          switchInCurve: Curves.easeOutBack,
-          transitionBuilder: (child, anim) => ScaleTransition(
-            scale: anim, child: FadeTransition(opacity: anim, child: child)),
-          child: Icon(
-            _file != null ? Icons.audio_file : Icons.add_circle_outline,
-            key: ValueKey(_file != null),
-            color: _tGold, size: 52)),
+        Icon(_file != null ? Icons.audio_file : Icons.add_circle_outline,
+          color: const Color(0xFFD4AF37), size: 52),
         const SizedBox(height: 12),
         Text(_file != null ? _file!.path.split('/').last : s.pickFile,
           textDirection: TextDirection.rtl,
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: _file != null ? _tText : _tSub,
+            color: _file != null ? const Color(0xFFC9D1D9) : const Color(0xFF8B949E),
             fontSize: _file != null ? 13 : 16,
             fontWeight: _file != null ? FontWeight.normal : FontWeight.bold)),
         if (_file != null) ...[
@@ -973,18 +698,6 @@ class _HomeScreenState extends State<HomeScreen>
               _badge(s.chunkedBadge, 'gold'),
             ],
           ]),
-          // S28: Estimated processing time
-          if (_fileBytes > 0) ...[
-            const SizedBox(height: 4),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Icon(Icons.timer_outlined, size: 11,
-                color: Color(0xFF484F58)),
-              const SizedBox(width: 4),
-              Text('${s.estTime}: ${_estimatedTime()}',
-                style: const TextStyle(
-                  color: Color(0xFF484F58), fontSize: 10)),
-            ]),
-          ],
         ],
         const SizedBox(height: 4),
         Text(s.sizeLimit,
@@ -995,27 +708,17 @@ class _HomeScreenState extends State<HomeScreen>
             child: ElevatedButton(
               onPressed: (_busy || !_serverUp) ? null : _process,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _tGold,
+                backgroundColor: const Color(0xFFD4AF37),
                 foregroundColor: const Color(0xFF0A0C10),
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
                 disabledBackgroundColor:
-                  _tGold.withOpacity(0.3)),
-              child: _busy
-                ? Row(mainAxisSize: MainAxisSize.min, children: [
-                    const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF0A0C10))),
-                    const SizedBox(width: 10),
-                    Text(s.processing,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
-                  ])
-                : Text('${s.process} — $_engine',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15)))),
+                  const Color(0xFFD4AF37).withOpacity(0.3)),
+              child: Text(
+                _busy ? s.processing : '${s.process} — $_engine',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold, fontSize: 15)))),
         ],
       ]),
     ),
@@ -1041,7 +744,7 @@ class _HomeScreenState extends State<HomeScreen>
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: _tBorder,
+                color: const Color(0xFF30363D),
                 borderRadius: BorderRadius.circular(2))),
             Padding(
               padding: const EdgeInsets.fromLTRB(20,4,20,12),
@@ -1131,9 +834,9 @@ class _HomeScreenState extends State<HomeScreen>
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: _tCard,
+                    color: const Color(0xFF161B22),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _tBorder)),
+                    border: Border.all(color: const Color(0xFF21262D))),
                   child: Column(
                     children: _engines.map((e) {
                       final col = _badgeColor(e.bc);
@@ -1160,16 +863,16 @@ class _HomeScreenState extends State<HomeScreen>
                             child: LinearProgressIndicator(
                               value: e.score / 100,
                               minHeight: 4,
-                              backgroundColor: _tBorder,
+                              backgroundColor: const Color(0xFF21262D),
                               valueColor: AlwaysStoppedAnimation<Color>(col))),
                         ]));
                     }).toList())),
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: _tCard,
+                    color: const Color(0xFF161B22),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _tBorder)),
+                    border: Border.all(color: const Color(0xFF21262D))),
                   child: Row(children: [
                     ClipOval(child: Image.asset('assets/images/logo.png',
                       width: 44, height: 44, fit: BoxFit.cover,
@@ -1217,23 +920,13 @@ class _HomeScreenState extends State<HomeScreen>
     margin: const EdgeInsets.fromLTRB(16,10,16,4),
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      color: _tCard,
+      color: const Color(0xFF161B22),
       borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _tBorder),
-      boxShadow: const [BoxShadow(
-        color: Color(0x26000000),
-        blurRadius: 12, offset: Offset(0, 3))]),
+      border: Border.all(color: const Color(0xFF21262D))),
     child: Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Flexible(child: AnimatedSwitcher( // S30-P2
-          duration: const Duration(milliseconds: 300),
-          transitionBuilder: (child, anim) => FadeTransition(
-            opacity: anim, child: child),
-          child: Text(
-            _status.isEmpty ? s.processing : _status,
-            key: ValueKey(_status),
-            style: const TextStyle(
-              color: Color(0xFFC9D1D9), fontSize: 13)))),
+        Flexible(child: Text(_status.isEmpty ? s.processing : _status,
+          style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 13))),
         // S20-A: '...' when merging — frozen '68%' looks like a crash
         Text(_isMerging ? '...' : '${(_progress * 100).toInt()}%',
           style: const TextStyle(
@@ -1246,19 +939,8 @@ class _HomeScreenState extends State<HomeScreen>
         // S20-A: null = indeterminate (animated pulse) during server merge
         child: LinearProgressIndicator(
           value: _isMerging ? null : _progress, minHeight: 8,
-          backgroundColor: _tBorder,
+          backgroundColor: const Color(0xFF21262D),
           valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)))),
-      // S28: Cancel button
-      const SizedBox(height: 10),
-      TextButton.icon(
-        onPressed: _cancelProcessing,
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 4)),
-        icon: const Icon(Icons.cancel_outlined, size: 16,
-          color: Color(0xFF8B949E)),
-        label: Text(s.cancelBtn,
-          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
-      ),
     ]),
   );
 
@@ -1275,16 +957,13 @@ class _HomeScreenState extends State<HomeScreen>
         : s.fair;                     // Fair — covers the 75 fallback case
 
     final scoreColor = score >= 90 ? const Color(0xFF3FB950)
-        : score >= 80 ? _tGold
+        : score >= 80 ? const Color(0xFFD4AF37)
         : const Color(0xFFF85149); // red for scores below 80
 
     const engineNames = {
-      'v10.0': 'Aetherion Foundation',
-      'v9.0': 'The Evolution',
-      'v8.9': 'Soft Tiers + LPC',
-      'v8.5': 'Honest Ceiling',
-      'v8.4': 'Source Tier Intelligence',
       'v8.0': 'Calibrated Precision',
+      'v7.6': 'Intelligent Assessment',
+      'v7.5': 'Disciplined Precision',
       'v7.0': 'Classic',
     };
     final engineName = engineNames[_engine] ?? _engine;
@@ -1301,60 +980,24 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: score < 80 ? const Color(0xFFF85149) : const Color(0xFF3FB950),
-          width: 1.2),
-        boxShadow: [BoxShadow(
-          color: (score < 80
-              ? const Color(0xFFF85149)
-              : const Color(0xFF3FB950)).withOpacity(0.12),
-          blurRadius: 24, offset: const Offset(0, 6))]),
+          width: 1.2)),
       child: Column(children: [
-        // S30-R1: score arc gauge
-        AnimatedBuilder(
-          animation: _resultCtrl,
-          builder: (_, __) {
-            final t = Curves.easeOutCubic.transform(_resultCtrl.value);
-            final pulse = _resultCtrl.value > 0.85
-                ? 1.0 + 0.05 * (1 - (_resultCtrl.value - 0.85) / 0.15)
-                : 1.0;
-            return Column(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(
-                width: 148, height: 148,
-                child: CustomPaint(
-                  painter: _ScoreArcPainter(
-                    progress: t, score: score, color: scoreColor,
-                    trackColor: _tBorder),
-                  child: Center(child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Transform.scale(
-                        scale: pulse,
-                        child: Text(
-                          '${(score * t).toStringAsFixed(1)}',
-                          style: TextStyle(
-                            color: scoreColor,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 40,
-                            letterSpacing: -1))),
-                      Text('/100', style: TextStyle(
-                        color: scoreColor.withOpacity(0.55),
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold)),
-                    ])),
-                )),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                decoration: BoxDecoration(
-                  color: scoreColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: scoreColor.withOpacity(0.4))),
-                child: Text(label, style: TextStyle(
-                  color: scoreColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13, letterSpacing: 0.5))),
-            ]);
-          }),
-        const SizedBox(height: 14),
+        // Score
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(label, style: TextStyle(
+              color: scoreColor,
+              fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(width: 10),
+            Text('${score.toStringAsFixed(1)}/100',
+              style: TextStyle(
+                color: scoreColor,
+                fontWeight: FontWeight.w900, fontSize: 34)),
+          ]),
+        const SizedBox(height: 12),
 
         // Engine used
         Container(
@@ -1363,23 +1006,26 @@ class _HomeScreenState extends State<HomeScreen>
             color: const Color(0xFF1A1200),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: _tGold.withOpacity(0.3))),
+              color: const Color(0xFFD4AF37).withOpacity(0.3))),
           child: Text('$_engine — $engineName',
             style: const TextStyle(
               color: Color(0xFFD4AF37), fontSize: 11))),
         const SizedBox(height: 12),
 
-        // S30-R2: metrics 2×2 grid
-        _metricGrid(),
-        const SizedBox(height: 12),
+        // Metrics (with target deltas)
+        _metricsRow(),
+        const SizedBox(height: 6),
 
-        // S30-R4: section divider
-        Container(height: 1,
-          color: _tBorder,
-          margin: const EdgeInsets.only(bottom: 14)),
+        // Target reference line
+        Text(
+          s.ar
+            ? 'الهدف: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19'
+            : 'Target: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19',
+          style: const TextStyle(color: Color(0xFF484F58), fontSize: 9)),
+        const SizedBox(height: 16),
 
         // S19 FALLBACK WARNING: shown when score ≤ 78
-        if (score < 78) ...[  // S32-BUG3-FIX: 78 = Good label, not fallback
+        if (score <= 78) ...[
           Container(
             padding: const EdgeInsets.all(12),
             margin: const EdgeInsets.only(bottom: 12),
@@ -1421,38 +1067,24 @@ class _HomeScreenState extends State<HomeScreen>
               ]),
           )),
 
-        // S30-R3: Open + Share in one row
-        if (hasContentUri || (_output?.path.startsWith('content://') ?? false)) ...[
+        // S19: Open in player button (only when content:// URI available)
+        if (hasContentUri) ...[
           const SizedBox(height: 8),
-          Row(children: [
-            if (hasContentUri) Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _openInPlayer,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF58A6FF),
-                  side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-                icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
-                label: Text(s.openInPlayer,
-                  style: const TextStyle(fontSize: 12)))),
-            if (hasContentUri && (_output?.path.startsWith('content://') ?? false))
-              const SizedBox(width: 8),
-            if (_output?.path.startsWith('content://') ?? false) Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _shareFile,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _tSub,
-                  side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-                icon: const Icon(Icons.share_rounded, size: 16),
-                label: Text(s.shareBtn,
-                  style: const TextStyle(fontSize: 12)))),
-          ]),
+          SizedBox(width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openInPlayer,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF58A6FF),
+                side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12))),
+              icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+              label: Text(s.openInPlayer,
+                style: const TextStyle(fontSize: 13)),
+            )),
         ],
+
         // Saved indicator
         if (_output != null) ...[
           const SizedBox(height: 8),
@@ -1465,135 +1097,47 @@ class _HomeScreenState extends State<HomeScreen>
                 color: Color(0xFF3FB950), fontSize: 11)),
           ]),
         ],
-        // S28: Process Another File button
-        const SizedBox(height: 12),
-        SizedBox(width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _resetForNewFile,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF58A6FF),
-              side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12))),
-            icon: const Icon(Icons.refresh_rounded, size: 18), // S30-X1
-            label: Text(s.processAnother,
-              style: const TextStyle(fontSize: 13)),
-          )),
       ]),
     );
   }
 
-  // S30-R2: 2×2 metric grid
-  Widget _metricGrid() => GestureDetector(
-    onTap: _copyMetrics,
-    child: Container(
-      decoration: BoxDecoration(
-        color: _tCard,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _tBorder)),
-      child: Column(children: [
-        IntrinsicHeight(child: Row(children: [
-          Expanded(child: _metricTile(
-            'LUFS',  _result?['lufs']?.toString()  ?? '—', -6.29)),
-          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
-          Expanded(child: _metricTile(
-            'RMS',   _result?['rms']?.toString()   ?? '—', -10.01)),
-        ])),
-        const Divider(height: 1, color: Color(0xFF21262D)),
-        IntrinsicHeight(child: Row(children: [
-          Expanded(child: _metricTile(
-            'Crest', _result?['crest']?.toString() ?? '—', 10.25)),
-          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
-          Expanded(child: _metricTile(
-            'LRA',   _result?['lra']?.toString()   ?? '—', 4.19)),
-        ])),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.copy_rounded, size: 10,
-              color: Color(0xFF484F58)),
-            const SizedBox(width: 4),
-            const Text('tap to copy',
-              style: TextStyle(color: Color(0xFF484F58), fontSize: 9)),
-          ])),
-      ]),
-    ),
+  Widget _metricsRow() => Row(
+    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    children: [
+      if (_result?['lufs']  != null) _metric('LUFS',  _result!['lufs'].toString()),
+      if (_result?['rms']   != null) _metric('RMS',   _result!['rms'].toString()),
+      if (_result?['crest'] != null) _metric('Crest', _result!['crest'].toString()),
+      if (_result?['lra']   != null) _metric('LRA',   _result!['lra'].toString()),
+    ],
   );
 
-  Widget _metricTile(String label, String value, double target) {
-    final num = double.tryParse(value);
-    String delta = '';
-    String arrow = '';
-    Color tileColor = _tDim;
-    if (num != null && value != '—') {
-      final diff = num - target;
-      delta = '${diff >= 0 ? "+" : ""}${diff.toStringAsFixed(2)}';
-      if (diff.abs() <= 0.5) {
-        arrow = '✓'; tileColor = const Color(0xFF3FB950);
-      } else if (diff > 0) {
-        arrow = '▲'; tileColor = _tGold;
-      } else {
-        arrow = '▼'; tileColor = const Color(0xFF58A6FF);
-      }
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(label, style: const TextStyle(
-            color: Color(0xFF8B949E),
-            fontSize: 10, letterSpacing: 0.5)),
-          const SizedBox(height: 5),
-          Text(value, style: const TextStyle(
-            color: Color(0xFFD4AF37),
-            fontWeight: FontWeight.bold, fontSize: 18)),
-          if (delta.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(arrow, style: TextStyle(
-                color: tileColor, fontSize: 9,
-                fontWeight: FontWeight.bold)),
-              const SizedBox(width: 2),
-              Text(delta, style: TextStyle(
-                color: tileColor, fontSize: 9,
-                fontWeight: FontWeight.w600)),
-            ]),
-          ],
-        ]),
-    );
-  }
+  Widget _metric(String label, String value) => Column(children: [
+    Text(label,
+      style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
+    const SizedBox(height: 2),
+    Text(value, style: const TextStyle(
+      color: Color(0xFFD4AF37), fontWeight: FontWeight.bold, fontSize: 13)),
+  ]);
 
   // ── BOTTOM ROW ─────────────────────────────────────────────────────────────
   Widget _bottomRow(S s) => Padding(
     padding: const EdgeInsets.fromLTRB(16,10,16,4),
-    child: Material( // S30-P4
-      color: _tCard,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.push(context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const HistoryScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 220),
-          )),
-        splashColor: _tGold.withOpacity(0.12),
-        highlightColor: _tGold.withOpacity(0.06),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            border: Border.all(color: _tBorder)),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.history_rounded,
-              color: Color(0xFF8B949E), size: 18),
-            const SizedBox(width: 8),
-            Text(s.history, style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 13)),
-          ]),
-        ),
+    child: GestureDetector(
+      onTap: () => Navigator.push(context,
+        MaterialPageRoute(builder: (_) => const HistoryScreen())),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF161B22),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF21262D))),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.history_rounded,
+            color: Color(0xFF8B949E), size: 18),
+          const SizedBox(width: 8),
+          Text(s.history, style: const TextStyle(
+            color: Color(0xFF8B949E), fontSize: 13)),
+        ]),
       ),
     ),
   );
@@ -1601,24 +1145,17 @@ class _HomeScreenState extends State<HomeScreen>
   // ── DONATION CARD ──────────────────────────────────────────────────────────
   Widget _donationCard(S s) => Padding(
     padding: const EdgeInsets.fromLTRB(16,4,16,4),
-    child: Material( // S30-P5
-      color: const Color(0xFF1A1500),
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          launchUrl(
-            Uri.parse('https://buymeacoffee.com/tilawa'),
-            mode: LaunchMode.externalApplication);
-        },
-        splashColor: _tGold.withOpacity(0.18),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _tGold.withOpacity(0.3))),
+    child: GestureDetector(
+      onTap: () => launchUrl(
+        Uri.parse('https://buymeacoffee.com/tilawa'),
+        mode: LaunchMode.externalApplication),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1500),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFD4AF37).withOpacity(0.3))),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.volunteer_activism,
             color: Color(0xFFD4AF37), size: 18),
@@ -1633,59 +1170,7 @@ class _HomeScreenState extends State<HomeScreen>
         ]),
       ),
     ),
-  ),
   );
-}
-
-// S30-P5-close
-// ── S30-R1: Score arc painter ──────────────────────────────────────────────────
-class _ScoreArcPainter extends CustomPainter {
-  final double progress;
-  final double score;
-  final Color  color;
-  final Color  trackColor; // S32-fix: passed from State, was incorrectly _tBorder
-  _ScoreArcPainter({
-    required this.progress,
-    required this.score,
-    required this.color,
-    required this.trackColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2 - 12.0;
-    const start = pi * 0.75;   // 135° — bottom-left
-    const sweep = pi * 1.5;    // 270° arc
-
-    // Background track
-    canvas.drawArc(
-      Rect.fromCircle(center: c, radius: r),
-      start, sweep, false,
-      Paint()
-        ..color = trackColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 12
-        ..strokeCap = StrokeCap.round,
-    );
-
-    // Score fill
-    if (progress > 0.01) {
-      canvas.drawArc(
-        Rect.fromCircle(center: c, radius: r),
-        start, sweep * (score / 100) * progress, false,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 12
-          ..strokeCap = StrokeCap.round,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ScoreArcPainter o) =>
-      o.progress != progress || o.color != color || o.trackColor != trackColor;
 }
 
 // ── Engine data class (S21: rich model — score, features, what's-new) ───────────

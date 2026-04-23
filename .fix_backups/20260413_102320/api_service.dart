@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const String _base = 'https://carm5333-tilawa-server.hf.space';
-  static const int _chunkSize = 4 * 1024 * 1024; // S25: 4MB — better mobile retry granularity
+  static const int _chunkSize = 8 * 1024 * 1024;
   static const _mediaChannel = MethodChannel('com.tilawa.tilawa_enhancer/media');
 
   // SharedPreferences key for locally persisted job records
@@ -25,47 +25,7 @@ class ApiService {
     }
   }
 
-  // ── S28-T2: Server latency check ──────────────────────────────────────────
-  /// Returns latency in ms if server is up, null if unreachable.
-  static Future<int?> checkServer() async {
-    try {
-      final t0 = DateTime.now().millisecondsSinceEpoch;
-      final res = await http
-          .get(Uri.parse('$_base/'))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        return DateTime.now().millisecondsSinceEpoch - t0;
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // ── S28-T2: Share audio file via Android share sheet ──────────────────────
-  static Future<void> shareAudio(String uri) async {
-    await _mediaChannel.invokeMethod<void>('shareFile', {'uri': uri});
-  }
-
-  // ── S28-T2: Persist last used engine ──────────────────────────────────────
-  static const _lastEngineKey = 'last_engine_v1';
-
-  static Future<void> saveLastEngine(String engine) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_lastEngineKey, engine);
-    } catch (_) {}
-  }
-
-  static Future<String> loadLastEngine() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_lastEngineKey) ?? 'v10.0'; // S31
-    } catch (_) {
-      return 'v10.0'; // S32-BUG5-FIX: was 'v9.0', inconsistent with normal path
-    }
-  }  // ── Upload — auto-selects direct or chunked ────────────────────────────────
-
+  // ── Upload — auto-selects direct or chunked ────────────────────────────────
   static Future<Map<String, dynamic>> uploadFile(
     File file,
     String engine, {
@@ -81,22 +41,11 @@ class ApiService {
 
   static Future<Map<String, dynamic>> _uploadDirect(
       File file, String engine) async {
-    // S25-DART5: retry wrapper (was fire-and-forget)
-    for (int attempt = 0; attempt < 3; attempt++) {
-      try {
-        final req = http.MultipartRequest('POST', Uri.parse('$_base/upload'));
-        req.files.add(await http.MultipartFile.fromPath('file', file.path));
-        req.fields['engine'] = engine;
-        final res = await req.send().timeout(const Duration(seconds: 60));
-        final body = await res.stream.bytesToString();
-        if (res.statusCode == 200) return Map<String, dynamic>.from(jsonDecode(body) as Map);
-        throw Exception('direct upload HTTP ${res.statusCode}');
-      } catch (e) {
-        if (attempt == 2) rethrow;
-        await Future.delayed(Duration(seconds: 2 << attempt));
-      }
-    }
-    throw Exception('unreachable');
+    final req = http.MultipartRequest('POST', Uri.parse('$_base/upload'));
+    req.files.add(await http.MultipartFile.fromPath('file', file.path));
+    req.fields['engine'] = engine;
+    final res = await req.send().timeout(const Duration(seconds: 60));
+    return jsonDecode(await res.stream.bytesToString());
   }
 
   static Future<Map<String, dynamic>> _uploadChunked(
@@ -105,10 +54,9 @@ class ApiService {
     int fileSize, {
     void Function(double, String)? onProgress,
   }) async {
+    final totalChunks = (fileSize / _chunkSize).ceil();
     final filename = file.path.split('/').last;
     onProgress?.call(0.02, 'بدء الجلسة...');
-
-    // S25-DART2: use server-negotiated chunk size (server may differ)
     final startRes = await http
         .post(
           Uri.parse('$_base/upload_start'),
@@ -116,27 +64,22 @@ class ApiService {
           body: jsonEncode({
             'filename': filename,
             'total_size': fileSize,
-            'fcm_token': '',
+            'total_chunks': totalChunks,
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final startData = jsonDecode(startRes.body) as Map;
-    final jobId = startData['job_id'] as String;
-    // Respect server chunk size; fall back to our default
-    final serverChunkSize = (startData['chunk_size'] as int?) ?? _chunkSize;
-    final totalChunks = (fileSize / serverChunkSize).ceil();
+    final jobId = (jsonDecode(startRes.body) as Map)['job_id'] as String;
 
     final raf = await file.open(mode: FileMode.read);
     try {
       for (int i = 0; i < totalChunks; i++) {
-        final offset = i * serverChunkSize;
-        final size = ((fileSize - offset) < serverChunkSize)
+        final offset = i * _chunkSize;
+        final size = ((fileSize - offset) < _chunkSize)
             ? (fileSize - offset)
-            : serverChunkSize;
+            : _chunkSize;
         await raf.setPosition(offset);
         final bytes = await raf.read(size);
-
-        // S25-DART4: exponential backoff 2s → 4s → 8s
+        onProgress?.call(0.05 + (i / totalChunks) * 0.60, 'رفع ${i + 1}/$totalChunks...');
         for (int attempt = 0; attempt < 3; attempt++) {
           try {
             final req =
@@ -146,42 +89,30 @@ class ApiService {
             req.files.add(http.MultipartFile.fromBytes('chunk', bytes,
                 filename: 'chunk_$i'));
             final res = await req.send().timeout(const Duration(seconds: 60));
-            await res.stream.drain<void>(); // S20-D: drain to avoid CLOSE_WAIT
+            // S20-D: always drain — unread streams leave sockets in CLOSE_WAIT
+            await res.stream.drain<void>();
             if (res.statusCode == 200) break;
-            throw Exception('chunk_$i HTTP ${res.statusCode}');
+            // S20-E: non-200 = throw so retry loop or rethrow fires
+            throw Exception('chunk_$i upload failed: HTTP ${res.statusCode}');
           } catch (e) {
             if (attempt == 2) rethrow;
-            // S25-DART4: 2s → 4s → 8s
-            await Future.delayed(Duration(seconds: 2 << attempt));
+            await Future.delayed(const Duration(seconds: 2));
           }
         }
-        // S25-DART3: progress fires AFTER chunk confirmed (was before send)
-        onProgress?.call(0.05 + ((i + 1) / totalChunks) * 0.60,
-            'رفع ${i + 1}/$totalChunks...');
       }
     } finally {
       await raf.close();
     }
 
-    // S25-DART6: finalize — server now validates all chunks received
-    onProgress?.call(0.67, 'دمج الأجزاء...');
+    onProgress?.call(0.68, 'دمج الأجزاء...');
     final finalRes = await http
         .post(
           Uri.parse('$_base/upload_finalize'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'job_id': jobId,
-            'engine': engine,
-            'total_chunks': totalChunks, // server cross-checks this
-          }),
+          body: jsonEncode({'job_id': jobId, 'engine': engine}),
         )
-        .timeout(const Duration(minutes: 3));
-    final finalData = jsonDecode(finalRes.body) as Map;
-    // Surface missing-chunks error clearly
-    if (finalData['error'] != null) {
-      throw Exception('finalize: ${finalData['error']}');
-    }
-    return Map<String, dynamic>.from(finalData);
+        .timeout(const Duration(minutes: 3)); // S20-F: was 30s — HF cold start can exceed that
+    return jsonDecode(finalRes.body);
   }
 
   // ── Poll status ────────────────────────────────────────────────────────────
@@ -287,7 +218,6 @@ class ApiService {
     required String engine,
     required double score,
     required String filename,
-    String? originalName,        // S28: original source file name
     Map<String, dynamic>? metrics,
   }) async {
     try {
@@ -303,7 +233,6 @@ class ApiService {
         'score': score,
         'filename': filename,
         'timestamp': DateTime.now().toIso8601String(),
-        if (originalName != null) 'original_name': originalName,
         if (metrics?['lufs']  != null) 'lufs':  metrics!['lufs'].toString(),
         if (metrics?['rms']   != null) 'rms':   metrics!['rms'].toString(),
         if (metrics?['crest'] != null) 'crest': metrics!['crest'].toString(),
@@ -345,27 +274,16 @@ class ApiService {
     } catch (_) {}
   }
 
-  /// Remove ALL saved job records (used by History "Clear All").
-  static Future<void> clearAllJobRecords() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_jobsKey);
-    } catch (_) {}
-  }
-
   // ── Build proper download filename ─────────────────────────────────────────
   // S21 BUG2 FIX: optional originalPath — preserves original filename prefix.
   // With originalPath:  {basename}__Tilawa_{engine}_{name}_1425H.mp3
   // Without:            Tilawa_{engine}_{name}_1425H.mp3  (history fallback)
   static String buildFilename(String engine, {String? originalPath}) {
     const engineNames = {
-      'v10.0': 'Aetherion_Foundation',   // S32-BUG4-FIX
-      'v9.0':  'The_Evolution',
-      'v8.5':  'Honest_Ceiling',
-      'v8.0':  'Calibrated_Precision',
-      'v7.6':  'Intelligent_Assessment',
-      'v7.5':  'Disciplined_Precision',
-      'v7.0':  'Classic',
+      'v8.0': 'Calibrated_Precision',
+      'v7.6': 'Intelligent_Assessment',
+      'v7.5': 'Disciplined_Precision',
+      'v7.0': 'Classic',
     };
     final name = engineNames[engine] ?? engine.replaceAll('.', '_');
     final suffix = 'Tilawa_${engine}_${name}_1425H.mp3';
