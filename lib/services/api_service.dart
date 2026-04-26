@@ -42,6 +42,13 @@ class ApiService {
     }
   }
 
+  // ── S32: Silent keep-alive ping ─────────────────────────────────────────────
+  static Future<void> pingServer() async {
+    try {
+      await http.get(Uri.parse('$_base/')).timeout(const Duration(seconds: 8));
+    } catch (_) {}
+  }
+
   // ── S28-T2: Share audio file via Android share sheet ──────────────────────
   static Future<void> shareAudio(String uri) async {
     await _mediaChannel.invokeMethod<void>('shareFile', {'uri': uri});
