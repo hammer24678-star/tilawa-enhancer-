@@ -153,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen>
         _wakeTimer?.cancel();
         return;
       }
-      if (up || _wakeAttempts >= 7) { // max 35s
+      if (up || _wakeAttempts >= 18) { // S32: max 90s (HF cold-boot can take ~60-90s)
         _wakeTimer?.cancel();
         setState(() { _serverUp = up; _latencyMs = ms; _waking = false; _wakeAttempts = 0; });
       }
