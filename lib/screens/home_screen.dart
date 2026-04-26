@@ -132,7 +132,10 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Server check ───────────────────────────────────────────────────────────
   Future<void> _checkServer() async {
     final ms = await ApiService.checkServer();
-    if (mounted) setState(() { _serverUp = ms != null; _latencyMs = ms; });
+    if (!mounted) return;
+    setState(() { _serverUp = ms != null; _latencyMs = ms; });
+    // S32: auto-wake when offline — no manual tap needed
+    if (ms == null && !_waking) _wakeServer();
   }
 
   // S19: Wake server — polls every 5s for up to 35s
