@@ -129,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     final rng = Random(7777);
-    _starList = List.generate(12, (_) => _StarParticle(_rng));
+    _starList = List.generate(12, (_) => _StarParticle(rng));
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2800))
       ..repeat(reverse: true);
