@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:math' show pi; // S30-R1
+import 'dart:math' show pi, sin, cos, Random; // S29+S30
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
@@ -82,7 +82,6 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _scoreCtrl;
   late Animation<double> _scoreAnim;
   late final List<_StarParticle> _starList;
-  int? _fileBytes;
   late final AnimationController _resultCtrl; // S29: result card entrance
 
   // ── Engines (S21: full data from documentation) ─────────────────────────────
@@ -129,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    final _rng = math.Random(7777);
+    final rng = Random(7777);
     _starList = List.generate(12, (_) => _StarParticle(_rng));
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2800))

@@ -130,15 +130,15 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         ),
         const SizedBox(height: 40),
         ShaderMask(
-      shaderCallback: (b) => const LinearGradient(
-        colors: [Color(0xFFD4AF37), Color(0xFFF0CF60), Color(0xFFD4AF37)],
-        stops: [0.0, 0.5, 1.0]).createShader(b),
-      child: Text(s.appName,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 36, fontWeight: FontWeight.bold,
-            color: Color(0xFFD4AF37), height: 1.2,
-            letterSpacing: -0.5)),
+          shaderCallback: (b) => const LinearGradient(
+            colors: [Color(0xFFD4AF37), Color(0xFFF0CF60), Color(0xFFD4AF37)],
+            stops: [0.0, 0.5, 1.0]).createShader(b),
+          child: Text(s.appName,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 36, fontWeight: FontWeight.bold,
+              color: Colors.white, height: 1.2,
+              letterSpacing: -0.5))),
         const SizedBox(height: 8),
         Text(s.subtitle,
           style: const TextStyle(

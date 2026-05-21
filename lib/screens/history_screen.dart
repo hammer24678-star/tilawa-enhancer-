@@ -108,34 +108,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() {});
   }
 
-  // S28: Clear All confirmation dialog
-  Future<void> _clearAll() async {
-    final s = LangProvider.strings(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _tCard,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14)),
-        title: Text(s.clearAll,
-          style: const TextStyle(color: Color(0xFFD4AF37))),
-        content: Text(s.clearAllConfirm,
-          style: TextStyle(color: _tText)), // S32-BUG6-FIX: theme-aware
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(s.ar ? 'لا' : 'No',
-              style: TextStyle(color: _tSub))), // S32-BUG6-FIX
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(s.ar ? 'احذف' : 'Delete',
-              style: const TextStyle(color: Color(0xFFF85149)))),
-        ]));
-    if (confirmed == true && mounted) {
-      await ApiService.clearAllJobRecords();
-      setState(() => _jobs = []);
-    }
-  }
 
   // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
   bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
