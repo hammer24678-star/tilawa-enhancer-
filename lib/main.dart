@@ -35,15 +35,16 @@ void main() async {
 // ── S31-F4: Theme helpers & ThemeProvider ─────────────────────────────────────
 ThemeData _buildDarkTheme() => ThemeData(
   colorScheme: const ColorScheme.dark(
-    primary: Color(0xFFD4AF37),
-    surface: Color(0xFF161B22),
-    onSurface: Color(0xFFC9D1D9),
-    background: Color(0xFF0A0C10),
+    primary:    Color(0xFFD4AF37),
+    surface:    Color(0xFF0C1E28),
+    onSurface:  Color(0xFFE2CFA0),
+    secondary:  Color(0xFF1B6B80),
+    background: Color(0xFF061218),
   ),
   useMaterial3: true,
-  scaffoldBackgroundColor: const Color(0xFF0A0C10),
+  scaffoldBackgroundColor: const Color(0xFF061218),
   appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFF0A0C10),
+    backgroundColor: Color(0xFF061218),
     foregroundColor: Color(0xFFD4AF37),
     elevation: 0,
   ),

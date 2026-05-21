@@ -88,6 +88,14 @@ class S {
   String get engineHistory=> ar ? 'تاريخ المحركات'   : 'Engine History';
   String get about        => ar ? 'عن التطبيق'       : 'About';
   String get version      => ar ? 'الإصدار 2.7'      : 'Version 2.7';
+  String get historyTitle   => ar ? 'سجل الملفات المعالجة'          : 'Processing History';
+  // S28
+  String get cancelBtn      => ar ? 'إلغاء'                  : 'Cancel';
+  String get processAnother => ar ? 'معالجة ملف آخر'          : 'Process Another File';
+  String get clearAll       => ar ? 'مسح الكل'               : 'Clear All';
+  String get clearAllConfirm=> ar ? 'هل تريد مسح كل السجل؟'  : 'Clear all history?';
+  String get copiedMetrics  => ar ? 'تم نسخ المقاييس'         : 'Metrics copied';
+  String get estTime        => ar ? 'الوقت المتوقع'            : 'Est. time';
   String get target       =>
     ar ? 'الهدف: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19'
        : 'Target: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19';

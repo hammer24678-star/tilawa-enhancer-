@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
@@ -78,7 +79,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     return Scaffold(
-      backgroundColor: _cBg(context),
+      backgroundColor: const Color(0xFF061218),
       body: SafeArea(
         child: FadeTransition(
           opacity: _fade,
@@ -128,7 +129,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     color: Color(0xFFD4AF37), size: 70))))),
         ),
         const SizedBox(height: 40),
-        Text(s.appName,
+        ShaderMask(
+      shaderCallback: (b) => const LinearGradient(
+        colors: [Color(0xFFD4AF37), Color(0xFFF0CF60), Color(0xFFD4AF37)],
+        stops: [0.0, 0.5, 1.0]).createShader(b),
+      child: Text(s.appName,
           textAlign: TextAlign.center,
           style: const TextStyle(
             fontSize: 36, fontWeight: FontWeight.bold,

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:math' show pi; // S30-R1
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
@@ -10,6 +11,23 @@ import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
+
+// ── Sacred Cosmos tokens ─────────────────────────────────────────────────────
+const _bgDeep    = Color(0xFF061218);
+const _bgSurface = Color(0xFF0C1E28);
+const _bgCard    = Color(0xFF102B38);
+const _gold      = Color(0xFFD4AF37);
+const _goldLight = Color(0xFFF0CF60);
+const _goldMuted = Color(0xFF3A2B08);
+const _teal      = Color(0xFF1B6B80);
+const _tealLight = Color(0xFF2E8FA8);
+const _textA     = Color(0xFFE2CFA0);
+const _textB     = Color(0xFF8AACBA);
+const _textC     = Color(0xFF3D5A65);
+const _ok        = Color(0xFF2ABF6E);
+const _okDark    = Color(0xFF0D3D22);
+const _err       = Color(0xFFD94040);
+const _errDark   = Color(0xFF3D0808);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -59,6 +77,12 @@ class _HomeScreenState extends State<HomeScreen>
   int  _wakeAttempts = 0;
 
   late final AnimationController _glowCtrl;
+  late final AnimationController _starCtrl;
+  late final AnimationController _shimmer;
+  late final AnimationController _scoreCtrl;
+  late Animation<double> _scoreAnim;
+  late final List<_StarParticle> _starList;
+  int? _fileBytes;
   late final AnimationController _resultCtrl; // S29: result card entrance
 
   // ── Engines (S21: full data from documentation) ─────────────────────────────
@@ -105,9 +129,20 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
+    final _rng = math.Random(7777);
+    _starList = List.generate(12, (_) => _StarParticle(_rng));
     _glowCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 2))
+        vsync: this, duration: const Duration(milliseconds: 2800))
       ..repeat(reverse: true);
+    _starCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 14))
+      ..repeat();
+    _shimmer = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1500))
+      ..repeat();
+    _scoreCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1300));
+    _scoreAnim = const AlwaysStoppedAnimation(0);
     _resultCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
     _checkServer();
@@ -125,6 +160,9 @@ class _HomeScreenState extends State<HomeScreen>
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
     _resultCtrl.dispose();
+    _starCtrl.dispose();
+    _shimmer.dispose();
+    _scoreCtrl.dispose();
     _glowCtrl.dispose();
     super.dispose();
   }
@@ -567,7 +605,18 @@ class _HomeScreenState extends State<HomeScreen>
             colors: dark
               ? [_tBg, const Color(0xFF0C1018)]
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
-        child: SafeArea(
+        // S29: Sacred Cosmos painters Stack
+        child: Stack(children: [
+          if (dark) Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(painter: _GeoPainter()))),
+          if (dark) Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _starCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _StarsPainter(_starCtrl.value, _starList))))),
+          SafeArea(
           child: CustomScrollView(slivers: [
             SliverToBoxAdapter(child: _header(s)),
             SliverToBoxAdapter(child: _serverBanner(s)),
@@ -595,41 +644,48 @@ class _HomeScreenState extends State<HomeScreen>
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ]),
         ),
+          ]),
       ),
     );
   }
 
-  // ── HEADER ─────────────────────────────────────────────────────────────────
-  Widget _header(S s) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+  // ── HEADER ────────────────────────────────────────────────────────────────────
+  Widget _header(S s) => Container(
+    padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
     child: Row(children: [
-      Container(
-        width: 52, height: 52,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(
-            color: _tGold.withOpacity(0.25),
-            blurRadius: 16)]),
-        child: ClipOval(child: Image.asset('assets/images/logo.png',
-          fit: BoxFit.cover,
-          errorBuilder: (_,__,___) => Container(
-            color: const Color(0xFF1A1500),
-            child: const Icon(Icons.music_note,
-              color: Color(0xFFD4AF37), size: 28))))),
+      AnimatedBuilder(
+        animation: _glowCtrl,
+        builder: (_, __) {
+          final t = _glowCtrl.value;
+          return Container(
+            width: 58, height: 58,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(
+                color: _gold.withOpacity(0.10 + 0.22 * t),
+                blurRadius: 16 + 14 * t, spreadRadius: 1 + 2 * t)]),
+            child: Transform.scale(
+              scale: 0.97 + 0.06 * t,
+              child: ClipOval(child: Image.asset('assets/images/logo.png',
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: _bgCard,
+                  child: const Icon(Icons.menu_book_rounded,
+                    color: _gold, size: 30))))));
+        }),
       const SizedBox(width: 12),
       Expanded(child: Column(
         crossAxisAlignment: CrossAxisAlignment.start, children: [
-        AnimatedBuilder(animation: _glowCtrl,
-          builder: (_, __) => Text(s.appName,
-            style: TextStyle(
-              fontSize: 24, fontWeight: FontWeight.bold,
-              color: Color.lerp(
-                _tGold,
-                const Color(0xFFFFF4B0),
-                _glowCtrl.value)))),
+        ShaderMask(
+          shaderCallback: (b) => const LinearGradient(
+            colors: [_gold, _goldLight, _gold],
+            stops: [0.0, 0.5, 1.0]).createShader(b),
+          child: Text(s.appName, style: const TextStyle(
+            fontSize: 26, fontWeight: FontWeight.w900,
+            color: Colors.white, height: 1.1))),
         Text(s.subtitle,
           style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 10, letterSpacing: 1.5)),
+            color: _textB, fontSize: 10, letterSpacing: 1.6)),
       ])),
       Row(children: [
         _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
@@ -647,8 +703,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _iconBtn(IconData icon, VoidCallback onTap) => Material(
     color: _tCard,
-    shape: const CircleBorder(
-      side: BorderSide(color: Color(0xFF21262D))),
+    shape: CircleBorder(
+      side: BorderSide(color: _teal.withOpacity(0.35))),
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       onTap: onTap,
@@ -668,10 +724,10 @@ class _HomeScreenState extends State<HomeScreen>
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: _serverUp
-          ? const Color(0xFF0D2015)
+          ? _ok.withOpacity(0.06)
           : _waking
-            ? const Color(0xFF1A1500)
-            : const Color(0xFF200D0D),
+            ? _gold.withOpacity(0.06)
+            : _err.withOpacity(0.06),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _serverUp
@@ -996,7 +1052,10 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(height: 18),
           SizedBox(width: double.infinity,
             child: ElevatedButton(
-              onPressed: (_busy || !_serverUp) ? null : _process,
+              onPressed: (_busy || !_serverUp) ? null : () {
+                HapticFeedback.mediumImpact();
+                _process();
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _tGold,
                 foregroundColor: const Color(0xFF0A0C10),
@@ -1178,7 +1237,7 @@ class _HomeScreenState extends State<HomeScreen>
                       width: 44, height: 44, fit: BoxFit.cover,
                       errorBuilder: (_,__,___) => Container(
                         width: 44, height: 44,
-                        color: const Color(0xFF1A1500),
+                        color: _goldMuted.withOpacity(0.55),
                         child: const Icon(Icons.music_note,
                           color: Color(0xFFD4AF37), size: 22)))),
                     const SizedBox(width: 12),
@@ -1300,10 +1359,10 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: score < 80 ? const Color(0xFF1A0A00) : const Color(0xFF0D2015),
+        color: score < 80 ? _err.withOpacity(0.05) : _ok.withOpacity(0.05),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: score < 80 ? const Color(0xFFF85149) : const Color(0xFF3FB950),
+          color: (score < 80 ? _err : _ok).withOpacity(0.35),
           width: 1.2),
         boxShadow: [BoxShadow(
           color: (score < 80
@@ -1699,4 +1758,111 @@ class _EngineData {
   final String whatsNewAr, whatsNewEn;
   const _EngineData(this.id, this.nameAr, this.nameEn, this.score,
       this.badge, this.bc, this.features, this.whatsNewAr, this.whatsNewEn);
+}
+
+// ── Sacred Cosmos painters ────────────────────────────────────────────────────
+class _StarParticle {
+  final double x, y, size, phase, speed, twinkle;
+  _StarParticle(Random r)
+      : x = r.nextDouble(), y = r.nextDouble(),
+        size = 0.4 + r.nextDouble() * 1.8,
+        phase = r.nextDouble() * 6.2832,
+        speed = 0.15 + r.nextDouble() * 0.6,
+        twinkle = 0.4 + r.nextDouble() * 1.6;
+}
+
+class _StarsPainter extends CustomPainter {
+  final double t;
+  final List<_StarParticle> stars;
+  _StarsPainter(this.t, this.stars);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0);
+    for (final s in stars) {
+      final a = t * 6.2832 * s.speed + s.phase;
+      final x = s.x * size.width  + sin(a)        * size.width  * 0.016;
+      final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
+      final op = 0.12 + 0.5 * (sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5);
+      p.color = _gold.withOpacity(op);
+      canvas.drawCircle(Offset(x, y), s.size, p);
+    }
+  }
+  @override bool shouldRepaint(_StarsPainter o) => o.t != t;
+}
+
+class _GeoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..color = _teal.withOpacity(0.032)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.7;
+    const cell = 120.0;
+    final cols = (size.width / cell).ceil() + 2;
+    final rows = (size.height / (cell * 0.866)).ceil() + 2;
+    for (int row = 0; row < rows; row++) {
+      for (int col = 0; col < cols; col++) {
+        final cx = col * cell + (row.isOdd ? cell * 0.5 : 0) - cell * 0.5;
+        final cy = row * cell * 0.866 - cell * 0.5;
+        _star8(canvas, Offset(cx, cy), cell * 0.27, p);
+      }
+    }
+  }
+  void _star8(Canvas canvas, Offset c, double r, Paint p) {
+    final path = Path();
+    for (int i = 0; i < 8; i++) {
+      final oa = i * pi / 4 - pi / 2;
+      final ia = oa + pi / 8;
+      final ox = c.dx + r * cos(oa); final oy = c.dy + r * sin(oa);
+      final ix = c.dx + r * 0.38 * cos(ia); final iy = c.dy + r * 0.38 * sin(ia);
+      if (i == 0) path.moveTo(ox, oy); else path.lineTo(ox, oy);
+      path.lineTo(ix, iy);
+    }
+    path.close();
+    canvas.drawPath(path, p);
+  }
+  @override bool shouldRepaint(_GeoPainter _) => false;
+}
+
+class _WaveProgressPainter extends CustomPainter {
+  final double progress, shimmer;
+  final Color color, bg;
+  const _WaveProgressPainter(
+      {required this.progress, required this.shimmer,
+       required this.color, required this.bg});
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0,0,size.width,size.height),
+        const Radius.circular(5)),
+      Paint()..color = bg);
+    if (progress <= 0) return;
+    final fillW = (size.width * progress).clamp(0.0, size.width);
+    final path = Path();
+    path.moveTo(0, size.height);
+    path.lineTo(0, size.height * 0.5);
+    final waveAmp = size.height * 0.30;
+    for (double x = 0; x <= fillW; x++) {
+      final y = size.height * 0.5 +
+        sin((x / (size.width * 0.55) - shimmer) * 6.2832) * waveAmp;
+      path.lineTo(x, y.clamp(0.0, size.height));
+    }
+    path.lineTo(fillW, size.height);
+    path.close();
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, fillW, size.height));
+    canvas.drawPath(path, Paint()..color = color);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, fillW, size.height),
+      Paint()..shader = LinearGradient(
+        colors: [Colors.transparent, Colors.white.withOpacity(0.14), Colors.transparent],
+        stops: const [0.0, 0.5, 1.0],
+        begin: Alignment(shimmer * 2 - 1, 0),
+        end: Alignment(shimmer * 2 + 0.4, 0),
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)));
+    canvas.restore();
+  }
+  @override
+  bool shouldRepaint(_WaveProgressPainter o) =>
+    o.progress != progress || o.shimmer != shimmer;
 }

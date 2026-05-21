@@ -9,7 +9,13 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   static const _history = [
-        _EHist('v8.4','Source Tier Intelligence','≥98/100','LATEST','gold',
+        _EHist('v9.0','The Evolution','≥ 99/100','LATEST','gold',
+      'إعادة كتابة كاملة: 1,890 سطرًا. NR دائمًا قبل EQ. محسِّن LUFS+LRA مشترك. نسب ثقة منفصلة لكل معامل.',
+      'Full rewrite: 1,890 lines. NR always before EQ. Joint LUFS+LRA optimizer. Per-parameter confidence vectors.'),
+    _EHist('v8.5','Tier-Adjusted Scoring','≥ 99/100','DEFAULT','gold',
+      'أوزان MDS مختلفة لكل فئة. أسقف Crest/LRA/LUFS محسوبة لكل فئة. حذف تحكّم 64K_FLOOR.',
+      'Different MDS weights per source tier. Per-tier Crest/LRA/LUFS ceilings. 64K_FLOOR hack removed.'),
+    _EHist('v8.4','Source Tier Intelligence','≥98/100','LATEST','gold',
       'يحلِّل جودة المصدر: يكشف تردد قطع الكودك، نوع الضوضاء، والقطع. يضبط NR والـ EQ بناءً على التصنيف.',
       'Analyzes source quality: detects codec cutoff, noise type, clipping. Adapts NR, EQ, LRA per tier.'),
 _EHist('v8.1','Android-Hardened','≥98/100','','gold',
@@ -72,8 +78,11 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
     return Scaffold(
       backgroundColor: cBg,
       appBar: AppBar(
-        title: Text(s.settings, style: TextStyle(
-          color: cGold, fontWeight: FontWeight.bold)),
+        title: ShaderMask(
+            shaderCallback: (b) => const LinearGradient(
+              colors: [Color(0xFFD4AF37), Color(0xFFF0CF60)]).createShader(b),
+            child: Text(s.settings, style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.bold))),
         backgroundColor: cBg,
         iconTheme: IconThemeData(color: cGold),
         elevation: 0,

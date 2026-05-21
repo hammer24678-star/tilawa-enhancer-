@@ -148,6 +148,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
   // S32-COLORS-APPLIED
 
+  Future<void> _clearAll() async {
+    final s = LangProvider.strings(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(s.clearAll,
+          style: const TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
+        content: Text(s.clearAllConfirm,
+          style: const TextStyle(color: Color(0xFFE2CFA0))),
+        backgroundColor: const Color(0xFF0C1E28),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: const Color(0xFF1B6B80).withOpacity(0.3))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+            child: Text(s.ar ? 'إلغاء' : 'Cancel',
+              style: const TextStyle(color: Color(0xFF8AACBA)))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD94040)),
+            child: Text(s.clearAll,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+        ]));
+    if (ok == true && mounted) {
+      await ApiService.clearAllJobRecords();
+      setState(() => _jobs.clear());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
@@ -159,18 +188,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Scaffold(
       backgroundColor: cBg,
       appBar: AppBar(
-        title: Text(s.historyTitle, style: TextStyle(
-          color: cGold, fontWeight: FontWeight.bold)),
+        title: ShaderMask(
+          shaderCallback: (b) => const LinearGradient(
+            colors: [Color(0xFFD4AF37), Color(0xFFF0CF60)]).createShader(b),
+          child: Text(s.historyTitle, style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.bold))),
         backgroundColor: cBg,
         iconTheme: IconThemeData(color: cGold),
         elevation: 0,
         actions: [
           if (_jobs.isNotEmpty)
-            TextButton(
+            TextButton.icon(
               onPressed: _clearAll,
-              child: Text(s.clearAll,
+              icon: const Icon(Icons.delete_sweep_outlined,
+                color: Color(0xFFD94040), size: 16),
+              label: Text(s.clearAll,
                 style: const TextStyle(
-                  color: Color(0xFFF85149), fontSize: 12))),
+                  color: Color(0xFFD94040), fontSize: 12))),
         ]),
       body: _loading
         ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37)))
