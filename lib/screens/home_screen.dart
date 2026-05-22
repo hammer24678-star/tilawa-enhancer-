@@ -1510,6 +1510,15 @@ class _HomeScreenState extends State<HomeScreen>
                   painter: _ScoreBurstPainter(
                     progress: _resultCtrl.value,
                     color: scoreColor))),
+              Stack(alignment: Alignment.center, children: [
+              // Burst particles on reveal
+              if (score >= 85) AnimatedBuilder(
+                animation: _resultCtrl,
+                builder: (_, __) => CustomPaint(
+                  size: const Size(170, 170),
+                  painter: _ScoreBurstPainter(
+                    progress: _resultCtrl.value,
+                    color: scoreColor))),
               SizedBox(
                 width: 148, height: 148,
                 child: CustomPaint(
@@ -1534,6 +1543,7 @@ class _HomeScreenState extends State<HomeScreen>
                         fontWeight: FontWeight.bold)),
                     ])),
                 )),
+              ]), // end burst Stack
               ]), // end burst Stack
               const SizedBox(height: 10),
               Container(

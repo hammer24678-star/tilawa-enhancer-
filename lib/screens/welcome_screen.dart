@@ -88,9 +88,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       body: Stack(children: [
         // Rotating geo background
         Positioned.fill(child: AnimatedBuilder(
-          animation: _geoRotCtrl,
+          animation: _pulseCtrl,
           builder: (_, __) => Transform.rotate(
-            angle: _geoRotCtrl.value * 6.2832,
+            angle: _pulseCtrl.value * 6.2832,
             child: CustomPaint(painter: _GeoPainter())))),
         // Star particles
         Positioned.fill(child: AnimatedBuilder(
