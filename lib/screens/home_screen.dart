@@ -815,14 +815,28 @@ class _HomeScreenState extends State<HomeScreen>
                   strokeWidth: 1.5,
                   color: Color(0xFFD4AF37)))
             else
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                width: 8, height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _serverUp
-                    ? const Color(0xFF3FB950)
-                    : const Color(0xFFF85149))),
+              AnimatedBuilder(
+                animation: _glowCtrl,
+                builder: (_, __) {
+                  final t = _glowCtrl.value;
+                  final c = _serverUp ? _ok : _err;
+                  return SizedBox(width: 22, height: 22,
+                    child: Stack(alignment: Alignment.center, children: [
+                      if (_serverUp) Container(
+                        width: 8 + 12 * t, height: 8 + 12 * t,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: c.withOpacity(0.6 * (1 - t)),
+                            width: 1.5))),
+                      Container(width: 8, height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle, color: c,
+                          boxShadow: [BoxShadow(
+                            color: c.withOpacity(0.4 + 0.5 * t),
+                            blurRadius: 5 + 8 * t)])),
+                    ]));
+                }),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -1004,7 +1018,8 @@ class _HomeScreenState extends State<HomeScreen>
             firstChild: const SizedBox.shrink(),
             secondChild: _engineExpanded(e, s, col),
           ),
-        ]),
+        ]), // end Column
+        ]), // end accent-bar Stack
       ),
     );
   }
@@ -1486,6 +1501,15 @@ class _HomeScreenState extends State<HomeScreen>
                 ? 1.0 + 0.05 * (1 - (_resultCtrl.value - 0.85) / 0.15)
                 : 1.0;
             return Column(mainAxisSize: MainAxisSize.min, children: [
+              Stack(alignment: Alignment.center, children: [
+              // Burst particles on reveal
+              if (score >= 85) AnimatedBuilder(
+                animation: _resultCtrl,
+                builder: (_, __) => CustomPaint(
+                  size: const Size(170, 170),
+                  painter: _ScoreBurstPainter(
+                    progress: _resultCtrl.value,
+                    color: scoreColor))),
               SizedBox(
                 width: 148, height: 148,
                 child: CustomPaint(
@@ -1510,6 +1534,7 @@ class _HomeScreenState extends State<HomeScreen>
                         fontWeight: FontWeight.bold)),
                     ])),
                 )),
+              ]), // end burst Stack
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
