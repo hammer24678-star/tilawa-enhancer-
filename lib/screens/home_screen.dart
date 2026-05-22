@@ -1527,7 +1527,7 @@ class _HomeScreenState extends State<HomeScreen>
         label: Text(s.cancelBtn,
           style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
       ),
-    ],  // S36-BRACKET-FIX (removed orphan ) from bracket-paren)
+    ]),  // S37-PAREN-FIX (restored structural ) — S35 FIX-A2 over-stripped)
 
   // ── RESULT + DOWNLOAD BUTTON (S19: better labels, fallback warning, open) ──
   Widget _resultCard(S s) {

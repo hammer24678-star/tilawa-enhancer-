@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
