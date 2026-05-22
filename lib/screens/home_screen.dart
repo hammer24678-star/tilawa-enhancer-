@@ -1502,7 +1502,7 @@ class _HomeScreenState extends State<HomeScreen>
                         borderRadius: BorderRadius.circular(2)));
                   }));
               }),
-          ])))),
+          ]))),
         // S20-A: '...' when merging — frozen '68%' looks like a crash
         ShaderMask( // S38-PCT-SHADER
           shaderCallback: (b) => const LinearGradient(
