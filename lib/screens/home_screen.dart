@@ -1476,8 +1476,9 @@ class _HomeScreenState extends State<HomeScreen>
             Text(
               _status.isEmpty ? s.processing : _status,
               key: ValueKey(_status),
-              style: const TextStyle(
-                color: _textA, fontSize: 13)),
+              style: const TextStyle( // S38-STATUS-STYLE
+                color: Color(0xFFCFD8DC),
+                fontSize: 13, letterSpacing: 0.2)),
             const SizedBox(height: 10),
             AnimatedBuilder(
               animation: _audioBarsCtrl,
@@ -1503,10 +1504,13 @@ class _HomeScreenState extends State<HomeScreen>
               }),
           ])))),
         // S20-A: '...' when merging — frozen '68%' looks like a crash
-        Text(_isMerging ? '...' : '${(_progress * 100).toInt()}%',
-          style: const TextStyle(
-            color: Color(0xFFD4AF37),
-            fontWeight: FontWeight.bold, fontSize: 14)),
+        ShaderMask( // S38-PCT-SHADER
+          shaderCallback: (b) => const LinearGradient(
+            colors: [Color(0xFFD4AF37), Color(0xFFF0CF60)]).createShader(b),
+          child: Text(_isMerging ? '...' : '${(_progress * 100).toInt()}%',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold, fontSize: 18))),
       ]),
       const SizedBox(height: 12),
       ClipRRect(
@@ -1518,16 +1522,25 @@ class _HomeScreenState extends State<HomeScreen>
           valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)))),
       // S28: Cancel button
       const SizedBox(height: 10),
-      TextButton.icon(
-        onPressed: _cancelProcessing,
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 4)),
-        icon: const Icon(Icons.cancel_outlined, size: 16,
-          color: Color(0xFF8B949E)),
-        label: Text(s.cancelBtn,
-          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
-      ),
+      Container( // S38-CANCEL-STYLE
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: const Color(0xFF1B6B80).withOpacity(0.35)),
+          borderRadius: BorderRadius.circular(8)),
+        child: TextButton.icon(
+          onPressed: _cancelProcessing,
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12, vertical: 4),
+            minimumSize: Size.zero),
+          icon: const Icon(Icons.cancel_outlined, size: 14,
+            color: Color(0xFF6B9EAE)),
+          label: Text(s.cancelBtn,
+            style: const TextStyle(
+              color: Color(0xFF6B9EAE), fontSize: 11)),
+        )),
     ]),  // S37-PAREN-FIX (restored structural ) — S35 FIX-A2 over-stripped)
+  );  // S38-CONTAINER-CLOSE
 
   // ── RESULT + DOWNLOAD BUTTON (S19: better labels, fallback warning, open) ──
   Widget _resultCard(S s) {
