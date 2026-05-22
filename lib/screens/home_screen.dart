@@ -79,6 +79,9 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _glowCtrl;
   late final AnimationController _starCtrl;
   late final AnimationController _shimmer;
+  late final AnimationController _geoRotCtrl;
+  late final AnimationController _audioBarsCtrl;
+  late final AnimationController _shimmerSweep;
   late final AnimationController _scoreCtrl;
   late Animation<double> _scoreAnim;
   late final List<_StarParticle> _starList;
@@ -136,6 +139,14 @@ class _HomeScreenState extends State<HomeScreen>
     _starCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 14))
       ..repeat();
+    _geoRotCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 80))
+      ..repeat();
+    _audioBarsCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+    _shimmerSweep = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200));
     _shimmer = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1500))
       ..repeat();
@@ -161,6 +172,9 @@ class _HomeScreenState extends State<HomeScreen>
     _resultCtrl.dispose();
     _starCtrl.dispose();
     _shimmer.dispose();
+    _geoRotCtrl.dispose();
+    _audioBarsCtrl.dispose();
+    _shimmerSweep.dispose();
     _scoreCtrl.dispose();
     _glowCtrl.dispose();
     super.dispose();
@@ -627,7 +641,7 @@ class _HomeScreenState extends State<HomeScreen>
               SliverToBoxAdapter(
                 child: FadeTransition(
                   opacity: CurvedAnimation(
-                    parent: _resultCtrl, curve: Curves.easeOut),
+                    parent: _resultCtrl, curve: Curves.easeOutCubic),
                   child: SlideTransition(
                     position: Tween<Offset>(
                       begin: const Offset(0, 0.1),
@@ -669,39 +683,62 @@ class _HomeScreenState extends State<HomeScreen>
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 20),
         child: Column(children: [
           // Orbital ring + logo
-          AnimatedBuilder(animation: _glowCtrl, builder: (_, __) {
-            final t = _glowCtrl.value;
-            return SizedBox(width: 130, height: 130,
-              child: Stack(alignment: Alignment.center, children: [
-                // Outer pulsing ring
-                Container(width: 130, height: 130,
-                  decoration: BoxDecoration(shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _gold.withOpacity(0.15 + 0.20 * t), width: 1),
-                    boxShadow: [BoxShadow(
-                      color: _gold.withOpacity(0.08 + 0.14 * t),
-                      blurRadius: 20 + 20 * t, spreadRadius: 2 + 4 * t)])),
-                // Inner ring
-                Container(width: 108, height: 108,
-                  decoration: BoxDecoration(shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _teal.withOpacity(0.25 + 0.20 * t), width: 0.8))),
-                // Logo
-                Transform.scale(
-                  scale: 0.97 + 0.06 * t,
-                  child: Container(width: 90, height: 90,
-                    decoration: BoxDecoration(shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(
-                        color: _gold.withOpacity(0.20 + 0.25 * t),
-                        blurRadius: 16 + 12 * t)]),
-                    child: ClipOval(child: Image.asset(
-                      'assets/images/logo.png', fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: _bgCard,
-                        child: const Icon(Icons.menu_book_rounded,
-                          color: _gold, size: 44)))))),
-              ]));
-          }),
+          // S31-3RINGS
+          AnimatedBuilder(
+            animation: Listenable.merge([_glowCtrl, _geoRotCtrl]),
+            builder: (_, __) {
+              final t  = _glowCtrl.value;
+              final r  = _geoRotCtrl.value * 6.2832;
+              return SizedBox(width: 148, height: 148,
+                child: Stack(alignment: Alignment.center, children: [
+                  // Ring 3 — outermost, slow clockwise
+                  Transform.rotate(angle: r * 0.3,
+                    child: Container(width: 148, height: 148,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _gold.withOpacity(0.10 + 0.12 * t),
+                          width: 0.8),
+                        boxShadow: [BoxShadow(
+                          color: _gold.withOpacity(0.06 + 0.08 * t),
+                          blurRadius: 18 + 14 * t)]))),
+                  // Ring 2 — mid, counter-clockwise
+                  Transform.rotate(angle: -r * 0.5,
+                    child: Container(width: 124, height: 124,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _teal.withOpacity(0.20 + 0.22 * t),
+                          width: 1.0)))),
+                  // Ring 1 — inner gold, clockwise faster
+                  Transform.rotate(angle: r * 1.2,
+                    child: Container(width: 104, height: 104,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _gold.withOpacity(0.22 + 0.28 * t),
+                          width: 1.4),
+                        boxShadow: [BoxShadow(
+                          color: _gold.withOpacity(0.12 + 0.16 * t),
+                          blurRadius: 12 + 10 * t)]))),
+                  // Logo — breathing scale
+                  Transform.scale(
+                    scale: 0.96 + 0.08 * t,
+                    child: Container(width: 88, height: 88,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(
+                          color: _gold.withOpacity(0.22 + 0.28 * t),
+                          blurRadius: 20 + 16 * t,
+                          spreadRadius: 2)]),
+                      child: ClipOval(child: Image.asset(
+                        'assets/images/logo.png', fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: _bgCard,
+                          child: const Icon(Icons.menu_book_rounded,
+                            color: _gold, size: 44)))))),
+                ]));
+            }),
           const SizedBox(height: 16),
           // App name — large gold gradient
           ShaderMask(
@@ -890,12 +927,27 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.fromLTRB(8,3,8,3),
         decoration: BoxDecoration(
-          color: sel ? _tCard : Colors.transparent,
-          borderRadius: BorderRadius.circular(11),
+          color: sel ? col.withOpacity(0.07) : Colors.transparent,
+          borderRadius: BorderRadius.circular(13),
           border: Border.all(
-            color: sel ? col : _tBorder,
-            width: sel ? 1.4 : 0.8)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            color: sel ? col : _teal.withOpacity(0.18),
+            width: sel ? 1.8 : 0.7),
+          boxShadow: sel ? [BoxShadow(
+            color: col.withOpacity(0.18), blurRadius: 18)] : null),
+        child: Stack(children: [
+          // Left accent bar
+          if (sel) Positioned(left: 0, top: 0, bottom: 0,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 280),
+              width: 3.5,
+              decoration: BoxDecoration(
+                color: col,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(13),
+                  bottomLeft: Radius.circular(13)),
+                boxShadow: [BoxShadow(
+                  color: col.withOpacity(0.55), blurRadius: 8)]))),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // ── Collapsed header (always visible) ───────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(12,11,12,11),
@@ -1027,14 +1079,14 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: _tCard,
-        borderRadius: BorderRadius.circular(14),
+        color: _file != null ? _bgSurface : _bgDeep,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _file != null ? _tGold : _tBorder,
-          width: 1.5),
-        boxShadow: const [BoxShadow(
-          color: Color(0x26000000),
-          blurRadius: 12, offset: Offset(0, 3))]),
+          color: _file != null ? _gold : _teal.withOpacity(0.28),
+          width: _file != null ? 1.8 : 0.8),
+        boxShadow: _file != null ? [BoxShadow(
+          color: _gold.withOpacity(0.14),
+          blurRadius: 22, offset: const Offset(0, 4))] : null),
       child: Column(children: [
         AnimatedSwitcher( // S30-P3
           duration: const Duration(milliseconds: 350),
@@ -1319,11 +1371,38 @@ class _HomeScreenState extends State<HomeScreen>
           duration: const Duration(milliseconds: 300),
           transitionBuilder: (child, anim) => FadeTransition(
             opacity: anim, child: child),
-          child: Text(
-            _status.isEmpty ? s.processing : _status,
-            key: ValueKey(_status),
-            style: const TextStyle(
-              color: Color(0xFFC9D1D9), fontSize: 13)))),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min, children: [
+            Text(
+              _status.isEmpty ? s.processing : _status,
+              key: ValueKey(_status),
+              style: const TextStyle(
+                color: _textA, fontSize: 13)),
+            const SizedBox(height: 10),
+            AnimatedBuilder(
+              animation: _audioBarsCtrl,
+              builder: (_, __) {
+                const n = 14;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: List.generate(n, (i) {
+                    final h = 4.0 + 14.0 * (sin(
+                      (_audioBarsCtrl.value + i/n) * 6.2832 * 1.5
+                    ) * 0.5 + 0.5);
+                    final lit = (i / n) < _progress;
+                    return Container(
+                      width: 3.5, height: h,
+                      margin: const EdgeInsets.only(right: 2.5),
+                      decoration: BoxDecoration(
+                        color: lit
+                          ? _gold.withOpacity(0.65 + 0.35 * _audioBarsCtrl.value)
+                          : _teal.withOpacity(0.22),
+                        borderRadius: BorderRadius.circular(2)));
+                  }));
+              }),
+          ])))),
         // S20-A: '...' when merging — frozen '68%' looks like a crash
         Text(_isMerging ? '...' : '${(_progress * 100).toInt()}%',
           style: const TextStyle(
@@ -1892,4 +1971,48 @@ class _WaveProgressPainter extends CustomPainter {
   @override
   bool shouldRepaint(_WaveProgressPainter o) =>
     o.progress != progress || o.shimmer != shimmer;
+}
+
+// ── Score burst painter ───────────────────────────────────────────────────────
+class _ScoreBurstPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  const _ScoreBurstPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress < 0.3 || progress > 0.95) return;
+    final t = ((progress - 0.3) / 0.65).clamp(0.0, 1.0);
+    final opacity = (1.0 - t) * 0.7;
+    final paint = Paint()
+      ..color = color.withOpacity(opacity)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    const count = 12;
+    for (int i = 0; i < count; i++) {
+      final angle = i * 6.2832 / count;
+      final r1 = 46 + 6 * t;
+      final r2 = 46 + 22 * t;
+      canvas.drawLine(
+        Offset(cx + r1 * cos(angle), cy + r1 * sin(angle)),
+        Offset(cx + r2 * cos(angle), cy + r2 * sin(angle)),
+        paint);
+    }
+    // Dot particles
+    paint.style = PaintingStyle.fill;
+    paint.strokeWidth = 0;
+    for (int i = 0; i < count; i++) {
+      final angle = i * 6.2832 / count + pi / count;
+      final r = 42 + 28 * t;
+      canvas.drawCircle(
+        Offset(cx + r * cos(angle), cy + r * sin(angle)),
+        1.8 * (1 - t), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ScoreBurstPainter o) => o.progress != progress;
 }

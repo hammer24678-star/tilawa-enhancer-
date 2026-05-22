@@ -16,6 +16,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     with TickerProviderStateMixin {
   late final AnimationController _fadeCtrl;
   late final AnimationController _pulseCtrl;
+  late final AnimationController _geoRotCtrl;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
   late final Animation<double> _pulse;
@@ -29,6 +30,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     _pulseCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2200))
       ..repeat(reverse: true);
+    _geoRotCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 90))
+      ..repeat();
 
     _fade  = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeIn);
     _slide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
@@ -43,6 +47,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   void dispose() {
     _fadeCtrl.dispose();
     _pulseCtrl.dispose();
+    _geoRotCtrl.dispose();
     super.dispose();
   }
 
@@ -80,15 +85,28 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     final s = LangProvider.strings(context);
     return Scaffold(
       backgroundColor: const Color(0xFF061218),
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fade,
-          child: SlideTransition(
-            position: _slide,
-            child: _page == 0 ? _page0(s) : _page == 1 ? _page1(s) : _page2(s),
+      body: Stack(children: [
+        // Rotating geo background
+        Positioned.fill(child: AnimatedBuilder(
+          animation: _geoRotCtrl,
+          builder: (_, __) => Transform.rotate(
+            angle: _geoRotCtrl.value * 6.2832,
+            child: CustomPaint(painter: _GeoPainter())))),
+        // Star particles
+        Positioned.fill(child: AnimatedBuilder(
+          animation: _pulseCtrl,
+          builder: (_, __) => CustomPaint(
+            painter: _WelcomeStarsPainter(_pulseCtrl.value)))),
+        SafeArea(
+          child: FadeTransition(
+            opacity: _fade,
+            child: SlideTransition(
+              position: _slide,
+              child: _page == 0 ? _page0(s) : _page == 1 ? _page1(s) : _page2(s),
+            ),
           ),
         ),
-      ),
+      ]),
     );
   }
 
