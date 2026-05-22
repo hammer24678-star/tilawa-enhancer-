@@ -13,13 +13,13 @@ import 'history_screen.dart';
 import 'settings_screen.dart';
 
 // ── Sacred Cosmos tokens ─────────────────────────────────────────────────────
-const _bgDeep    = Color(0xFF061218);
+const _bgDeep    = Color(0xFF020D17);
 const _bgSurface = Color(0xFF0C1E28);
 const _bgCard    = Color(0xFF102B38);
 const _gold      = Color(0xFFD4AF37);
 const _goldLight = Color(0xFFF0CF60);
 const _goldMuted = Color(0xFF3A2B08);
-const _teal      = Color(0xFF1B6B80);
+const _teal      = Color(0xFF1C8EA8);
 const _tealLight = Color(0xFF2E8FA8);
 const _textA     = Color(0xFFE2CFA0);
 const _textB     = Color(0xFF8AACBA);
@@ -615,8 +615,9 @@ class _HomeScreenState extends State<HomeScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
+            // S34-BG-GRADIENT
             colors: dark
-              ? [_tBg, const Color(0xFF0C1018)]
+              ? [const Color(0xFF020D17), const Color(0xFF000810)]
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         // S29: Sacred Cosmos painters Stack
         child: Stack(children: [
@@ -631,6 +632,53 @@ class _HomeScreenState extends State<HomeScreen>
                   painter: _StarsPainter(_starCtrl.value, _starList))))),
           SafeArea(
           child: CustomScrollView(slivers: [
+            SliverAppBar(
+              // S35-APPBAR
+              pinned: true,
+              floating: false,
+              backgroundColor: const Color(0xFF020D17),
+              elevation: 0,
+              expandedHeight: 88,
+              flexibleSpace: FlexibleSpaceBar(
+                centerTitle: true,
+                background: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF061F32),
+                        Color(0xFF020D17),
+                      ]))),
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 32, height: 32,
+                        fit: BoxFit.contain)),
+                    RichText(
+                      text: const TextSpan(
+                        style: TextStyle(fontFamily: 'Roboto'),
+                        children: [
+                          TextSpan(
+                            text: 'محسِّن ',
+                            style: TextStyle(
+                              color: Color(0xFFD4AF37),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3)),
+                          TextSpan(
+                            text: 'التلاوة',
+                            style: TextStyle(
+                              color: Color(0xFFF2EFE5),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w300)),
+                        ])),
+                  ])),
+            ),
             SliverToBoxAdapter(child: _header(s)),
             SliverToBoxAdapter(child: _serverBanner(s)),
             SliverToBoxAdapter(child: _engineSelector(s)),
@@ -940,14 +988,26 @@ class _HomeScreenState extends State<HomeScreen>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.fromLTRB(8,3,8,3),
+        // S32-ENGINE-GLASS
         decoration: BoxDecoration(
-          color: sel ? col.withOpacity(0.07) : Colors.transparent,
-          borderRadius: BorderRadius.circular(13),
+          color: sel
+            ? col.withOpacity(0.09)
+            : const Color(0xFF0B2233).withOpacity(0.7),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: sel ? col : _teal.withOpacity(0.18),
-            width: sel ? 1.8 : 0.7),
-          boxShadow: sel ? [BoxShadow(
-            color: col.withOpacity(0.18), blurRadius: 18)] : null),
+            color: sel
+              ? col.withOpacity(0.70)
+              : const Color(0xFF1C8EA8).withOpacity(0.15),
+            width: sel ? 1.6 : 0.7),
+          boxShadow: sel ? [
+            BoxShadow(
+              color: col.withOpacity(0.22),
+              blurRadius: 22, spreadRadius: 0,
+              offset: const Offset(0, 4)),
+            BoxShadow(
+              color: col.withOpacity(0.10),
+              blurRadius: 40, spreadRadius: 2),
+          ] : null),
         child: Stack(children: [
           // Left accent bar
           if (sel) Positioned(left: 0, top: 0, bottom: 0,
@@ -1094,14 +1154,25 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: _file != null ? _bgSurface : _bgDeep,
-        borderRadius: BorderRadius.circular(16),
+        // S32-FILE-CARD
+        color: _file != null
+          ? const Color(0xFF0B2233)
+          : const Color(0xFF071929),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: _file != null ? _gold : _teal.withOpacity(0.28),
-          width: _file != null ? 1.8 : 0.8),
-        boxShadow: _file != null ? [BoxShadow(
-          color: _gold.withOpacity(0.14),
-          blurRadius: 22, offset: const Offset(0, 4))] : null),
+          color: _file != null
+            ? const Color(0xFFD4AF37).withOpacity(0.65)
+            : const Color(0xFF1C8EA8).withOpacity(0.20),
+          width: _file != null ? 1.6 : 0.8),
+        boxShadow: _file != null ? [
+          BoxShadow(
+            color: const Color(0xFFD4AF37).withOpacity(0.18),
+            blurRadius: 28, spreadRadius: 2,
+            offset: const Offset(0, 4)),
+          BoxShadow(
+            color: const Color(0xFFD4AF37).withOpacity(0.08),
+            blurRadius: 60, spreadRadius: 4),
+        ] : null),
       child: Column(children: [
         AnimatedSwitcher( // S30-P3
           duration: const Duration(milliseconds: 350),
@@ -1376,10 +1447,23 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _progressCard(S s) => Container(
     margin: const EdgeInsets.fromLTRB(16,10,16,4),
     padding: const EdgeInsets.all(18),
+    // S35-PROGRESS-CARD
     decoration: BoxDecoration(
-      color: _bgSurface,
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [Color(0xFF0B2233), Color(0xFF071929)]),
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _teal.withOpacity(0.25))),
+      border: Border.all(
+        color: const Color(0xFFD4AF37).withOpacity(0.18), width: 0.9),
+      boxShadow: [
+        BoxShadow(
+          color: const Color(0xFFD4AF37).withOpacity(0.08),
+          blurRadius: 30, spreadRadius: 0,
+          offset: const Offset(0, 6)),
+        BoxShadow(
+          color: const Color(0xFF1C8EA8).withOpacity(0.06),
+          blurRadius: 60, spreadRadius: 2),
+      ]),
     child: Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Flexible(child: AnimatedSwitcher( // S30-P2
@@ -1443,8 +1527,7 @@ class _HomeScreenState extends State<HomeScreen>
         label: Text(s.cancelBtn,
           style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12)),
       ),
-    ]),
-  );
+    ],  // S36-BRACKET-FIX (removed orphan ) from bracket-paren)
 
   // ── RESULT + DOWNLOAD BUTTON (S19: better labels, fallback warning, open) ──
   Widget _resultCard(S s) {

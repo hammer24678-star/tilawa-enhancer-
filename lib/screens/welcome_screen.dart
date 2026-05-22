@@ -78,13 +78,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
   Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
   Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
-  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
+  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8AAABB) : const Color(0xFF6B5E40);
 
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF061218),
+      backgroundColor: const Color(0xFF020D17),
       body: Stack(children: [
         // Rotating geo background
         Positioned.fill(child: AnimatedBuilder(
@@ -116,6 +116,24 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+            // S33-WELCOME-LOGO
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 20, top: 8),
+                width: 130, height: 130,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x59D4AF37),
+                      blurRadius: 40, spreadRadius: 4),
+                    BoxShadow(
+                      color: Color(0x331C8EA8),
+                      blurRadius: 70, spreadRadius: 10),
+                  ]),
+                child: ClipOval(child: Image.asset('assets/images/logo.png',
+                  fit: BoxFit.cover, width: 130, height: 130)))),
+
         // Pulsing gold ring around logo
         AnimatedBuilder(
           animation: _pulse,
@@ -160,13 +178,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         const SizedBox(height: 8),
         Text(s.subtitle,
           style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 11,
+            color: Color(0xFF8AAABB), fontSize: 11,
             letterSpacing: 3.0)),
         const SizedBox(height: 36),
         Text(s.welcomeDesc,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            color: Color(0xFFC9D1D9), fontSize: 14, height: 1.9)),
+            color: Color(0xFFF2EFE5), fontSize: 14, height: 1.9)),
         const SizedBox(height: 48),
         _primaryBtn(s.howItWorks, () => _goPage(1)),
         const SizedBox(height: 14),
@@ -174,7 +192,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           onPressed: _finish,
           child: Text(s.welcomeStart,
             style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 13))),
+              color: Color(0xFF8AAABB), fontSize: 13))),
         const SizedBox(height: 14),
         _langToggle(context),
         const SizedBox(height: 8),
@@ -233,7 +251,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     Text(entry.value.$2,
                       textDirection: TextDirection.rtl,
                       style: const TextStyle(
-                        color: Color(0xFFC9D1D9),
+                        color: Color(0xFFF2EFE5),
                         fontSize: 13, height: 1.45)),
                   ],
                 )),
@@ -267,7 +285,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       ('v7.0',  s.ar ? 'كلاسيكي' : 'Classic',
         s.ar ? 'البنية المُثبَّتة الأساس — STABLE'
               : 'Proven foundational architecture — STABLE',
-        const Color(0xFF8B949E)),
+        const Color(0xFF8AAABB)),
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -311,7 +329,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     color: t.$4, fontSize: 12,
                     fontWeight: FontWeight.w600)),
                   Text(t.$3, style: const TextStyle(
-                    color: Color(0xFF8B949E), fontSize: 10,
+                    color: Color(0xFF8AAABB), fontSize: 10,
                     height: 1.4)),
                 ])),
             ]))),
@@ -357,7 +375,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               padding: const EdgeInsets.symmetric(vertical: 17),
               child: Text(label, textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: Color(0xFF061218),
+                  color: Color(0xFF020D17),
                   fontWeight: FontWeight.w900, fontSize: 17,
                   letterSpacing: 0.3)))))));
 
@@ -380,7 +398,96 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                 fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(width: 6),
             const Icon(Icons.language,
-              color: Color(0xFF8B949E), size: 16),
+              color: Color(0xFF8AAABB), size: 16),
           ]))));
   }
+}
+// ── S33: Islamic geometric background painter ────────────────────────────────
+class _GeoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height / 2;
+    const r = 120.0;
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.7;
+
+    // Outer glow ring
+    ringPaint.color = const Color(0xFFD4AF37).withOpacity(0.06);
+    canvas.drawCircle(Offset(cx, cy), r + 28, ringPaint);
+
+    // Inner teal ring
+    ringPaint.color = const Color(0xFF1C8EA8).withOpacity(0.07);
+    canvas.drawCircle(Offset(cx, cy), r * 0.52, ringPaint);
+
+    // 8-point Islamic star polygon
+    final starPaint = Paint()
+      ..color = const Color(0xFF1C8EA8).withOpacity(0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+    final path = Path();
+    for (int i = 0; i < 8; i++) {
+      final a = (i / 8) * math.pi * 2 - math.pi / 2;
+      final b = ((i + 0.5) / 8) * math.pi * 2 - math.pi / 2;
+      final px = cx + r * math.cos(a);
+      final py = cy + r * math.sin(a);
+      final qx = cx + (r * 0.40) * math.cos(b);
+      final qy = cy + (r * 0.40) * math.sin(b);
+      if (i == 0) {
+        path.moveTo(px, py);
+      } else {
+        path.lineTo(px, py);
+      }
+      path.lineTo(qx, qy);
+    }
+    path.close();
+    canvas.drawPath(path, starPaint);
+
+    // Radial spokes
+    final spokePaint = Paint()
+      ..color = const Color(0xFFD4AF37).withOpacity(0.04)
+      ..strokeWidth = 0.5;
+    for (int i = 0; i < 16; i++) {
+      final a = (i / 16) * math.pi * 2;
+      canvas.drawLine(
+        Offset(cx + (r * 0.55) * math.cos(a), cy + (r * 0.55) * math.sin(a)),
+        Offset(cx + (r + 20) * math.cos(a),   cy + (r + 20) * math.sin(a)),
+        spokePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GeoPainter o) => false;
+}
+// ── S33: Pulsing stars background painter ────────────────────────────────────
+class _WelcomeStarsPainter extends CustomPainter {
+  final double pulse;
+  _WelcomeStarsPainter(this.pulse);
+
+  static final _rng = math.Random(42);
+  static final List<Offset> _pts = List.generate(
+    32, (_) => Offset(_rng.nextDouble(), _rng.nextDouble()));
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < _pts.length; i++) {
+      final phase = (i / _pts.length) * math.pi * 2;
+      final alpha =
+          ((math.sin(pulse * math.pi * 2 + phase) + 1) / 2) * 0.60 + 0.08;
+      final radius = 1.0 + (i % 4) * 0.45;
+      paint.color = (i % 5 == 0
+              ? const Color(0xFFD4AF37)
+              : const Color(0xFF1C8EA8))
+          .withOpacity(alpha);
+      canvas.drawCircle(
+        Offset(_pts[i].dx * size.width, _pts[i].dy * size.height),
+        radius,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WelcomeStarsPainter o) => o.pulse != pulse;
 }
