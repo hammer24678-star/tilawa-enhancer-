@@ -102,20 +102,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         AnimatedBuilder(
           animation: _pulse,
           builder: (_, child) => Container(
-            width: 160, height: 160,
+            width: 180, height: 180,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFFD4AF37)
-                      .withOpacity(0.15 * _pulse.value),
+                      .withOpacity(0.28 * _pulse.value),
                   blurRadius: 50 * _pulse.value,
                   spreadRadius: 10 * _pulse.value),
               ],
             ),
             child: child),
           child: Container(
-            width: 160, height: 160,
+            width: 180, height: 180,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
@@ -136,8 +136,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           child: Text(s.appName,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 36, fontWeight: FontWeight.bold,
-              color: Colors.white, height: 1.2,
+              fontSize: 42, fontWeight: FontWeight.w900,
+              color: Colors.white, height: 1.15,
               letterSpacing: -0.5))),
         const SizedBox(height: 8),
         Text(s.subtitle,
@@ -321,17 +321,27 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   Widget _primaryBtn(String label, VoidCallback onTap) =>
     SizedBox(width: double.infinity,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFD4AF37),
-          foregroundColor: const Color(0xFF0A0C10),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14))),
-        child: Text(label,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold, fontSize: 16))));
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF8A6C10), Color(0xFFD4AF37),
+                     Color(0xFFF5E090), Color(0xFFD4AF37)],
+            stops: [0.0, 0.3, 0.6, 1.0]),
+          boxShadow: [BoxShadow(
+            color: const Color(0xFFD4AF37).withOpacity(0.35),
+            blurRadius: 20, offset: const Offset(0, 6))]),
+        child: Material(color: Colors.transparent,
+          child: InkWell(onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            splashColor: Colors.white.withOpacity(0.15),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 17),
+              child: Text(label, textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF061218),
+                  fontWeight: FontWeight.w900, fontSize: 17,
+                  letterSpacing: 0.3)))))));
 
   Widget _langToggle(BuildContext context) {
     final langNotifier = LangProvider.of(context);

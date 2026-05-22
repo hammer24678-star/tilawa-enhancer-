@@ -129,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     final rng = Random(7777);
-    _starList = List.generate(12, (_) => _StarParticle(rng));
+    _starList = List.generate(28, (_) => _StarParticle(rng));
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2800))
       ..repeat(reverse: true);
@@ -648,70 +648,102 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ── HEADER ────────────────────────────────────────────────────────────────────
+  // ── HEADER — Sacred Cosmos Hero ─────────────────────────────────────────────
   Widget _header(S s) => Container(
-    padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
-    child: Row(children: [
-      AnimatedBuilder(
-        animation: _glowCtrl,
-        builder: (_, __) {
-          final t = _glowCtrl.value;
-          return Container(
-            width: 58, height: 58,
+    padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+    child: Stack(children: [
+      // Top-right action buttons
+      Positioned(top: 16, right: 16,
+        child: Row(children: [
+          _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
+          const SizedBox(width: 8),
+          _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const SettingsScreen(),
+              transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 220)))),
+        ])),
+      // Centered hero content
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 20),
+        child: Column(children: [
+          // Orbital ring + logo
+          AnimatedBuilder(animation: _glowCtrl, builder: (_, __) {
+            final t = _glowCtrl.value;
+            return SizedBox(width: 130, height: 130,
+              child: Stack(alignment: Alignment.center, children: [
+                // Outer pulsing ring
+                Container(width: 130, height: 130,
+                  decoration: BoxDecoration(shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _gold.withOpacity(0.15 + 0.20 * t), width: 1),
+                    boxShadow: [BoxShadow(
+                      color: _gold.withOpacity(0.08 + 0.14 * t),
+                      blurRadius: 20 + 20 * t, spreadRadius: 2 + 4 * t)])),
+                // Inner ring
+                Container(width: 108, height: 108,
+                  decoration: BoxDecoration(shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _teal.withOpacity(0.25 + 0.20 * t), width: 0.8))),
+                // Logo
+                Transform.scale(
+                  scale: 0.97 + 0.06 * t,
+                  child: Container(width: 90, height: 90,
+                    decoration: BoxDecoration(shape: BoxShape.circle,
+                      boxShadow: [BoxShadow(
+                        color: _gold.withOpacity(0.20 + 0.25 * t),
+                        blurRadius: 16 + 12 * t)]),
+                    child: ClipOval(child: Image.asset(
+                      'assets/images/logo.png', fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: _bgCard,
+                        child: const Icon(Icons.menu_book_rounded,
+                          color: _gold, size: 44)))))),
+              ]));
+          }),
+          const SizedBox(height: 16),
+          // App name — large gold gradient
+          ShaderMask(
+            shaderCallback: (b) => const LinearGradient(
+              colors: [Color(0xFFB8860B), _gold, _goldLight, _gold, Color(0xFFB8860B)],
+              stops: [0.0, 0.25, 0.5, 0.75, 1.0]).createShader(b),
+            child: Text(s.appName, textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 34, fontWeight: FontWeight.w900,
+                color: Colors.white, height: 1.1, letterSpacing: -0.5))),
+          const SizedBox(height: 6),
+          // Subtitle pill
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [BoxShadow(
-                color: _gold.withOpacity(0.10 + 0.22 * t),
-                blurRadius: 16 + 14 * t, spreadRadius: 1 + 2 * t)]),
-            child: Transform.scale(
-              scale: 0.97 + 0.06 * t,
-              child: ClipOval(child: Image.asset('assets/images/logo.png',
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: _bgCard,
-                  child: const Icon(Icons.menu_book_rounded,
-                    color: _gold, size: 30))))));
-        }),
-      const SizedBox(width: 12),
-      Expanded(child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-        ShaderMask(
-          shaderCallback: (b) => const LinearGradient(
-            colors: [_gold, _goldLight, _gold],
-            stops: [0.0, 0.5, 1.0]).createShader(b),
-          child: Text(s.appName, style: const TextStyle(
-            fontSize: 26, fontWeight: FontWeight.w900,
-            color: Colors.white, height: 1.1))),
-        Text(s.subtitle,
-          style: const TextStyle(
-            color: _textB, fontSize: 10, letterSpacing: 1.6)),
-      ])),
-      Row(children: [
-        _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
-        const SizedBox(width: 6),
-        _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const SettingsScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 220),
-          ))),
-      ]),
+              color: _teal.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _teal.withOpacity(0.35))),
+            child: Text(s.subtitle,
+              style: const TextStyle(
+                color: _textB, fontSize: 10, letterSpacing: 2.0))),
+        ])),
     ]),
   );
 
-  Widget _iconBtn(IconData icon, VoidCallback onTap) => Material(
-    color: _tCard,
-    shape: CircleBorder(
-      side: BorderSide(color: _teal.withOpacity(0.35))),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
+  Widget _iconBtn(IconData icon, VoidCallback onTap) {
+    // S29-ICONBTN-SACRED
+    return GestureDetector(
       onTap: onTap,
-      splashColor: _tGold.withOpacity(0.18),
-      highlightColor: _tGold.withOpacity(0.08),
-      child: Padding(
-        padding: const EdgeInsets.all(9),
-        child: Icon(icon, color: _tSub, size: 20))));
+      child: AnimatedBuilder(
+        animation: _glowCtrl,
+        builder: (_, __) => Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: _bgCard, shape: BoxShape.circle,
+            border: Border.all(
+              color: _teal.withOpacity(0.28 + 0.22 * _glowCtrl.value)),
+            boxShadow: [BoxShadow(
+              color: _teal.withOpacity(0.08 + 0.08 * _glowCtrl.value),
+              blurRadius: 10)]),
+          child: Icon(icon, color: _textB, size: 20))));
+  }
 
   // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
   Widget _serverBanner(S s) {
@@ -806,12 +838,11 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _engineSelector(S s) => Container(
     margin: const EdgeInsets.fromLTRB(16,10,16,4),
     decoration: BoxDecoration(
-      color: _tCard,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _tBorder),
-      boxShadow: const [BoxShadow(
-        color: Color(0x26000000),
-        blurRadius: 12, offset: Offset(0, 3))]),
+      color: _bgSurface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _teal.withOpacity(0.28)),
+      boxShadow: [BoxShadow(
+        color: _teal.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 4))]),
     child: Column(children: [
       // ── Header row ──────────────────────────────────────────────────
       Padding(
@@ -820,7 +851,8 @@ class _HomeScreenState extends State<HomeScreen>
           const Icon(Icons.tune_rounded, color: Color(0xFF484F58), size: 13),
           const SizedBox(width: 7),
           Text(s.chooseEngine, style: const TextStyle(
-            color: Color(0xFF8B949E), fontSize: 11, letterSpacing: 1.5)),
+            color: _textB, fontSize: 11, letterSpacing: 1.8,
+            fontWeight: FontWeight.w600)),
           const Spacer(),
           // Score pill for selected engine
           Container(
@@ -1278,12 +1310,9 @@ class _HomeScreenState extends State<HomeScreen>
     margin: const EdgeInsets.fromLTRB(16,10,16,4),
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      color: _tCard,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _tBorder),
-      boxShadow: const [BoxShadow(
-        color: Color(0x26000000),
-        blurRadius: 12, offset: Offset(0, 3))]),
+      color: _bgSurface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _teal.withOpacity(0.25))),
     child: Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Flexible(child: AnimatedSwitcher( // S30-P2
@@ -1630,8 +1659,8 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _bottomRow(S s) => Padding(
     padding: const EdgeInsets.fromLTRB(16,10,16,4),
     child: Material( // S30-P4
-      color: _tCard,
-      borderRadius: BorderRadius.circular(12),
+      color: _bgSurface,
+      borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => Navigator.push(context,
@@ -1648,8 +1677,7 @@ class _HomeScreenState extends State<HomeScreen>
           decoration: BoxDecoration(
             border: Border.all(color: _tBorder)),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.history_rounded,
-              color: Color(0xFF8B949E), size: 18),
+            const Icon(Icons.history_rounded, color: _textB, size: 18),
             const SizedBox(width: 8),
             Text(s.history, style: const TextStyle(
               color: Color(0xFF8B949E), fontSize: 13)),
@@ -1764,7 +1792,7 @@ class _StarParticle {
   final double x, y, size, phase, speed, twinkle;
   _StarParticle(Random r)
       : x = r.nextDouble(), y = r.nextDouble(),
-        size = 0.4 + r.nextDouble() * 1.8,
+        size = 0.8 + r.nextDouble() * 2.6,
         phase = r.nextDouble() * 6.2832,
         speed = 0.15 + r.nextDouble() * 0.6,
         twinkle = 0.4 + r.nextDouble() * 1.6;
@@ -1781,7 +1809,7 @@ class _StarsPainter extends CustomPainter {
       final a = t * 6.2832 * s.speed + s.phase;
       final x = s.x * size.width  + sin(a)        * size.width  * 0.016;
       final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
-      final op = 0.12 + 0.5 * (sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5);
+      final op = 0.25 + 0.60 * (sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5);
       p.color = _gold.withOpacity(op);
       canvas.drawCircle(Offset(x, y), s.size, p);
     }
@@ -1793,7 +1821,7 @@ class _GeoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()
-      ..color = _teal.withOpacity(0.032)
+      ..color = _teal.withOpacity(0.10)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.7;
     const cell = 120.0;
