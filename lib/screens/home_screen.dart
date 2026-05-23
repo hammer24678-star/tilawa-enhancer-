@@ -877,8 +877,8 @@ class _HomeScreenState extends State<HomeScreen>
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 400),
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: _serverUp
           ? _ok.withOpacity(0.06)
@@ -976,7 +976,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── ENGINE SELECTOR ────────────────────────────────────────────────────────
   Widget _engineSelector(S s) => Container(
-    margin: const EdgeInsets.fromLTRB(16,10,16,4),
+    margin: const EdgeInsets.fromLTRB(16,16,16,8),
     decoration: BoxDecoration(
       color: _bgSurface,
       borderRadius: BorderRadius.circular(16),
@@ -986,7 +986,7 @@ class _HomeScreenState extends State<HomeScreen>
     child: Column(children: [
       // ── Header row ──────────────────────────────────────────────────
       Padding(
-        padding: const EdgeInsets.fromLTRB(16,14,16,10),
+        padding: const EdgeInsets.fromLTRB(18,16,18,14),
         child: Row(children: [
           const Icon(Icons.tune_rounded, color: Color(0xFF484F58), size: 13),
           const SizedBox(width: 7),
