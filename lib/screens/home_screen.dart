@@ -626,6 +626,9 @@ class _HomeScreenState extends State<HomeScreen>
               child: CustomPaint(painter: _GeoPainter()))),
           if (dark) Positioned.fill(
             child: IgnorePointer(
+              child: CustomPaint(painter: _IncensePainter(_geoRotCtrl.value)))),
+          if (dark) Positioned.fill(
+            child: IgnorePointer(
               child: AnimatedBuilder(
                 animation: _starCtrl,
                 builder: (_, __) => CustomPaint(
