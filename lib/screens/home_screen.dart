@@ -684,7 +684,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             SliverToBoxAdapter(child: _header(s)),
             SliverToBoxAdapter(child: _serverBanner(s)),
-            SliverToBoxAdapter(child: _geoSep()),
+            SliverToBoxAdapter(child: _geoSep(s.ar ? 'اختر المحرك' : 'Engine')),
             SliverToBoxAdapter(child: _engineSelector(s)),
             SliverToBoxAdapter(child: _geoDiamond()),
             SliverToBoxAdapter(child: _fileCard(s)),
