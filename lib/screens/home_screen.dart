@@ -1000,7 +1000,7 @@ class _HomeScreenState extends State<HomeScreen>
             color: sel
               ? col.withOpacity(0.70)
               : const Color(0xFF1DB898).withOpacity(0.22),
-            width: sel ? 1.6 : 0.7),
+            width: sel ? 1.8 : 0.8),
           boxShadow: sel ? [
             BoxShadow(
               color: col.withOpacity(0.22),
@@ -1498,7 +1498,7 @@ class _HomeScreenState extends State<HomeScreen>
           blurRadius: 30, spreadRadius: 0,
           offset: const Offset(0, 6)),
         BoxShadow(
-          color: const Color(0xFF1C8EA8).withOpacity(0.06),
+          color: const Color(0xFF1DB898).withOpacity(0.08),
           blurRadius: 60, spreadRadius: 2),
       ]),
     child: Column(children: [
