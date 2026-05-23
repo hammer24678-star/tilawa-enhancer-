@@ -657,6 +657,12 @@ class _HomeScreenState extends State<HomeScreen>
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
+                animation: _glowCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _RadialPulsePainter(_glowCtrl.value))))),
+          if (dark) Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
                 animation: _starCtrl,
                 builder: (_, __) => CustomPaint(
                   painter: _StarsPainter(_starCtrl.value, _starList))))),
@@ -2342,6 +2348,32 @@ class _EngineData {
 }
 
 // ── Sacred Cosmos painters ────────────────────────────────────────────────────
+
+class _RadialPulsePainter extends CustomPainter {
+  final double t;
+  _RadialPulsePainter(this.t);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width * 0.5;
+    final cy = size.height * 0.38;
+    final p = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < 3; i++) {
+      final phase = (t + i * 0.33) % 1.0;
+      final r = 60.0 + phase * 220.0;
+      final op = (1.0 - phase) * (i == 0 ? 0.10 : 0.06);
+      p.color = const Color(0xFFC8A048).withOpacity(op);
+      p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
+      canvas.drawCircle(Offset(cx, cy), r, p);
+    }
+    p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
+    p.color = const Color(0xFFC8A048).withOpacity(0.06 + 0.06 * t);
+    canvas.drawCircle(Offset(cx, cy), 80, p);
+    p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 24);
+    p.color = const Color(0xFF1DB898).withOpacity(0.04 + 0.04 * (1 - t));
+    canvas.drawCircle(Offset(cx, cy), 120 + 40 * t, p);
+  }
+  @override bool shouldRepaint(_RadialPulsePainter o) => o.t != t;
+}
 class _StarParticle {
   final double x, y, size, phase, speed, twinkle;
   _StarParticle(Random r)
@@ -2363,9 +2395,11 @@ class _StarsPainter extends CustomPainter {
       final a = t * 6.2832 * s.speed + s.phase;
       final x = s.x * size.width  + sin(a)        * size.width  * 0.016;
       final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
-      final op = 0.40 + 0.60 * (sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5);
+      final alpha = sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5;
+      final op = 0.45 + 0.55 * alpha;
+      final sz = s.size * (0.5 + 0.5 * alpha);
       p.color = _gold.withOpacity(op);
-      canvas.drawCircle(Offset(x, y), s.size, p);
+      canvas.drawCircle(Offset(x, y), sz, p);
     }
   }
   @override bool shouldRepaint(_StarsPainter o) => o.t != t;
@@ -2478,7 +2512,7 @@ class _IncensePainter extends CustomPainter {
     final p = Paint()..style = PaintingStyle.fill;
     for (int i = 0; i < _xs.length; i++) {
       final phase = ((t * 0.65) + i / _xs.length) % 1.0;
-      final dx = _xs[i] * size.width + sin(phase * 6.2832 * 1.5 + i) * 9;
+      final dx = _xs[i] * size.width + sin(phase * 6.2832 * 1.5 + i) * 18;
       final dy = size.height * (1.0 - phase * 0.72);
       final op = phase < 0.12 ? phase / 0.12
           : phase > 0.75 ? (1.0 - phase) / 0.25 : 0.42;
