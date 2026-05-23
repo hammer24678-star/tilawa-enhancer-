@@ -626,7 +626,10 @@ class _HomeScreenState extends State<HomeScreen>
               child: CustomPaint(painter: _GeoPainter()))),
           if (dark) Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(painter: _IncensePainter(_geoRotCtrl.value)))),
+              child: AnimatedBuilder(
+                animation: _geoRotCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _IncensePainter(_geoRotCtrl.value))))),
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
@@ -1187,110 +1190,191 @@ class _HomeScreenState extends State<HomeScreen>
       : bc == 'blue'  ? const Color(0xFF0D1B2E)
       : _tCard;
 
-  // ── FILE CARD ──────────────────────────────────────────────────────────────
-  Widget _fileCard(S s) => GestureDetector(
-    onTap: _busy ? null : _pickFile,
-    child: Container(
-      margin: const EdgeInsets.fromLTRB(16,10,16,4),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        // S32-FILE-CARD
-        color: _file != null
-          ? const Color(0xFF0D2B22)
-          : const Color(0xFF071A14),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: _file != null
-            ? const Color(0xFFD4AF37).withOpacity(0.65)
-            : const Color(0xFF1C8EA8).withOpacity(0.20),
-          width: _file != null ? 1.6 : 0.8),
-        boxShadow: _file != null ? [
-          BoxShadow(
-            color: const Color(0xFFD4AF37).withOpacity(0.18),
-            blurRadius: 28, spreadRadius: 2,
-            offset: const Offset(0, 4)),
-          BoxShadow(
-            color: const Color(0xFFD4AF37).withOpacity(0.08),
-            blurRadius: 60, spreadRadius: 4),
-        ] : null),
-      child: Column(children: [
-        AnimatedSwitcher( // S30-P3
-          duration: const Duration(milliseconds: 350),
-          switchInCurve: Curves.easeOutBack,
-          transitionBuilder: (child, anim) => ScaleTransition(
-            scale: anim, child: FadeTransition(opacity: anim, child: child)),
-          child: Icon(
-            _file != null ? Icons.audio_file : Icons.add_circle_outline,
-            key: ValueKey(_file != null),
-            color: _tGold, size: 52)),
-        const SizedBox(height: 12),
-        Text(_file != null ? _file!.path.split('/').last : s.pickFile,
-          textDirection: TextDirection.rtl,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: _file != null ? _tText : _tSub,
-            fontSize: _file != null ? 13 : 16,
-            fontWeight: _file != null ? FontWeight.normal : FontWeight.bold)),
-        if (_file != null) ...[
-          const SizedBox(height: 4),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text(_sizeLabel,
-              style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11)),
-            if (_isLarge) ...[
-              const SizedBox(width: 8),
-              _badge(s.chunkedBadge, 'gold'),
+  // ── FILE CARD — Mihrab Upload Portal (S43) ───────────────────────────────
+  Widget _fileCard(S s) {
+    final hasFile = _file != null;
+    return GestureDetector(
+      onTap: _busy ? null : _pickFile,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+        decoration: BoxDecoration(
+          color: hasFile
+            ? const Color(0xFF0D2B22)
+            : const Color(0xFF071A14),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: hasFile
+              ? const Color(0xFFC8A048).withOpacity(0.68)
+              : const Color(0xFF1DB898).withOpacity(0.24),
+            width: hasFile ? 1.8 : 1.0),
+          boxShadow: [BoxShadow(
+            color: hasFile
+              ? const Color(0xFFC8A048).withOpacity(0.20)
+              : const Color(0xFF1DB898).withOpacity(0.08),
+            blurRadius: 36, spreadRadius: 2)]),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+          child: Column(children: [
+            // ── Upload icon with breathing ring ──
+            AnimatedBuilder(
+              animation: _glowCtrl,
+              builder: (_, __) => Container(
+                width: 72, height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFC8A048)
+                      .withOpacity(0.38 + 0.32 * _glowCtrl.value),
+                    width: 1.5),
+                  boxShadow: [BoxShadow(
+                    color: const Color(0xFFC8A048)
+                      .withOpacity(0.10 + 0.18 * _glowCtrl.value),
+                    blurRadius: 18 + 16 * _glowCtrl.value)]),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 380),
+                  switchInCurve: Curves.easeOutBack,
+                  transitionBuilder: (child, anim) => ScaleTransition(
+                    scale: anim, child: child),
+                  child: Icon(
+                    hasFile ? Icons.audio_file_rounded : Icons.upload_rounded,
+                    key: ValueKey(hasFile),
+                    color: const Color(0xFFC8A048), size: 34)))),
+            const SizedBox(height: 16),
+            // ── Animated waveform bars (file selected) / empty placeholder ──
+            SizedBox(height: 32,
+              child: hasFile
+                ? AnimatedBuilder(
+                    animation: _audioBarsCtrl,
+                    builder: (_, __) => Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: List.generate(22, (i) {
+                        final phase = (_audioBarsCtrl.value + i * 0.13) % 1.0;
+                        final ht = 4.0 + 24.0 *
+                          sin(phase * pi).abs() *
+                          (0.4 + 0.6 * sin(i * 0.95).abs());
+                        return Container(
+                          width: 3, height: ht,
+                          margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(2),
+                            gradient: const LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [Color(0xFF1DB898), Color(0xFFC8A048)])));
+                      })))
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(18, (i) => Container(
+                      width: 3, height: 4.0 + 14.0 * sin(i * 0.45).abs(),
+                      margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(2),
+                        color: const Color(0xFF1DB898).withOpacity(0.20)))))),
+            const SizedBox(height: 12),
+            // ── Filename / pick label ──
+            Text(
+              hasFile ? _file!.path.split('/').last : s.pickFile,
+              textDirection: TextDirection.rtl,
+              textAlign: TextAlign.center,
+              maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: hasFile
+                  ? const Color(0xFFE2CFA0)
+                  : const Color(0xFF8AACBA),
+                fontSize: hasFile ? 13 : 15,
+                fontWeight: hasFile ? FontWeight.w500 : FontWeight.w600,
+                letterSpacing: hasFile ? 0 : 0.4)),
+            if (hasFile) ...[
+              const SizedBox(height: 4),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Text(_sizeLabel,
+                  style: const TextStyle(
+                    color: Color(0xFF8B949E), fontSize: 11)),
+                if (_isLarge) ...[
+                  const SizedBox(width: 8),
+                  _badge(s.chunkedBadge, 'gold'),
+                ],
+              ]),
+              if (_fileBytes > 0) ...[
+                const SizedBox(height: 3),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const Icon(Icons.timer_outlined,
+                    size: 10, color: Color(0xFF3D5A65)),
+                  const SizedBox(width: 3),
+                  Text('${s.estTime}: ${_estimatedTime()}',
+                    style: const TextStyle(
+                      color: Color(0xFF3D5A65), fontSize: 10)),
+                ]),
+              ],
+            ],
+            const SizedBox(height: 6),
+            Text(s.sizeLimit,
+              style: const TextStyle(
+                color: Color(0xFF3D5A65), fontSize: 10,
+                letterSpacing: 0.4)),
+            if (hasFile) ...[
+              const SizedBox(height: 18),
+              // ── Elevate button — gold gradient ──
+              GestureDetector(
+                onTap: (_busy || !_serverUp) ? null : () {
+                  HapticFeedback.mediumImpact();
+                  _process();
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: (_busy || !_serverUp)
+                      ? LinearGradient(colors: [
+                          const Color(0xFF1A1200).withOpacity(0.6),
+                          const Color(0xFF1A1200).withOpacity(0.6)])
+                      : const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF6B4518),
+                            Color(0xFFC8A048),
+                            Color(0xFFF0D882),
+                            Color(0xFFC8A048),
+                          ],
+                          stops: [0.0, 0.3, 0.6, 1.0]),
+                    boxShadow: (_busy || !_serverUp) ? null : [
+                      BoxShadow(
+                        color: const Color(0xFFC8A048).withOpacity(0.40),
+                        blurRadius: 24, offset: const Offset(0, 6)),
+                    ]),
+                  child: _busy
+                    ? Row(mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF020D0C))),
+                          const SizedBox(width: 10),
+                          Text(s.processing,
+                            style: const TextStyle(
+                              color: Color(0xFF020D0C),
+                              fontWeight: FontWeight.w900, fontSize: 14,
+                              letterSpacing: 0.5)),
+                        ])
+                    : Text(
+                        s.ar ? 'ارفع التلاوة' : 'Elevate This Recitation',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: (_busy || !_serverUp)
+                            ? const Color(0xFF3D5A65)
+                            : const Color(0xFF020D0C),
+                          fontWeight: FontWeight.w900, fontSize: 14,
+                          letterSpacing: 0.8)))),
             ],
           ]),
-          // S28: Estimated processing time
-          if (_fileBytes > 0) ...[
-            const SizedBox(height: 4),
-            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Icon(Icons.timer_outlined, size: 11,
-                color: Color(0xFF484F58)),
-              const SizedBox(width: 4),
-              Text('${s.estTime}: ${_estimatedTime()}',
-                style: const TextStyle(
-                  color: Color(0xFF484F58), fontSize: 10)),
-            ]),
-          ],
-        ],
-        const SizedBox(height: 4),
-        Text(s.sizeLimit,
-          style: const TextStyle(color: Color(0xFF484F58), fontSize: 11)),
-        if (_file != null) ...[
-          const SizedBox(height: 18),
-          SizedBox(width: double.infinity,
-            child: ElevatedButton(
-              onPressed: (_busy || !_serverUp) ? null : () {
-                HapticFeedback.mediumImpact();
-                _process();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _tGold,
-                foregroundColor: const Color(0xFF0A0C10),
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-                disabledBackgroundColor:
-                  _tGold.withOpacity(0.3)),
-              child: _busy
-                ? Row(mainAxisSize: MainAxisSize.min, children: [
-                    const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFF0A0C10))),
-                    const SizedBox(width: 10),
-                    Text(s.processing,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
-                  ])
-                : Text('${s.process} — $_engine',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15)))),
-        ],
-      ]),
-    ),
-  );
+        ),
+      ),
+    );
+  }
 
   // ── S21: Info bottom sheet ──────────────────────────────────────────────────
   void _showInfoSheet(BuildContext ctx) {
@@ -2059,7 +2143,7 @@ class _StarsPainter extends CustomPainter {
       final a = t * 6.2832 * s.speed + s.phase;
       final x = s.x * size.width  + sin(a)        * size.width  * 0.016;
       final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
-      final op = 0.25 + 0.60 * (sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5);
+      final op = 0.40 + 0.60 * (sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5);
       p.color = _gold.withOpacity(op);
       canvas.drawCircle(Offset(x, y), s.size, p);
     }
@@ -2092,9 +2176,9 @@ class _GeoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()
-      ..color = _teal.withOpacity(0.10)
+      ..color = const Color(0xFFC8A048).withOpacity(0.07)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.7;
+      ..strokeWidth = 0.8;
     const cell = 120.0;
     final cols = (size.width / cell).ceil() + 2;
     final rows = (size.height / (cell * 0.866)).ceil() + 2;
