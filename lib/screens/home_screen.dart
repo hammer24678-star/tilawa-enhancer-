@@ -638,9 +638,10 @@ class _HomeScreenState extends State<HomeScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            // S34-BG-GRADIENT
+            // S54-BG-GRADIENT: tinted by selected engine
             colors: dark
-              ? [const Color(0xFF020D0C), const Color(0xFF051A14)]
+              ? [Color.lerp(const Color(0xFF020D0C), _engineColor, 0.055)!,
+                 Color.lerp(const Color(0xFF020D0C), _engineColor, 0.028)!]
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         // S29: Sacred Cosmos painters Stack
         child: Stack(children: [
@@ -1008,7 +1009,7 @@ class _HomeScreenState extends State<HomeScreen>
             child: Text(
               '≥${_selectedEngine.score.toInt()}',
               style: TextStyle(
-                color: _badgeColor(_selectedEngine.bc),
+                color: _engineColor,
                 fontSize: 10, fontWeight: FontWeight.bold))),
         ])),
       ..._engines.map((e) => _engineCard(e, s)),
@@ -1018,6 +1019,20 @@ class _HomeScreenState extends State<HomeScreen>
 
   _EngineData get _selectedEngine =>
       _engines.firstWhere((e) => e.id == _engine, orElse: () => _engines.first);
+
+  // S54: per-engine identity color drives bg tint and glow
+  Color get _engineColor {
+    switch (_engine) {
+      case 'v11.0': return const Color(0xFFD4AF37); // tajalli gold
+      case 'v11.1': return const Color(0xFF1DB898); // itiqan teal
+      case 'v11.2': return const Color(0xFFE8A030); // isteidad amber
+      case 'v10.0': return const Color(0xFFB8860B); // Aetherion dark gold
+      case 'v9.0':  return const Color(0xFF9B7FFF); // Evolution violet
+      case 'v8.5':  return const Color(0xFF5BB8FF); // Honest blue
+      case 'v8.0':  return const Color(0xFFFF7EA0); // Precision rose
+      default:      return const Color(0xFFD4AF37);
+    }
+  }
 
   // ── KHATAM BADGE (S50) ─────────────────────────────────────────────────
   Widget _khatamBadge(Color col, double score, {double size = 42}) {
@@ -1108,76 +1123,108 @@ class _HomeScreenState extends State<HomeScreen>
                 boxShadow: [BoxShadow(
                   color: col.withOpacity(0.55), blurRadius: 8)]))),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // S47-ENGINE-CARD — logo image header
-          if (e.imgAsset != null) Stack(children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(13),
-                topRight: Radius.circular(13)),
-              child: Image.asset(
-                e.imgAsset!,
-                width: double.infinity,
-                height: 110,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 110,
+          // S54: Premium image engine card
+          if (e.imgAsset != null) AnimatedBuilder(
+            animation: _glowCtrl,
+            builder: (_, __) {
+              final g = _glowCtrl.value;
+              return Stack(children: [
+                // Image layer with optional tint overlay
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(13),
+                    topRight: Radius.circular(13)),
+                  child: Stack(children: [
+                    Image.asset(e.imgAsset!,
+                      width: double.infinity, height: 130,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 130,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [col.withOpacity(0.25),
+                                     const Color(0xFF020D0C)])))),
+                    if (sel) Positioned.fill(child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            col.withOpacity(0.22 + 0.12 * g),
+                            Colors.transparent])))),
+                    Positioned.fill(child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: const [0.35, 1.0],
+                          colors: [Colors.transparent,
+                                   const Color(0xFF020D0C).withOpacity(0.92)])))),
+                  ])),
+                // Khatam badge top-right
+                Positioned(top: 8, right: 10,
+                  child: _khatamBadge(col, e.score, size: 48)),
+                // Badge pill top-left
+                if (e.badge.isNotEmpty)
+                  Positioned(top: 10, left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: col.withOpacity(0.15 + 0.10 * g),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: col.withOpacity(0.55 + 0.25 * g)),
+                        boxShadow: [BoxShadow(
+                          color: col.withOpacity(0.25 + 0.20 * g),
+                          blurRadius: 8)]),
+                      child: Text(e.badge, style: TextStyle(
+                        color: col, fontSize: 9, fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8)))),
+                // Engine name and ID pill at bottom
+                Positioned(bottom: 0, left: 0, right: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: Row(children: [
+                      Expanded(child: ShaderMask(
+                        shaderCallback: (b) => LinearGradient(
+                          colors: sel
+                            ? [col, col.withOpacity(0.80)]
+                            : [Colors.white, Colors.white70],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ).createShader(b),
+                        child: Text(s.ar ? e.nameAr : e.nameEn,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20, fontWeight: FontWeight.w800,
+                            height: 1.1,
+                            shadows: [Shadow(
+                              color: Colors.black87, blurRadius: 10)])))),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.55),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: col.withOpacity(0.45))),
+                        child: Text(e.id, style: TextStyle(
+                          color: col, fontSize: 9,
+                          fontWeight: FontWeight.w700))),
+                    ]))),
+                // Selected glow border overlay
+                if (sel) Positioned.fill(child: Container(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [col.withOpacity(0.18),
-                               Colors.transparent]))))),
-            Positioned(top: 8, right: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.55),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: col.withOpacity(0.6))),
-                child: Text('≥${e.score.toInt()}',
-                  style: TextStyle(color: col, fontSize: 11,
-                    fontWeight: FontWeight.w800)))),
-            Positioned(top: 8, left: 10,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 20, height: 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: sel ? col : Colors.black.withOpacity(0.40),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(13),
+                      topRight: Radius.circular(13)),
                     border: Border.all(
-                      color: sel ? col : col.withOpacity(0.4), width: 1.5)),
-                  child: sel
-                    ? const Icon(Icons.check, size: 12,
-                        color: Color(0xFF0A0C10))
-                    : null),
-                if (e.badge.isNotEmpty) ...[const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.55),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: col.withOpacity(0.6))),
-                    child: Text(e.badge, style: TextStyle(
-                      color: col, fontSize: 8,
-                      fontWeight: FontWeight.bold)))],
-              ])),
-            Positioned(bottom: 0, left: 0, right: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent,
-                             Colors.black.withOpacity(0.82)])),
-                child: Text(s.ar ? e.nameAr : e.nameEn,
-                  style: TextStyle(
-                    color: sel ? col : Colors.white,
-                    fontSize: 18, fontWeight: FontWeight.w700,
-                    shadows: const [Shadow(
-                      color: Colors.black, blurRadius: 8)])))),
-          ]),
+                      color: col.withOpacity(0.55 + 0.35 * g),
+                      width: 2.0)))),
+              ]);
+            }),
           // S50: JSX khatam card
           if (e.imgAsset == null) Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
@@ -1339,8 +1386,8 @@ class _HomeScreenState extends State<HomeScreen>
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
     child: Row(children: [
       Expanded(child: Container(height: 1,
-        decoration: const BoxDecoration(gradient: LinearGradient(
-          colors: [Colors.transparent, Color(0xFFC8A048)],
+        decoration: BoxDecoration(gradient: LinearGradient(
+          colors: [Colors.transparent, _engineColor],
           stops: [0.0, 1.0])))),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1348,26 +1395,26 @@ class _HomeScreenState extends State<HomeScreen>
           _geoDiamond(),
           if (label.isNotEmpty) Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Text(label.toUpperCase(), style: const TextStyle(
-              color: Color(0xFFC8A048), fontSize: 9,
+            child: Text(label.toUpperCase(), style: TextStyle(
+              color: _engineColor, fontSize: 9,
               letterSpacing: 0.22, fontWeight: FontWeight.w500))),
           _geoDiamond(),
         ])),
       Expanded(child: Container(height: 1,
-        decoration: const BoxDecoration(gradient: LinearGradient(
-          colors: [Color(0xFFC8A048), Colors.transparent],
+        decoration: BoxDecoration(gradient: LinearGradient(
+          colors: [_engineColor, Colors.transparent],
           stops: [0.0, 1.0])))),
     ]));
 
   Widget _geoDiamond() => Transform.rotate(
-    angle: 0.7854, // 45 degrees
+    angle: 0.7854,
     child: Container(
       width: 6, height: 6,
       decoration: BoxDecoration(
-        color: const Color(0xFFC8A048),
+        color: _engineColor,
         borderRadius: BorderRadius.circular(1),
-        boxShadow: [const BoxShadow(
-          color: Color(0x80C8A048), blurRadius: 5)])));
+        boxShadow: [BoxShadow(
+          color: _engineColor.withOpacity(0.50), blurRadius: 5)])));
 
   Color _badgeColor(String bc) => bc == 'gold' ? _tGold
       : bc == 'green' ? const Color(0xFF3FB950)
@@ -1397,12 +1444,12 @@ class _HomeScreenState extends State<HomeScreen>
             bottomRight: Radius.circular(22)),
           border: Border.all(
             color: hasFile
-              ? const Color(0xFFC8A048).withOpacity(0.68)
+              ? _engineColor.withOpacity(0.68)
               : const Color(0xFF1DB898).withOpacity(0.24),
             width: hasFile ? 1.8 : 1.0),
           boxShadow: [BoxShadow(
             color: hasFile
-              ? const Color(0xFFC8A048).withOpacity(0.20)
+              ? _engineColor.withOpacity(0.20)
               : const Color(0xFF1DB898).withOpacity(0.08),
             blurRadius: 36, spreadRadius: 2)]),
         child: Padding(
@@ -1416,11 +1463,11 @@ class _HomeScreenState extends State<HomeScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: const Color(0xFFC8A048)
+                    color: _engineColor
                       .withOpacity(0.38 + 0.32 * _glowCtrl.value),
                     width: 1.5),
                   boxShadow: [BoxShadow(
-                    color: const Color(0xFFC8A048)
+                    color: _engineColor
                       .withOpacity(0.10 + 0.18 * _glowCtrl.value),
                     blurRadius: 18 + 16 * _glowCtrl.value)]),
                 child: AnimatedSwitcher(
@@ -1779,7 +1826,7 @@ class _HomeScreenState extends State<HomeScreen>
         colors: [Color(0xFF0D2B22), Color(0xFF071A14)]),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
-        color: const Color(0xFFD4AF37).withOpacity(0.18), width: 0.9),
+        color: _engineColor.withOpacity(0.20), width: 0.9),
       boxShadow: [
         BoxShadow(
           color: const Color(0xFFD4AF37).withOpacity(0.08),
