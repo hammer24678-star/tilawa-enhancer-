@@ -617,7 +617,7 @@ class _HomeScreenState extends State<HomeScreen>
             end: Alignment.bottomCenter,
             // S34-BG-GRADIENT
             colors: dark
-              ? [const Color(0xFF020D17), const Color(0xFF000810)]
+              ? [const Color(0xFF020D0C), const Color(0xFF051A14)]
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         // S29: Sacred Cosmos painters Stack
         child: Stack(children: [
