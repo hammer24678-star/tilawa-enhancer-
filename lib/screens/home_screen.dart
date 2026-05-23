@@ -727,13 +727,13 @@ class _HomeScreenState extends State<HomeScreen>
               SliverToBoxAdapter(
                 child: FadeTransition(
                   opacity: CurvedAnimation(
-                    parent: _resultCtrl, curve: Curves.easeOutCubic),
+                    parent: _resultCtrl, curve: Curves.easeOutBack),
                   child: SlideTransition(
                     position: Tween<Offset>(
-                      begin: const Offset(0, 0.1),
+                      begin: const Offset(0, 0.08),
                       end: Offset.zero,
                     ).animate(CurvedAnimation(
-                      parent: _resultCtrl, curve: Curves.easeOutCubic)),
+                      parent: _resultCtrl, curve: Curves.easeOutBack)),
                     child: _resultCard(s),
                   ),
                 ),

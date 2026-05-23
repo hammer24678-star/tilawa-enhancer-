@@ -295,7 +295,8 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
     Expanded(child: GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutBack,
         padding: const EdgeInsets.symmetric(vertical: 11),
         decoration: BoxDecoration(
           color: active ? const Color(0xFFD4AF37) : Colors.transparent,
