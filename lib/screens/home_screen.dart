@@ -19,7 +19,7 @@ const _bgCard    = Color(0xFF102B38);
 const _gold      = Color(0xFFD4AF37);
 const _goldLight = Color(0xFFF0CF60);
 const _goldMuted = Color(0xFF3A2B08);
-const _teal      = Color(0xFF1C8EA8);
+const _teal      = Color(0xFF1DB898); // S40-TEAL
 const _tealLight = Color(0xFF2E8FA8);
 const _textA     = Color(0xFFE2CFA0);
 const _textB     = Color(0xFF8AACBA);
@@ -636,7 +636,7 @@ class _HomeScreenState extends State<HomeScreen>
               // S35-APPBAR
               pinned: true,
               floating: false,
-              backgroundColor: const Color(0xFF020D17),
+              backgroundColor: const Color(0xFF020D0C), // S40-AB-VOID
               elevation: 0,
               expandedHeight: 88,
               flexibleSpace: FlexibleSpaceBar(
@@ -1136,6 +1136,41 @@ class _HomeScreenState extends State<HomeScreen>
         ])),
     ]),
   );
+
+  // S40-GEO-SEP — sacred geometry section divider from HTML design
+  Widget _geoSep(String label) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+    child: Row(children: [
+      Expanded(child: Container(height: 1,
+        decoration: const BoxDecoration(gradient: LinearGradient(
+          colors: [Colors.transparent, Color(0xFFC8A048)],
+          stops: [0.0, 1.0])))),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          _geoDiamond(),
+          if (label.isNotEmpty) Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Text(label.toUpperCase(), style: const TextStyle(
+              color: Color(0xFFC8A048), fontSize: 9,
+              letterSpacing: 0.22, fontWeight: FontWeight.w500))),
+          _geoDiamond(),
+        ])),
+      Expanded(child: Container(height: 1,
+        decoration: const BoxDecoration(gradient: LinearGradient(
+          colors: [Color(0xFFC8A048), Colors.transparent],
+          stops: [0.0, 1.0])))),
+    ]));
+
+  Widget _geoDiamond() => Transform.rotate(
+    angle: 0.7854, // 45 degrees
+    child: Container(
+      width: 6, height: 6,
+      decoration: BoxDecoration(
+        color: const Color(0xFFC8A048),
+        borderRadius: BorderRadius.circular(1),
+        boxShadow: [const BoxShadow(
+          color: Color(0x80C8A048), blurRadius: 5)])));
 
   Color _badgeColor(String bc) => bc == 'gold' ? _tGold
       : bc == 'green' ? const Color(0xFF3FB950)
@@ -2025,6 +2060,27 @@ class _StarsPainter extends CustomPainter {
     }
   }
   @override bool shouldRepaint(_StarsPainter o) => o.t != t;
+}
+
+// S40-INCENSE — rising gold particle dots from HTML design
+class _IncensePainter extends CustomPainter {
+  final double t;
+  _IncensePainter(this.t);
+  static const _xs = [0.15, 0.28, 0.42, 0.50, 0.62, 0.72, 0.82, 0.45, 0.58, 0.68];
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < _xs.length; i++) {
+      final phase = ((t * 0.65) + i / _xs.length) % 1.0;
+      final dx = _xs[i] * size.width + sin(phase * 6.2832 * 1.5 + i) * 9;
+      final dy = size.height * (1.0 - phase * 0.72);
+      final op = phase < 0.12 ? phase / 0.12
+          : phase > 0.75 ? (1.0 - phase) / 0.25 : 0.42;
+      p.color = const Color(0xFFC8A048).withOpacity(op * 0.5);
+      canvas.drawCircle(Offset(dx, dy), 1.4 + (i % 2) * 0.7, p);
+    }
+  }
+  @override bool shouldRepaint(_IncensePainter o) => o.t != t;
 }
 
 class _GeoPainter extends CustomPainter {

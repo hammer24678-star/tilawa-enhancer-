@@ -10,7 +10,7 @@ import 'screens/home_screen.dart';
 // Dark palette  : #080A0E bg / #161B22 card / #21262D border
 // Light palette : #FAF7EE bg / #F3EED9 card / #D4C99A border
 bool   _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
-Color  _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
+Color  _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S40-MAIN-CBG
 Color  _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
 Color  _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
 Color  _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
@@ -36,15 +36,15 @@ void main() async {
 ThemeData _buildDarkTheme() => ThemeData(
   colorScheme: const ColorScheme.dark(
     primary:    Color(0xFFD4AF37),
-    surface:    Color(0xFF0C1E28),
+    surface:    Color(0xFF0F2420), // S40-MAIN
     onSurface:  Color(0xFFE2CFA0),
-    secondary:  Color(0xFF1B6B80),
-    background: Color(0xFF061218),
+    secondary:  Color(0xFF1DB898),
+    background: Color(0xFF020D0C),
   ),
   useMaterial3: true,
-  scaffoldBackgroundColor: const Color(0xFF061218),
+  scaffoldBackgroundColor: const Color(0xFF020D0C),
   appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFF061218),
+    backgroundColor: Color(0xFF020D0C),
     foregroundColor: Color(0xFFD4AF37),
     elevation: 0,
   ),
