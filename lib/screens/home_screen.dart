@@ -15,7 +15,7 @@ import 'settings_screen.dart';
 // ── Sacred Cosmos tokens ─────────────────────────────────────────────────────
 const _bgDeep    = Color(0xFF020D17);
 const _bgSurface = Color(0xFF0C1E28);
-const _bgCard    = Color(0xFF102B38);
+const _bgCard    = Color(0xFF0F2420);
 const _gold      = Color(0xFFD4AF37);
 const _goldLight = Color(0xFFF0CF60);
 const _goldMuted = Color(0xFF3A2B08);
@@ -647,8 +647,8 @@ class _HomeScreenState extends State<HomeScreen>
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        Color(0xFF061F32),
-                        Color(0xFF020D17),
+                        Color(0xFF0A2A1E),
+                        Color(0xFF020D0C),
                       ]))),
                 title: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -681,7 +681,9 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             SliverToBoxAdapter(child: _header(s)),
             SliverToBoxAdapter(child: _serverBanner(s)),
+            SliverToBoxAdapter(child: _geoSep()),
             SliverToBoxAdapter(child: _engineSelector(s)),
+            SliverToBoxAdapter(child: _geoDiamond()),
             SliverToBoxAdapter(child: _fileCard(s)),
             if (_busy || _progress > 0)
               SliverToBoxAdapter(child: _progressCard(s)),
@@ -992,12 +994,12 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: sel
             ? col.withOpacity(0.09)
-            : const Color(0xFF0B2233).withOpacity(0.7),
+            : const Color(0xFF0D2B22).withOpacity(0.75),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: sel
               ? col.withOpacity(0.70)
-              : const Color(0xFF1C8EA8).withOpacity(0.15),
+              : const Color(0xFF1DB898).withOpacity(0.22),
             width: sel ? 1.6 : 0.7),
           boxShadow: sel ? [
             BoxShadow(
@@ -1191,8 +1193,8 @@ class _HomeScreenState extends State<HomeScreen>
       decoration: BoxDecoration(
         // S32-FILE-CARD
         color: _file != null
-          ? const Color(0xFF0B2233)
-          : const Color(0xFF071929),
+          ? const Color(0xFF0D2B22)
+          : const Color(0xFF071A14),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: _file != null
@@ -1486,7 +1488,7 @@ class _HomeScreenState extends State<HomeScreen>
     decoration: BoxDecoration(
       gradient: const LinearGradient(
         begin: Alignment.topLeft, end: Alignment.bottomRight,
-        colors: [Color(0xFF0B2233), Color(0xFF071929)]),
+        colors: [Color(0xFF0D2B22), Color(0xFF071A14)]),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
         color: const Color(0xFFD4AF37).withOpacity(0.18), width: 0.9),
