@@ -155,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     final rng = Random(7777);
-    _starList = List.generate(28, (_) => _StarParticle(rng));
+    _starList = List.generate(18, (_) => _StarParticle(rng));
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2800))
       ..repeat(reverse: true);
@@ -648,18 +648,7 @@ class _HomeScreenState extends State<HomeScreen>
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(painter: _GeoPainter()))),
-          if (dark) Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _geoRotCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _IncensePainter(_geoRotCtrl.value))))),
-          if (dark) Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _glowCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _RadialPulsePainter(_glowCtrl.value))))),
+          // S57: IncensePainter removed
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
@@ -2396,9 +2385,19 @@ class _StarsPainter extends CustomPainter {
       final x = s.x * size.width  + sin(a)        * size.width  * 0.016;
       final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
       final alpha = sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5;
-      final op = 0.45 + 0.55 * alpha;
-      final sz = s.size * (0.5 + 0.5 * alpha);
-      p.color = _gold.withOpacity(op);
+      final op = 0.22 + 0.78 * alpha;
+      final sz = s.size * (0.55 + 0.45 * alpha);
+      final idx = stars.indexOf(s);
+      final sc = idx % 5 == 0 ? _teal
+          : idx % 3 == 0 ? const Color(0xFFF0E8C8)
+          : _gold;
+      // Soft bloom
+      p.maskFilter = MaskFilter.blur(BlurStyle.normal, sz * 2.5);
+      p.color = sc.withOpacity(op * 0.25);
+      canvas.drawCircle(Offset(x, y), sz * 2.0, p);
+      // Sharp core
+      p.maskFilter = null;
+      p.color = sc.withOpacity(op);
       canvas.drawCircle(Offset(x, y), sz, p);
     }
   }
