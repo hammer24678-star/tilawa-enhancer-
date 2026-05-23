@@ -1077,8 +1077,8 @@ class _HomeScreenState extends State<HomeScreen>
         // S32-ENGINE-GLASS
         decoration: BoxDecoration(
           color: sel
-            ? col.withOpacity(0.09)
-            : const Color(0xFF0D2B22).withOpacity(0.75),
+            ? col.withOpacity(0.10)
+            : const Color(0xFF0D2B22).withOpacity(0.70),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: sel
