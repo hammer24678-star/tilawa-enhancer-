@@ -86,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen>
   late Animation<double> _scoreAnim;
   late final List<_StarParticle> _starList;
   late final AnimationController _resultCtrl; // S29: result card entrance
+  late final AnimationController _particleCtrl; // S58: rising particles
 
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
@@ -178,6 +179,9 @@ class _HomeScreenState extends State<HomeScreen>
     _scoreAnim = const AlwaysStoppedAnimation(0);
     _resultCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
+    _particleCtrl = AnimationController( // S58
+        vsync: this, duration: const Duration(seconds: 6))
+      ..repeat();
     _checkServer();
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
@@ -193,6 +197,7 @@ class _HomeScreenState extends State<HomeScreen>
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
     _resultCtrl.dispose();
+    _particleCtrl.dispose(); // S58
     _starCtrl.dispose();
     _shimmer.dispose();
     _geoRotCtrl.dispose();
@@ -648,7 +653,14 @@ class _HomeScreenState extends State<HomeScreen>
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(painter: _GeoPainter()))),
-          // S57: IncensePainter removed
+          // S58: rising particles (engine-tinted incense dots)
+          if (dark) Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _particleCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _IncensePainter(
+                    _particleCtrl.value, _engineColor))))),
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
@@ -2503,23 +2515,37 @@ class _KhatamPainter extends CustomPainter {
 
 // S40-INCENSE — rising gold particle dots from HTML design
 class _IncensePainter extends CustomPainter {
+  // S58-PARTICLES — 18 rising dots, engine-tinted, matches JSX Particles()
   final double t;
-  _IncensePainter(this.t);
-  static const _xs = [0.15, 0.28, 0.42, 0.50, 0.62, 0.72, 0.82, 0.45, 0.58, 0.68];
+  final Color engCol;
+  _IncensePainter(this.t, this.engCol);
+  static const _xs = [
+    0.08, 0.15, 0.22, 0.30, 0.38, 0.45,
+    0.52, 0.58, 0.65, 0.72, 0.80, 0.88,
+    0.18, 0.35, 0.55, 0.68, 0.78, 0.42,
+  ];
+  static const _teal = Color(0xFF1DB898);
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()..style = PaintingStyle.fill;
     for (int i = 0; i < _xs.length; i++) {
-      final phase = ((t * 0.65) + i / _xs.length) % 1.0;
-      final dx = _xs[i] * size.width + sin(phase * 6.2832 * 1.5 + i) * 18;
-      final dy = size.height * (1.0 - phase * 0.72);
-      final op = phase < 0.12 ? phase / 0.12
-          : phase > 0.75 ? (1.0 - phase) / 0.25 : 0.42;
-      p.color = const Color(0xFFC8A048).withOpacity(op * 0.5);
-      canvas.drawCircle(Offset(dx, dy), 1.4 + (i % 2) * 0.7, p);
+      // stagger each particle with a fixed offset so they cover full height
+      final phase = ((t + i / _xs.length) % 1.0);
+      final drift = sin(phase * 6.2832 * 1.8 + i * 1.3) * 22;
+      final dx = _xs[i] * size.width + drift;
+      final dy = size.height * (1.0 - phase);
+      // fade in at bottom, fade out near top (matches JSX: 10%→50%→100%)
+      final op = phase < 0.10 ? phase / 0.10
+          : phase > 0.72 ? (1.0 - phase) / 0.28 : 0.55;
+      final isTeal = i % 5 == 3;
+      final baseCol = isTeal ? _teal : engCol;
+      p.color = baseCol.withOpacity(op * 0.52);
+      final r = (i % 3 == 0) ? 2.0 : 1.4;
+      canvas.drawCircle(Offset(dx, dy), r, p);
     }
   }
-  @override bool shouldRepaint(_IncensePainter o) => o.t != t;
+  @override bool shouldRepaint(_IncensePainter o) =>
+      o.t != t || o.engCol != engCol;
 }
 
 class _GeoPainter extends CustomPainter {
