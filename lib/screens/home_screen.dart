@@ -1269,50 +1269,6 @@ class _HomeScreenState extends State<HomeScreen>
                   color: col, fontSize: 9, fontWeight: FontWeight.w600,
                   letterSpacing: 0.4))),
             ])),
-          // S50-placeholder (old AnimatedContainer removed)
-          if (false) AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 18, height: 18,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: sel ? col : _tBorder, width: 2),
-                  color: sel ? col : Colors.transparent),
-                child: sel
-                  ? const Icon(Icons.check, size: 10, color: Color(0xFF0A0C10))
-                  : null),
-              const SizedBox(width: 11),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                Row(children: [
-                  Text(e.id, style: TextStyle(
-                    color: sel ? col : col.withOpacity(0.55),
-                    fontWeight: FontWeight.bold, fontSize: 13)),
-                  if (e.badge.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: bg, borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: col.withOpacity(0.45))),
-                      child: Text(e.badge, style: TextStyle(
-                        color: col, fontSize: 8, fontWeight: FontWeight.bold))),
-                  ],
-                ]),
-                const SizedBox(height: 2),
-                Text(s.ar ? e.nameAr : e.nameEn,
-                  style: const TextStyle(color: Color(0xFF8B949E), fontSize: 10)),
-              ])),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text('≥${e.score.toInt()}', style: TextStyle(
-                  color: sel ? col : col.withOpacity(0.40),
-                  fontWeight: FontWeight.w800, fontSize: 15)),
-                Text('/100', style: TextStyle(
-                  color: col.withOpacity(sel ? 0.45 : 0.25),
-                  fontSize: 8)),
-              ]),
-            ])),
           // ── Expanded details (selected engine only) ──────────────────
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 250),
