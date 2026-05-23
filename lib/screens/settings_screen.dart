@@ -9,7 +9,16 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   static const _history = [
-        _EHist('v9.0','The Evolution','≥ 99/100','LATEST','gold',
+        _EHist('v11.0','التجلي — The Manifestation','≥ 99.5/100','LATEST','gold',
+      'محرك التوجيه الذكي: يختار مسار الإتقان أو الاسترداد تلقائياً.',
+      'Smart router: auto-selects Itiqan or Isteidad path based on source tier.'),
+    _EHist('v11.1','الإتقان — Perfection','≥ 99/100','','gold',
+      'مسار التسجيلات النظيفة: NR ثنائي + EQ طيفي + معايرة LUFS+LRA.',
+      'Clean recordings path: two-stage NR, spectral EQ, joint LUFS+LRA.'),
+    _EHist('v11.2','الاسترداد — Recovery','≥ 98/100','','gold',
+      'مسار التسجيلات التالفة: NR مكثف + إزالة قطع + إعادة بناء طيفي.',
+      'Damaged path: heavy NR, declip, spectrum reconstruction.'),
+    _EHist('v9.0','The Evolution','≥ 99/100','LATEST','gold',
       'إعادة كتابة كاملة: 1,890 سطرًا. NR دائمًا قبل EQ. محسِّن LUFS+LRA مشترك. نسب ثقة منفصلة لكل معامل.',
       'Full rewrite: 1,890 lines. NR always before EQ. Joint LUFS+LRA optimizer. Per-parameter confidence vectors.'),
     _EHist('v8.5','Tier-Adjusted Scoring','≥ 99/100','DEFAULT','gold',

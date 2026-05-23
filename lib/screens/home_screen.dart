@@ -90,6 +90,29 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
+    // ── S47: Three Sacred Engines ──────────────────────────────────
+    _EngineData(
+      'v11.0', 'التجلي', 'The Manifestation', 99.5,
+      'NEW', 'gold',
+      ['Tier Router', 'Auto-Path', 'DF3 NR', 'النقاء', 'البيان', 'النور'],
+      'يُحلِّل المصدر تلقائياً ويختار المسار الأمثل: الإتقان للتسجيلات النظيفة، الاسترداد للتالفة.',
+      'Auto-analyses the source and routes to the optimal path: الإتقان for clean, الاسترداد for damaged.',
+      imgAsset: 'assets/images/engines/tajalli.jpg'),
+    _EngineData(
+      'v11.1', 'الإتقان', 'Perfection', 99.0,
+      '', 'gold',
+      ['Pristine Path', 'DF3 NR', 'L-BFGS-B EQ', 'Joint Opt', 'LUFS Ceil', 'LRA Tune'],
+      'مسار التسجيلات النظيفة والمضغوطة. تخفيض ضوضاء ثنائي — تحسين طيفي — معايرة LUFS+LRA مشتركة.',
+      'Path for clean and compressed recordings. Two-stage NR, spectral EQ, joint LUFS+LRA calibration.',
+      imgAsset: 'assets/images/engines/itiqan.jpg'),
+    _EngineData(
+      'v11.2', 'الاسترداد', 'Recovery', 98.0,
+      '', 'gold',
+      ['Damaged Path', 'DF3 Heavy NR', 'Declip', 'Dereverberate', 'Reconstruct', 'إحياء'],
+      'مسار التسجيلات التالفة. إزالة ضوضاء مكثفة — إزالة القطع — إعادة بناء الطيف الصوتي.',
+      'Path for damaged recordings. Heavy NR, declipping, spectrum reconstruction.',
+      imgAsset: 'assets/images/engines/isteidad.jpg'),
+    // ── Legacy engines ────────────────────────────────────────────────
     _EngineData(
       'v10.0', 'الأثيريون — الأساس', 'Aetherion Foundation', 99.0,
       'NEW', 'gold',
@@ -1030,8 +1053,77 @@ class _HomeScreenState extends State<HomeScreen>
                 boxShadow: [BoxShadow(
                   color: col.withOpacity(0.55), blurRadius: 8)]))),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // ── Collapsed header (always visible) ───────────────────────
-          Padding(
+          // S47-ENGINE-CARD — logo image header
+          if (e.imgAsset != null) Stack(children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(13),
+                topRight: Radius.circular(13)),
+              child: Image.asset(
+                e.imgAsset!,
+                width: double.infinity,
+                height: 110,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 110,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [col.withOpacity(0.18),
+                               Colors.transparent]))))),
+            Positioned(top: 8, right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: col.withOpacity(0.6))),
+                child: Text('≥${e.score.toInt()}',
+                  style: TextStyle(color: col, fontSize: 11,
+                    fontWeight: FontWeight.w800)))),
+            Positioned(top: 8, left: 10,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 20, height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: sel ? col : Colors.black.withOpacity(0.40),
+                    border: Border.all(
+                      color: sel ? col : col.withOpacity(0.4), width: 1.5)),
+                  child: sel
+                    ? const Icon(Icons.check, size: 12,
+                        color: Color(0xFF0A0C10))
+                    : null),
+                if (e.badge.isNotEmpty) ...[const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: col.withOpacity(0.6))),
+                    child: Text(e.badge, style: TextStyle(
+                      color: col, fontSize: 8,
+                      fontWeight: FontWeight.bold)))],
+              ])),
+            Positioned(bottom: 0, left: 0, right: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent,
+                             Colors.black.withOpacity(0.82)])),
+                child: Text(s.ar ? e.nameAr : e.nameEn,
+                  style: TextStyle(
+                    color: sel ? col : Colors.white,
+                    fontSize: 18, fontWeight: FontWeight.w700,
+                    shadows: const [Shadow(
+                      color: Colors.black, blurRadius: 8)])))),
+          ]),
+          if (e.imgAsset == null) Padding(
             padding: const EdgeInsets.fromLTRB(12,11,12,11),
             child: Row(children: [
               AnimatedContainer(
@@ -1051,7 +1143,7 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                 Row(children: [
                   Text(e.id, style: TextStyle(
-                    color: sel ? col : col.withOpacity(0.55), // S31-F5: per-engine colour
+                    color: sel ? col : col.withOpacity(0.55),
                     fontWeight: FontWeight.bold, fontSize: 13)),
                   if (e.badge.isNotEmpty) ...[
                     const SizedBox(width: 6),
@@ -1070,10 +1162,10 @@ class _HomeScreenState extends State<HomeScreen>
               ])),
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Text('≥${e.score.toInt()}', style: TextStyle(
-                  color: sel ? col : col.withOpacity(0.40), // S31-F5
+                  color: sel ? col : col.withOpacity(0.40),
                   fontWeight: FontWeight.w800, fontSize: 15)),
                 Text('/100', style: TextStyle(
-                  color: col.withOpacity(sel ? 0.45 : 0.25), // S31-F5
+                  color: col.withOpacity(sel ? 0.45 : 0.25),
                   fontSize: 8)),
               ]),
             ])),
@@ -2142,8 +2234,10 @@ class _EngineData {
   final double score;
   final List<String> features;
   final String whatsNewAr, whatsNewEn;
+  final String? imgAsset; // S47 — engine logo
   const _EngineData(this.id, this.nameAr, this.nameEn, this.score,
-      this.badge, this.bc, this.features, this.whatsNewAr, this.whatsNewEn);
+      this.badge, this.bc, this.features, this.whatsNewAr, this.whatsNewEn,
+      {this.imgAsset});
 }
 
 // ── Sacred Cosmos painters ────────────────────────────────────────────────────
