@@ -1070,7 +1070,7 @@ class _HomeScreenState extends State<HomeScreen>
             colors: [col, col.withOpacity(0.65)],
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
           ).createShader(b),
-          child: Text('≥\${score.toInt()}',
+          child: Text('≥${score.toInt()}',
             style: const TextStyle(
               color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800,
               letterSpacing: 0.3))),
