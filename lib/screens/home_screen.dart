@@ -1201,7 +1201,11 @@ class _HomeScreenState extends State<HomeScreen>
           color: hasFile
             ? const Color(0xFF0D2B22)
             : const Color(0xFF071A14),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: const BorderRadius.only( // S46-ARCH
+            topLeft: Radius.circular(200),
+            topRight: Radius.circular(200),
+            bottomLeft: Radius.circular(22),
+            bottomRight: Radius.circular(22)),
           border: Border.all(
             color: hasFile
               ? const Color(0xFFC8A048).withOpacity(0.68)
@@ -1274,7 +1278,9 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(height: 12),
             // ── Filename / pick label ──
             Text(
-              hasFile ? _file!.path.split('/').last : s.pickFile,
+              hasFile ? _file!.path.split('/').last // S46-PORTAL
+                : (s.ar ? 'أسقط تلاوتك في هذا المحراب'
+                        : 'Drop your Quran audio into this sacred portal'),
               textDirection: TextDirection.rtl,
               textAlign: TextAlign.center,
               maxLines: 2, overflow: TextOverflow.ellipsis,
@@ -1308,7 +1314,13 @@ class _HomeScreenState extends State<HomeScreen>
                 ]),
               ],
             ],
-            const SizedBox(height: 6),
+            const SizedBox(height: 3),
+            if (!hasFile) Text('mp3  ·  wav  ·  m4a', // S46-FMT
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF1DB898),
+                fontSize: 9, letterSpacing: 1.4)),
+            const SizedBox(height: 3),
             Text(s.sizeLimit,
               style: const TextStyle(
                 color: Color(0xFF3D5A65), fontSize: 10,
@@ -1636,7 +1648,13 @@ class _HomeScreenState extends State<HomeScreen>
               color: Colors.white,
               fontWeight: FontWeight.bold, fontSize: 18))),
       ]),
-      const SizedBox(height: 12),
+      const SizedBox(height: 6),
+      Center(child: SizedBox(width: 90, height: 90, // S46-MANDALA
+        child: AnimatedBuilder(
+          animation: _geoRotCtrl,
+          builder: (_, __) => CustomPaint(
+            painter: _MandalaPainter(_geoRotCtrl.value))))),
+      const SizedBox(height: 6),
       ClipRRect(
         borderRadius: BorderRadius.circular(8),
         // S20-A: null = indeterminate (animated pulse) during server merge
@@ -1722,6 +1740,13 @@ class _HomeScreenState extends State<HomeScreen>
                 : 1.0;
             return Column(mainAxisSize: MainAxisSize.min, children: [
               Stack(alignment: Alignment.center, children: [
+              // S45-KHATAM sacred geometry layer
+              AnimatedBuilder(
+                animation: _glowCtrl,
+                builder: (_, __) => CustomPaint(
+                  size: const Size(170, 170),
+                  painter: _KhatamPainter(
+                    t: _glowCtrl.value, color: scoreColor))),
               // Burst particles on reveal
               if (score >= 85) AnimatedBuilder(
                 animation: _resultCtrl,
@@ -2149,6 +2174,103 @@ class _StarsPainter extends CustomPainter {
     }
   }
   @override bool shouldRepaint(_StarsPainter o) => o.t != t;
+}
+
+// S45-MANDALA-CLASS — 8-petal spinning mandala for processing screen
+class _MandalaPainter extends CustomPainter {
+  final double t; // 0..1 geoRotCtrl value
+  const _MandalaPainter(this.t);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height / 2;
+    final r  = size.width / 2 - 4;
+    final angle = t * pi * 2;
+    final p = Paint()..style = PaintingStyle.stroke;
+    // 8 overlapping petal circles
+    p.color = const Color(0xFFC8A048).withOpacity(0.50);
+    p.strokeWidth = 0.9;
+    for (int i = 0; i < 8; i++) {
+      final a = (i / 8) * pi * 2 + angle;
+      canvas.drawCircle(
+        Offset(cx + r * 0.52 * cos(a), cy + r * 0.52 * sin(a)),
+        r * 0.40, p);
+    }
+    // Outer gold ring
+    p.color = const Color(0xFFD4AF37).withOpacity(0.38);
+    p.strokeWidth = 1.0;
+    canvas.drawCircle(Offset(cx, cy), r, p);
+    // Counter-rotating hexagon
+    p.color = const Color(0xFF1DB898).withOpacity(0.32);
+    p.strokeWidth = 0.8;
+    final hex = Path();
+    for (int i = 0; i < 6; i++) {
+      final a = (i / 6) * pi * 2 - angle * 0.5;
+      final x = cx + r * 0.50 * cos(a);
+      final y = cy + r * 0.50 * sin(a);
+      if (i == 0) hex.moveTo(x, y); else hex.lineTo(x, y);
+    }
+    hex.close();
+    canvas.drawPath(hex, p);
+    // 8-point inner star
+    p.color = const Color(0xFFD4AF37).withOpacity(0.45);
+    p.strokeWidth = 1.0;
+    final star = Path();
+    for (int i = 0; i < 16; i++) {
+      final a = (i / 16) * pi * 2 + angle * 0.25;
+      final rr = i.isEven ? r * 0.28 : r * 0.14;
+      final x = cx + rr * cos(a), y = cy + rr * sin(a);
+      if (i == 0) star.moveTo(x, y); else star.lineTo(x, y);
+    }
+    star.close();
+    canvas.drawPath(star, p);
+    canvas.drawCircle(Offset(cx, cy), 3,
+      Paint()..color = const Color(0xFFD4AF37).withOpacity(0.72)
+             ..style = PaintingStyle.fill);
+  }
+  @override bool shouldRepaint(_MandalaPainter o) => o.t != t;
+}
+
+// S45-KHATAM-CLASS — two rotated squares star for result screen
+class _KhatamPainter extends CustomPainter {
+  final double t;     // glow animation 0..1
+  final Color color;
+  const _KhatamPainter({required this.t, required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height / 2;
+    final r  = size.width / 2 - 10;
+    final p  = Paint()..style = PaintingStyle.stroke;
+    // Square 1
+    p.color = color.withOpacity(0.12 + 0.10 * t);
+    p.strokeWidth = 1.0;
+    final sq1 = Path();
+    for (int i = 0; i < 4; i++) {
+      final a = (i / 4) * pi * 2 - pi / 4;
+      if (i == 0) sq1.moveTo(cx + r * cos(a), cy + r * sin(a));
+      else sq1.lineTo(cx + r * cos(a), cy + r * sin(a));
+    }
+    sq1.close();
+    canvas.drawPath(sq1, p);
+    // Square 2 (rotated 45°)
+    final sq2 = Path();
+    for (int i = 0; i < 4; i++) {
+      final a = (i / 4) * pi * 2 + pi / 4;
+      if (i == 0) sq2.moveTo(cx + r * cos(a), cy + r * sin(a));
+      else sq2.lineTo(cx + r * cos(a), cy + r * sin(a));
+    }
+    sq2.close();
+    canvas.drawPath(sq2, p);
+    // Pulsing outer glow ring
+    p.color = color.withOpacity(0.07 + 0.07 * t);
+    p.strokeWidth = 0.7;
+    canvas.drawCircle(Offset(cx, cy), r + 8, p);
+    // Inner circle
+    p.color = color.withOpacity(0.08 + 0.06 * t);
+    p.strokeWidth = 0.5;
+    canvas.drawCircle(Offset(cx, cy), r * 0.40, p);
+  }
+  @override bool shouldRepaint(_KhatamPainter o) =>
+      o.t != t || o.color != color;
 }
 
 // S40-INCENSE — rising gold particle dots from HTML design

@@ -76,16 +76,16 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
   bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF080A0E) : const Color(0xFFFAF7EE);
-  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
+  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S46-WEL
+  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
   Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8AAABB) : const Color(0xFF6B5E40);
 
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF020D17),
+      backgroundColor: const Color(0xFF020D0C), // S45-WEL
       body: Stack(children: [
         // Rotating geo background
         Positioned.fill(child: AnimatedBuilder(
@@ -373,9 +373,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFF161B22),
+            color: const Color(0xFF0F2420), // S46-WEL-LANG
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF21262D))),
+            border: Border.all(color: const Color(0xFF1A4035))),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Text(isAr ? 'EN' : 'ع',
               style: const TextStyle(
@@ -402,12 +402,12 @@ class _GeoPainter extends CustomPainter {
     canvas.drawCircle(Offset(cx, cy), r + 28, ringPaint);
 
     // Inner teal ring
-    ringPaint.color = const Color(0xFF1C8EA8).withOpacity(0.07);
+    ringPaint.color = const Color(0xFF1DB898).withOpacity(0.07); // S45-WEL-T
     canvas.drawCircle(Offset(cx, cy), r * 0.52, ringPaint);
 
     // 8-point Islamic star polygon
     final starPaint = Paint()
-      ..color = const Color(0xFF1C8EA8).withOpacity(0.08)
+      ..color = const Color(0xFF1DB898).withOpacity(0.08) // S45-WEL-T2
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
     final path = Path();
@@ -463,7 +463,7 @@ class _WelcomeStarsPainter extends CustomPainter {
       final radius = 1.0 + (i % 4) * 0.45;
       paint.color = (i % 5 == 0
               ? const Color(0xFFD4AF37)
-              : const Color(0xFF1C8EA8))
+              : const Color(0xFF1DB898)) // S46-WEL-T3
           .withOpacity(alpha);
       canvas.drawCircle(
         Offset(_pts[i].dx * size.width, _pts[i].dy * size.height),
