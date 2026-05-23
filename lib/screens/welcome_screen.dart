@@ -117,23 +117,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-            // S33-WELCOME-LOGO
-            Center(
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 20, top: 8),
-                width: 130, height: 130,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x59D4AF37),
-                      blurRadius: 40, spreadRadius: 4),
-                    BoxShadow(
-                      color: Color(0x331C8EA8),
-                      blurRadius: 70, spreadRadius: 10),
-                  ]),
-                child: ClipOval(child: Image.asset('assets/images/logo.png',
-                  fit: BoxFit.cover, width: 130, height: 130)))),
+            // S44: static 130-px duplicate removed (animated 180-px logo stays)
 
         // Pulsing gold ring around logo
         AnimatedBuilder(

@@ -2126,7 +2126,7 @@ class _StarParticle {
   final double x, y, size, phase, speed, twinkle;
   _StarParticle(Random r)
       : x = r.nextDouble(), y = r.nextDouble(),
-        size = 0.8 + r.nextDouble() * 2.6,
+        size = 1.4 + r.nextDouble() * 2.8,
         phase = r.nextDouble() * 6.2832,
         speed = 0.15 + r.nextDouble() * 0.6,
         twinkle = 0.4 + r.nextDouble() * 1.6;
