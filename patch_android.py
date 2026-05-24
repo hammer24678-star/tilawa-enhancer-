@@ -55,7 +55,7 @@ configurations.all {
 }
 flutter { source "../.." }
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.22"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
 }
 """)
 print("  build.gradle OK (v11: versionCode=9, versionName=2.7.0)")
@@ -75,8 +75,8 @@ pluginManagement {
 }
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-    id "com.android.application" version "8.1.0" apply false
-    id "org.jetbrains.kotlin.android" version "1.9.22" apply false
+    id "com.android.application" version "8.11.1" apply false
+    id "org.jetbrains.kotlin.android" version "2.2.20" apply false
 }
 include ":app"
 """)
