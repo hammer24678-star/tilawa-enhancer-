@@ -1688,7 +1688,7 @@ class _HomeScreenState extends State<HomeScreen>
         maxChildSize: 0.95,
         builder: (_, ctrl) => Container(
           decoration: const BoxDecoration(
-            color: Color(0xFF0D1117),
+            color: Color(0xFF061A14),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
           child: Column(children: [
             Container(
