@@ -1752,6 +1752,44 @@ class _HomeScreenState extends State<HomeScreen>
                       const Icon(Icons.open_in_new_rounded,
                         color: Color(0xFF484F58), size: 16),
                     ]))),
+                _infoSectionLabel(s.ar ? '💬 قناة تيليغرام' : '💬 Telegram Channel'),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://t.me/TilawaEhnacher'),
+                    mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A0F1A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFF2AABEE).withValues(alpha: 0.35))),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF2AABEE), Color(0xFF229ED9)]),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.send_rounded,
+                          color: Colors.white, size: 22)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(s.ar ? 'قناة التيليغرام' : 'Telegram Channel',
+                          style: const TextStyle(
+                            color: Color(0xFFC9D1D9),
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 2),
+                        const Text('@TilawaEhnacher',
+                          style: TextStyle(
+                            color: Color(0xFF8B949E), fontSize: 11)),
+                      ])),
+                      const Icon(Icons.open_in_new_rounded,
+                        color: Color(0xFF484F58), size: 16),
+                    ]))),
                 _infoSectionLabel(s.ar ? '🎯 المرجع الصوتي' : '🎯 Reference Standard'),
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -1841,6 +1879,62 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ]));
                     }).toList())),
+                _infoSectionLabel(s.ar ? '📖 من المطوِّر' : '📖 Developer Notes'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      colors: [Color(0xFF0D1B2A), Color(0xFF06101A)]),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFFD4AF37).withValues(alpha: 0.18))),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    Text(
+                      s.ar ? '﷽' : '﷽',
+                      style: const TextStyle(
+                        color: Color(0xFFD4AF37),
+                        fontSize: 22, height: 1.4)),
+                    const SizedBox(height: 10),
+                    Text(
+                      s.ar
+                        ? 'هذا التطبيق وُلد من حبٍّ خالص لكتاب الله.\n\n'
+                          'أكثر من ٦٠ جلسة، مئات الإصلاحات، ومحرك واحد لا يهدأ: '
+                          'أن تُسمع التلاوة كما ينبغي لها أن تُسمع.\n\n'
+                          'لا فريق، لا ميزانية — فقط هاتف، وطرفية، ومحبة للقرآن الكريم. '
+                          'كل محرك بُني كأنه عبادة، وكل معامل ضُبط كأنه دعاء.\n\n'
+                          'الهدف لم يتغيّر: أن يُعاد للصوت القرآني جماله الأصيل،'
+                          ' حتى وإن جاء من تسجيل قديم أو ملف تالف.'
+                        : 'This app was born from pure love for the Book of Allah.\n\n'
+                          'Over 60 sessions, hundreds of fixes, one relentless goal: '
+                          'to make Quranic recitation sound as it deserves to be heard.\n\n'
+                          'No team, no budget — just a phone, Termux, and a deep love for the Quran. '
+                          'Every engine was built like an act of worship, every parameter tuned like a prayer.\n\n'
+                          'The mission never changed: restore the original beauty of the Quranic voice, '
+                          'even from an old recording or a damaged file.',
+                      style: const TextStyle(
+                        color: Color(0xFFA8B8C8),
+                        fontSize: 12, height: 1.75)),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.2))),
+                      child: Text(
+                        s.ar
+                          ? '🎯 المرجع: الشيخ ياسر الدوسري · ١٤٢٥هـ · LUFS=-6.29'
+                          : '🎯 Reference: Yasser Al-Dossari · 1425H · LUFS=-6.29',
+                        style: const TextStyle(
+                          color: Color(0xFFD4AF37),
+                          fontSize: 10, fontWeight: FontWeight.bold))),
+                  ])),
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
