@@ -129,7 +129,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               boxShadow: [
                 BoxShadow(
                   color: const Color(0xFFD4AF37)
-                      .withOpacity(0.28 * _pulse.value),
+                      .withValues(alpha: 0.28 * _pulse.value),
                   blurRadius: 50 * _pulse.value,
                   spreadRadius: 10 * _pulse.value),
               ],
@@ -140,7 +140,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: const Color(0xFFD4AF37).withOpacity(0.4),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
                 width: 1.5)),
             child: ClipOval(
               child: Image.asset('assets/images/logo.png', fit: BoxFit.cover,
@@ -295,13 +295,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               color: _cCard(context),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: t.$4.withOpacity(0.25))),
+                color: t.$4.withValues(alpha: 0.25))),
             child: Row(children: [
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                  color: t.$4.withOpacity(0.15),
+                  color: t.$4.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(5)),
                 child: Text(t.$1, style: TextStyle(
                   color: t.$4, fontSize: 10,
@@ -350,12 +350,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                      Color(0xFFF5E090), Color(0xFFD4AF37)],
             stops: [0.0, 0.3, 0.6, 1.0]),
           boxShadow: [BoxShadow(
-            color: const Color(0xFFD4AF37).withOpacity(0.35),
+            color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
             blurRadius: 20, offset: const Offset(0, 6))]),
         child: Material(color: Colors.transparent,
           child: InkWell(onTap: onTap,
             borderRadius: BorderRadius.circular(16),
-            splashColor: Colors.white.withOpacity(0.15),
+            splashColor: Colors.white.withValues(alpha: 0.15),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 17),
               child: Text(label, textAlign: TextAlign.center,
@@ -398,16 +398,16 @@ class _GeoPainter extends CustomPainter {
       ..strokeWidth = 0.7;
 
     // Outer glow ring
-    ringPaint.color = const Color(0xFFD4AF37).withOpacity(0.06);
+    ringPaint.color = const Color(0xFFD4AF37).withValues(alpha: 0.06);
     canvas.drawCircle(Offset(cx, cy), r + 28, ringPaint);
 
     // Inner teal ring
-    ringPaint.color = const Color(0xFF1DB898).withOpacity(0.07); // S45-WEL-T
+    ringPaint.color = const Color(0xFF1DB898).withValues(alpha: 0.07); // S45-WEL-T
     canvas.drawCircle(Offset(cx, cy), r * 0.52, ringPaint);
 
     // 8-point Islamic star polygon
     final starPaint = Paint()
-      ..color = const Color(0xFF1DB898).withOpacity(0.08) // S45-WEL-T2
+      ..color = const Color(0xFF1DB898).withValues(alpha: 0.08) // S45-WEL-T2
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
     final path = Path();
@@ -430,7 +430,7 @@ class _GeoPainter extends CustomPainter {
 
     // Radial spokes
     final spokePaint = Paint()
-      ..color = const Color(0xFFD4AF37).withOpacity(0.04)
+      ..color = const Color(0xFFD4AF37).withValues(alpha: 0.04)
       ..strokeWidth = 0.5;
     for (int i = 0; i < 16; i++) {
       final a = (i / 16) * math.pi * 2;
@@ -464,7 +464,7 @@ class _WelcomeStarsPainter extends CustomPainter {
       paint.color = (i % 5 == 0
               ? const Color(0xFFD4AF37)
               : const Color(0xFF1DB898)) // S46-WEL-T3
-          .withOpacity(alpha);
+          .withValues(alpha: alpha);
       canvas.drawCircle(
         Offset(_pts[i].dx * size.width, _pts[i].dy * size.height),
         radius,

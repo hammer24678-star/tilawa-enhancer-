@@ -728,7 +728,7 @@ class _HomeScreenState extends State<HomeScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         boxShadow: [BoxShadow(
-                          color: const Color(0xFFD4AF37).withOpacity(0.35),
+                          color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
                           blurRadius: 12)]),
                       child: ClipOval(child: Image.asset(
                         'assets/images/logo.png',
@@ -821,10 +821,10 @@ class _HomeScreenState extends State<HomeScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: _gold.withOpacity(0.10 + 0.12 * t),
+                          color: _gold.withValues(alpha: 0.10 + 0.12 * t),
                           width: 0.8),
                         boxShadow: [BoxShadow(
-                          color: _gold.withOpacity(0.06 + 0.08 * t),
+                          color: _gold.withValues(alpha: 0.06 + 0.08 * t),
                           blurRadius: 18 + 14 * t)]))),
                   // Ring 2 — mid, counter-clockwise
                   Transform.rotate(angle: -r * 0.5,
@@ -832,7 +832,7 @@ class _HomeScreenState extends State<HomeScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: _teal.withOpacity(0.20 + 0.22 * t),
+                          color: _teal.withValues(alpha: 0.20 + 0.22 * t),
                           width: 1.0)))),
                   // Ring 1 — inner gold, clockwise faster
                   Transform.rotate(angle: r * 1.2,
@@ -840,10 +840,10 @@ class _HomeScreenState extends State<HomeScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: _gold.withOpacity(0.22 + 0.28 * t),
+                          color: _gold.withValues(alpha: 0.22 + 0.28 * t),
                           width: 1.4),
                         boxShadow: [BoxShadow(
-                          color: _gold.withOpacity(0.12 + 0.16 * t),
+                          color: _gold.withValues(alpha: 0.12 + 0.16 * t),
                           blurRadius: 12 + 10 * t)]))),
                   // Logo — breathing scale
                   Transform.scale(
@@ -852,7 +852,7 @@ class _HomeScreenState extends State<HomeScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         boxShadow: [BoxShadow(
-                          color: _gold.withOpacity(0.22 + 0.28 * t),
+                          color: _gold.withValues(alpha: 0.22 + 0.28 * t),
                           blurRadius: 20 + 16 * t,
                           spreadRadius: 2)]),
                       child: ClipOval(child: Image.asset(
@@ -883,9 +883,9 @@ class _HomeScreenState extends State<HomeScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
             decoration: BoxDecoration(
-              color: _teal.withOpacity(0.12),
+              color: _teal.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _teal.withOpacity(0.35))),
+              border: Border.all(color: _teal.withValues(alpha: 0.35))),
             child: RichText(
               text: TextSpan(
                 style: const TextStyle(
@@ -918,9 +918,9 @@ class _HomeScreenState extends State<HomeScreen>
           decoration: BoxDecoration(
             color: _bgCard, shape: BoxShape.circle,
             border: Border.all(
-              color: _teal.withOpacity(0.28 + 0.22 * _glowCtrl.value)),
+              color: _teal.withValues(alpha: 0.28 + 0.22 * _glowCtrl.value)),
             boxShadow: [BoxShadow(
-              color: _teal.withOpacity(0.08 + 0.08 * _glowCtrl.value),
+              color: _teal.withValues(alpha: 0.08 + 0.08 * _glowCtrl.value),
               blurRadius: 10)]),
           child: Icon(icon, color: _textB, size: 20)))));
   }
@@ -946,10 +946,10 @@ class _HomeScreenState extends State<HomeScreen>
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: _serverUp
-          ? _ok.withOpacity(0.06)
+          ? _ok.withValues(alpha: 0.06)
           : _waking
-            ? _gold.withOpacity(0.06)
-            : _err.withOpacity(0.06),
+            ? _gold.withValues(alpha: 0.06)
+            : _err.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _serverUp
@@ -981,13 +981,13 @@ class _HomeScreenState extends State<HomeScreen>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: c.withOpacity(0.6 * (1 - t)),
+                            color: c.withValues(alpha: 0.6 * (1 - t)),
                             width: 1.5))),
                       Container(width: 8, height: 8,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle, color: c,
                           boxShadow: [BoxShadow(
-                            color: c.withOpacity(0.4 + 0.5 * t),
+                            color: c.withValues(alpha: 0.4 + 0.5 * t),
                             blurRadius: 5 + 8 * t)])),
                     ]));
                 })),
@@ -1019,7 +1019,7 @@ class _HomeScreenState extends State<HomeScreen>
                     color: const Color(0xFF1A1000),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: _tGold.withOpacity(0.6))),
+                      color: _tGold.withValues(alpha: 0.6))),
                   child: Text(s.wakeServer,
                     style: const TextStyle(
                       color: Color(0xFFD4AF37),
@@ -1045,9 +1045,9 @@ class _HomeScreenState extends State<HomeScreen>
     decoration: BoxDecoration(
       color: _bgSurface,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _teal.withOpacity(0.28)),
+      border: Border.all(color: _teal.withValues(alpha: 0.28)),
       boxShadow: [BoxShadow(
-        color: _teal.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 4))]),
+        color: _teal.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, 4))]),
     child: Column(children: [
       // ── Header row ──────────────────────────────────────────────────
       Padding(
@@ -1066,7 +1066,7 @@ class _HomeScreenState extends State<HomeScreen>
               color: _badgeBg(_selectedEngine.bc),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: _badgeColor(_selectedEngine.bc).withOpacity(0.5))),
+                color: _badgeColor(_selectedEngine.bc).withValues(alpha: 0.5))),
             child: Text(
               '≥${_selectedEngine.score.toInt()}',
               style: TextStyle(
@@ -1108,11 +1108,11 @@ class _HomeScreenState extends State<HomeScreen>
                 margin: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
-                  color: col.withOpacity(0.12),
+                  color: col.withValues(alpha: 0.12),
                   border: Border.all(
-                    color: col.withOpacity(0.58 + 0.30 * g), width: 1.5),
+                    color: col.withValues(alpha: 0.58 + 0.30 * g), width: 1.5),
                   boxShadow: [BoxShadow(
-                    color: col.withOpacity(0.20 + 0.22 * g),
+                    color: col.withValues(alpha: 0.20 + 0.22 * g),
                     blurRadius: 8 + 6 * g)]))),
               Positioned.fill(child: Transform.rotate(
                 angle: pi / 4,
@@ -1120,14 +1120,14 @@ class _HomeScreenState extends State<HomeScreen>
                   margin: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(2),
-                    color: col.withOpacity(0.05),
+                    color: col.withValues(alpha: 0.05),
                     border: Border.all(
-                      color: col.withOpacity(0.38 + 0.18 * g), width: 1))))),
+                      color: col.withValues(alpha: 0.38 + 0.18 * g), width: 1))))),
             ]);
           })),
         ShaderMask(
           shaderCallback: (b) => LinearGradient(
-            colors: [col, col.withOpacity(0.65)],
+            colors: [col, col.withValues(alpha: 0.65)],
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
           ).createShader(b),
           child: Text('≥${score.toInt()}',
@@ -1153,21 +1153,21 @@ class _HomeScreenState extends State<HomeScreen>
         // S32-ENGINE-GLASS
         decoration: BoxDecoration(
           color: sel
-            ? col.withOpacity(0.10)
-            : const Color(0xFF0D2B22).withOpacity(0.70),
+            ? col.withValues(alpha: 0.10)
+            : const Color(0xFF0D2B22).withValues(alpha: 0.70),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: sel
-              ? col.withOpacity(0.70)
-              : const Color(0xFF1DB898).withOpacity(0.22),
+              ? col.withValues(alpha: 0.70)
+              : const Color(0xFF1DB898).withValues(alpha: 0.22),
             width: sel ? 1.8 : 0.8),
           boxShadow: sel ? [
             BoxShadow(
-              color: col.withOpacity(0.22),
+              color: col.withValues(alpha: 0.22),
               blurRadius: 22, spreadRadius: 0,
               offset: const Offset(0, 4)),
             BoxShadow(
-              color: col.withOpacity(0.10),
+              color: col.withValues(alpha: 0.10),
               blurRadius: 40, spreadRadius: 2),
           ] : null),
         child: Stack(children: [
@@ -1182,7 +1182,7 @@ class _HomeScreenState extends State<HomeScreen>
                   topLeft: Radius.circular(13),
                   bottomLeft: Radius.circular(13)),
                 boxShadow: [BoxShadow(
-                  color: col.withOpacity(0.55), blurRadius: 8)]))),
+                  color: col.withValues(alpha: 0.55), blurRadius: 8)]))),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // S54: Premium image engine card
           if (e.imgAsset != null) RepaintBoundary(child: AnimatedBuilder( // S59-CARD-IMG-RB
@@ -1205,7 +1205,7 @@ class _HomeScreenState extends State<HomeScreen>
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [col.withOpacity(0.25),
+                            colors: [col.withValues(alpha: 0.25),
                                      const Color(0xFF020D0C)])))),
                     if (sel) Positioned.fill(child: Container(
                       decoration: BoxDecoration(
@@ -1213,7 +1213,7 @@ class _HomeScreenState extends State<HomeScreen>
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            col.withOpacity(0.22 + 0.12 * g),
+                            col.withValues(alpha: 0.22 + 0.12 * g),
                             Colors.transparent])))),
                     Positioned.fill(child: Container(
                       decoration: BoxDecoration(
@@ -1222,7 +1222,7 @@ class _HomeScreenState extends State<HomeScreen>
                           end: Alignment.bottomCenter,
                           stops: const [0.35, 1.0],
                           colors: [Colors.transparent,
-                                   const Color(0xFF020D0C).withOpacity(0.92)])))),
+                                   const Color(0xFF020D0C).withValues(alpha: 0.92)])))),
                   ])),
                 // Khatam badge top-right
                 Positioned(top: 8, right: 10,
@@ -1233,12 +1233,12 @@ class _HomeScreenState extends State<HomeScreen>
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: col.withOpacity(0.15 + 0.10 * g),
+                        color: col.withValues(alpha: 0.15 + 0.10 * g),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: col.withOpacity(0.55 + 0.25 * g)),
+                          color: col.withValues(alpha: 0.55 + 0.25 * g)),
                         boxShadow: [BoxShadow(
-                          color: col.withOpacity(0.25 + 0.20 * g),
+                          color: col.withValues(alpha: 0.25 + 0.20 * g),
                           blurRadius: 8)]),
                       child: Text(e.badge, style: TextStyle(
                         color: col, fontSize: 9, fontWeight: FontWeight.w800,
@@ -1251,7 +1251,7 @@ class _HomeScreenState extends State<HomeScreen>
                       Expanded(child: ShaderMask(
                         shaderCallback: (b) => LinearGradient(
                           colors: sel
-                            ? [col, col.withOpacity(0.80)]
+                            ? [col, col.withValues(alpha: 0.80)]
                             : [Colors.white, Colors.white70],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
@@ -1267,10 +1267,10 @@ class _HomeScreenState extends State<HomeScreen>
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
+                          color: Colors.black.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: col.withOpacity(0.45))),
+                            color: col.withValues(alpha: 0.45))),
                         child: Text(e.id, style: TextStyle(
                           color: col, fontSize: 9,
                           fontWeight: FontWeight.w700))),
@@ -1282,7 +1282,7 @@ class _HomeScreenState extends State<HomeScreen>
                       topLeft: Radius.circular(13),
                       topRight: Radius.circular(13)),
                     border: Border.all(
-                      color: col.withOpacity(0.55 + 0.35 * g),
+                      color: col.withValues(alpha: 0.55 + 0.35 * g),
                       width: 2.0)))),
               ]);
             })),
@@ -1299,16 +1299,16 @@ class _HomeScreenState extends State<HomeScreen>
                 Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                   Flexible(child: Text(e.nameAr,
                     style: TextStyle(
-                      color: sel ? col : col.withOpacity(0.80),
+                      color: sel ? col : col.withValues(alpha: 0.80),
                       fontSize: 18, fontWeight: FontWeight.w700, height: 1.1))),
                   if (e.badge.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: col.withOpacity(0.12),
+                        color: col.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: col.withOpacity(0.45))),
+                        border: Border.all(color: col.withValues(alpha: 0.45))),
                       child: Text(e.badge, style: TextStyle(
                         color: col, fontSize: 8, fontWeight: FontWeight.bold,
                         letterSpacing: 0.8))),
@@ -1316,16 +1316,16 @@ class _HomeScreenState extends State<HomeScreen>
                 ]),
                 const SizedBox(height: 3),
                 Text(e.nameEn, style: TextStyle(
-                  color: const Color(0xFFF0E8D2).withOpacity(0.42),
+                  color: const Color(0xFFF0E8D2).withValues(alpha: 0.42),
                   fontSize: 10.5, fontStyle: FontStyle.italic)),
               ])),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: col.withOpacity(0.12),
+                  color: col.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: col.withOpacity(0.35))),
+                  border: Border.all(color: col.withValues(alpha: 0.35))),
                 child: Text(e.id, style: TextStyle(
                   color: col, fontSize: 9, fontWeight: FontWeight.w600,
                   letterSpacing: 0.4))),
@@ -1370,11 +1370,11 @@ class _HomeScreenState extends State<HomeScreen>
         children: e.features.map((f) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
           decoration: BoxDecoration(
-            color: col.withOpacity(0.07),
+            color: col.withValues(alpha: 0.07),
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: col.withOpacity(0.28))),
+            border: Border.all(color: col.withValues(alpha: 0.28))),
           child: Text(f, style: TextStyle(
-            color: col.withOpacity(0.75), fontSize: 9)))).toList()),
+            color: col.withValues(alpha: 0.75), fontSize: 9)))).toList()),
       const SizedBox(height: 10),
       // What's New box
       Container(
@@ -1383,7 +1383,7 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: const Color(0xFF0A0C10),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: col.withOpacity(0.2))),
+          border: Border.all(color: col.withValues(alpha: 0.2))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(s.ar ? '▶ الجديد في هذه النسخة'
                     : "▶ What's New",
@@ -1431,7 +1431,7 @@ class _HomeScreenState extends State<HomeScreen>
         color: _engineColor,
         borderRadius: BorderRadius.circular(1),
         boxShadow: [BoxShadow(
-          color: _engineColor.withOpacity(0.50), blurRadius: 5)])));
+          color: _engineColor.withValues(alpha: 0.50), blurRadius: 5)])));
 
   Color _badgeColor(String bc) => bc == 'gold' ? _tGold
       : bc == 'green' ? const Color(0xFF3FB950)
@@ -1461,13 +1461,13 @@ class _HomeScreenState extends State<HomeScreen>
             bottomRight: Radius.circular(22)),
           border: Border.all(
             color: hasFile
-              ? _engineColor.withOpacity(0.68)
-              : const Color(0xFF1DB898).withOpacity(0.24),
+              ? _engineColor.withValues(alpha: 0.68)
+              : const Color(0xFF1DB898).withValues(alpha: 0.24),
             width: hasFile ? 1.8 : 1.0),
           boxShadow: [BoxShadow(
             color: hasFile
-              ? _engineColor.withOpacity(0.20)
-              : const Color(0xFF1DB898).withOpacity(0.08),
+              ? _engineColor.withValues(alpha: 0.20)
+              : const Color(0xFF1DB898).withValues(alpha: 0.08),
             blurRadius: 36, spreadRadius: 2)]),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
@@ -1481,11 +1481,11 @@ class _HomeScreenState extends State<HomeScreen>
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: _engineColor
-                      .withOpacity(0.38 + 0.32 * _glowCtrl.value),
+                      .withValues(alpha: 0.38 + 0.32 * _glowCtrl.value),
                     width: 1.5),
                   boxShadow: [BoxShadow(
                     color: _engineColor
-                      .withOpacity(0.10 + 0.18 * _glowCtrl.value),
+                      .withValues(alpha: 0.10 + 0.18 * _glowCtrl.value),
                     blurRadius: 18 + 16 * _glowCtrl.value)]),
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 380),
@@ -1522,10 +1522,10 @@ class _HomeScreenState extends State<HomeScreen>
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
                               colors: [
-                                const Color(0xFF1DB898).withOpacity(glow),
-                                const Color(0xFFD4AF37).withOpacity(glow * 0.8)]),
+                                const Color(0xFF1DB898).withValues(alpha: glow),
+                                const Color(0xFFD4AF37).withValues(alpha: glow * 0.8)]),
                             boxShadow: [BoxShadow(
-                              color: const Color(0xFF1DB898).withOpacity(0.25 * v),
+                              color: const Color(0xFF1DB898).withValues(alpha: 0.25 * v),
                               blurRadius: 4)]));
                       })))
                 : Row(
@@ -1535,7 +1535,7 @@ class _HomeScreenState extends State<HomeScreen>
                       margin: const EdgeInsets.symmetric(horizontal: 1.5),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(2),
-                        color: const Color(0xFF1DB898).withOpacity(0.20)))))),
+                        color: const Color(0xFF1DB898).withValues(alpha: 0.20)))))),
             const SizedBox(height: 12),
             // ── Filename / pick label ──
             Text(
@@ -1602,8 +1602,8 @@ class _HomeScreenState extends State<HomeScreen>
                     borderRadius: BorderRadius.circular(14),
                     gradient: (_busy || !_serverUp)
                       ? LinearGradient(colors: [
-                          const Color(0xFF1A1200).withOpacity(0.6),
-                          const Color(0xFF1A1200).withOpacity(0.6)])
+                          const Color(0xFF1A1200).withValues(alpha: 0.6),
+                          const Color(0xFF1A1200).withValues(alpha: 0.6)])
                       : const LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
@@ -1616,7 +1616,7 @@ class _HomeScreenState extends State<HomeScreen>
                           stops: [0.0, 0.3, 0.6, 1.0]),
                     boxShadow: (_busy || !_serverUp) ? null : [
                       BoxShadow(
-                        color: const Color(0xFFC8A048).withOpacity(0.40),
+                        color: const Color(0xFFC8A048).withValues(alpha: 0.40),
                         blurRadius: 24, offset: const Offset(0, 6)),
                     ]),
                   child: _busy
@@ -1698,7 +1698,7 @@ class _HomeScreenState extends State<HomeScreen>
                       color: const Color(0xFF1A0A0A),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0xFFFF0000).withOpacity(0.3))),
+                        color: const Color(0xFFFF0000).withValues(alpha: 0.3))),
                     child: Row(children: [
                       Container(
                         width: 40, height: 40,
@@ -1731,7 +1731,7 @@ class _HomeScreenState extends State<HomeScreen>
                     color: const Color(0xFF0A1A0F),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: const Color(0xFF3FB950).withOpacity(0.3))),
+                      color: const Color(0xFF3FB950).withValues(alpha: 0.3))),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                     Text(
@@ -1762,9 +1762,9 @@ class _HomeScreenState extends State<HomeScreen>
                     color: const Color(0xFF061018),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: const Color(0xFFD4AF37).withOpacity(0.2)),
+                      color: const Color(0xFFD4AF37).withValues(alpha: 0.2)),
                     boxShadow: [BoxShadow(
-                      color: const Color(0xFF1DB898).withOpacity(0.06),
+                      color: const Color(0xFF1DB898).withValues(alpha: 0.06),
                       blurRadius: 20)]),
                   child: Column(
                     children: _engines.map((e) {
@@ -1806,7 +1806,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(4),
                                     boxShadow: [BoxShadow(
-                                      color: col.withOpacity(0.5),
+                                      color: col.withValues(alpha: 0.5),
                                       blurRadius: 6,
                                       spreadRadius: 0)])))))],
                           ),
@@ -1823,7 +1823,7 @@ class _HomeScreenState extends State<HomeScreen>
                       width: 44, height: 44, fit: BoxFit.cover,
                       errorBuilder: (_,__,___) => Container(
                         width: 44, height: 44,
-                        color: _goldMuted.withOpacity(0.55),
+                        color: _goldMuted.withValues(alpha: 0.55),
                         child: const Icon(Icons.music_note,
                           color: Color(0xFFD4AF37), size: 22)))),
                     const SizedBox(width: 12),
@@ -1855,7 +1855,7 @@ class _HomeScreenState extends State<HomeScreen>
     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
     decoration: BoxDecoration(
       color: _badgeBg(bc), borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: _badgeColor(bc).withOpacity(0.5))),
+      border: Border.all(color: _badgeColor(bc).withValues(alpha: 0.5))),
     child: Text(text,
       style: TextStyle(
         color: _badgeColor(bc), fontSize: 9, fontWeight: FontWeight.bold)));
@@ -1871,14 +1871,14 @@ class _HomeScreenState extends State<HomeScreen>
         colors: [Color(0xFF0D2B22), Color(0xFF071A14)]),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
-        color: _engineColor.withOpacity(0.20), width: 0.9),
+        color: _engineColor.withValues(alpha: 0.20), width: 0.9),
       boxShadow: [
         BoxShadow(
-          color: const Color(0xFFD4AF37).withOpacity(0.08),
+          color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
           blurRadius: 30, spreadRadius: 0,
           offset: const Offset(0, 6)),
         BoxShadow(
-          color: const Color(0xFF1DB898).withOpacity(0.08),
+          color: const Color(0xFF1DB898).withValues(alpha: 0.08),
           blurRadius: 60, spreadRadius: 2),
       ]),
     child: Column(children: [
@@ -1922,12 +1922,12 @@ class _HomeScreenState extends State<HomeScreen>
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                           colors: [
-                            _gold.withOpacity(bright),
-                            _goldLight.withOpacity(bright * 0.7)]) : null,
-                        color: lit ? null : _teal.withOpacity(0.18),
+                            _gold.withValues(alpha: bright),
+                            _goldLight.withValues(alpha: bright * 0.7)]) : null,
+                        color: lit ? null : _teal.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(2),
                         boxShadow: lit ? [BoxShadow(
-                          color: _gold.withOpacity(0.35 * v),
+                          color: _gold.withValues(alpha: 0.35 * v),
                           blurRadius: 4)] : null));
                   }));
               }),
@@ -1960,7 +1960,7 @@ class _HomeScreenState extends State<HomeScreen>
       Container( // S38-CANCEL-STYLE
         decoration: BoxDecoration(
           border: Border.all(
-            color: const Color(0xFF1B6B80).withOpacity(0.35)),
+            color: const Color(0xFF1B6B80).withValues(alpha: 0.35)),
           borderRadius: BorderRadius.circular(8)),
         child: TextButton.icon(
           onPressed: _cancelProcessing,
@@ -2012,15 +2012,15 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.fromLTRB(16,10,16,4),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: score < 80 ? _err.withOpacity(0.05) : _ok.withOpacity(0.05),
+        color: score < 80 ? _err.withValues(alpha: 0.05) : _ok.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: (score < 80 ? _err : _ok).withOpacity(0.35),
+          color: (score < 80 ? _err : _ok).withValues(alpha: 0.35),
           width: 1.2),
         boxShadow: [BoxShadow(
           color: (score < 80
               ? const Color(0xFFF85149)
-              : const Color(0xFF3FB950)).withOpacity(0.12),
+              : const Color(0xFF3FB950)).withValues(alpha: 0.12),
           blurRadius: 24, offset: const Offset(0, 6))]),
       child: Column(children: [
         // S30-R1: score arc gauge
@@ -2076,7 +2076,7 @@ class _HomeScreenState extends State<HomeScreen>
                             fontSize: 40,
                             letterSpacing: -1))),
                       Text('/100', style: TextStyle(
-                        color: scoreColor.withOpacity(0.55),
+                        color: scoreColor.withValues(alpha: 0.55),
                         fontSize: 12,
                         fontWeight: FontWeight.bold)),
                     ])),
@@ -2087,9 +2087,9 @@ class _HomeScreenState extends State<HomeScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                 decoration: BoxDecoration(
-                  color: scoreColor.withOpacity(0.15),
+                  color: scoreColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: scoreColor.withOpacity(0.4))),
+                  border: Border.all(color: scoreColor.withValues(alpha: 0.4))),
                 child: Text(label, style: TextStyle(
                   color: scoreColor,
                   fontWeight: FontWeight.bold,
@@ -2105,7 +2105,7 @@ class _HomeScreenState extends State<HomeScreen>
             color: const Color(0xFF1A1200),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: _tGold.withOpacity(0.3))),
+              color: _tGold.withValues(alpha: 0.3))),
           child: Text('$_engine — $engineName',
             style: const TextStyle(
               color: Color(0xFFD4AF37), fontSize: 11))),
@@ -2129,7 +2129,7 @@ class _HomeScreenState extends State<HomeScreen>
               color: const Color(0xFF200D0D),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: const Color(0xFFF85149).withOpacity(0.4))),
+                color: const Color(0xFFF85149).withValues(alpha: 0.4))),
             child: Text(s.fallbackWarning,
               textAlign: TextAlign.center,
               style: const TextStyle(
@@ -2159,7 +2159,7 @@ class _HomeScreenState extends State<HomeScreen>
                 Text(filename,
                   style: TextStyle(
                     fontSize: 10,
-                    color: Colors.black.withOpacity(0.6))),
+                    color: Colors.black.withValues(alpha: 0.6))),
               ]),
           )),
 
@@ -2322,8 +2322,8 @@ class _HomeScreenState extends State<HomeScreen>
               FadeTransition(opacity: anim, child: child),
             transitionDuration: const Duration(milliseconds: 220),
           )),
-        splashColor: _tGold.withOpacity(0.12),
-        highlightColor: _tGold.withOpacity(0.06),
+        splashColor: _tGold.withValues(alpha: 0.12),
+        highlightColor: _tGold.withValues(alpha: 0.06),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
@@ -2353,13 +2353,13 @@ class _HomeScreenState extends State<HomeScreen>
             Uri.parse('https://buymeacoffee.com/tilawa'),
             mode: LaunchMode.externalApplication);
         },
-        splashColor: _tGold.withOpacity(0.18),
+        splashColor: _tGold.withValues(alpha: 0.18),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: _tGold.withOpacity(0.3))),
+              color: _tGold.withValues(alpha: 0.3))),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           const Icon(Icons.volunteer_activism,
             color: Color(0xFFD4AF37), size: 18),
@@ -2455,15 +2455,15 @@ class _RadialPulsePainter extends CustomPainter {
       final phase = (t + i * 0.33) % 1.0;
       final r = 60.0 + phase * 220.0;
       final op = (1.0 - phase) * (i == 0 ? 0.10 : 0.06);
-      p.color = const Color(0xFFC8A048).withOpacity(op);
+      p.color = const Color(0xFFC8A048).withValues(alpha: op);
       p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
       canvas.drawCircle(Offset(cx, cy), r, p);
     }
     p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
-    p.color = const Color(0xFFC8A048).withOpacity(0.06 + 0.06 * t);
+    p.color = const Color(0xFFC8A048).withValues(alpha: 0.06 + 0.06 * t);
     canvas.drawCircle(Offset(cx, cy), 80, p);
     p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 24);
-    p.color = const Color(0xFF1DB898).withOpacity(0.04 + 0.04 * (1 - t));
+    p.color = const Color(0xFF1DB898).withValues(alpha: 0.04 + 0.04 * (1 - t));
     canvas.drawCircle(Offset(cx, cy), 120 + 40 * t, p);
   }
   @override bool shouldRepaint(_RadialPulsePainter o) => o.t != t;
@@ -2498,11 +2498,11 @@ class _StarsPainter extends CustomPainter {
           : _gold;
       // Soft bloom
       p.maskFilter = MaskFilter.blur(BlurStyle.normal, sz * 2.5);
-      p.color = sc.withOpacity(op * 0.25);
+      p.color = sc.withValues(alpha: op * 0.25);
       canvas.drawCircle(Offset(x, y), sz * 2.0, p);
       // Sharp core
       p.maskFilter = null;
-      p.color = sc.withOpacity(op);
+      p.color = sc.withValues(alpha: op);
       canvas.drawCircle(Offset(x, y), sz, p);
     }
   }
@@ -2520,7 +2520,7 @@ class _MandalaPainter extends CustomPainter {
     final angle = t * pi * 2;
     final p = Paint()..style = PaintingStyle.stroke;
     // 8 overlapping petal circles
-    p.color = const Color(0xFFC8A048).withOpacity(0.50);
+    p.color = const Color(0xFFC8A048).withValues(alpha: 0.50);
     p.strokeWidth = 0.9;
     for (int i = 0; i < 8; i++) {
       final a = (i / 8) * pi * 2 + angle;
@@ -2529,11 +2529,11 @@ class _MandalaPainter extends CustomPainter {
         r * 0.40, p);
     }
     // Outer gold ring
-    p.color = const Color(0xFFD4AF37).withOpacity(0.38);
+    p.color = const Color(0xFFD4AF37).withValues(alpha: 0.38);
     p.strokeWidth = 1.0;
     canvas.drawCircle(Offset(cx, cy), r, p);
     // Counter-rotating hexagon
-    p.color = const Color(0xFF1DB898).withOpacity(0.32);
+    p.color = const Color(0xFF1DB898).withValues(alpha: 0.32);
     p.strokeWidth = 0.8;
     final hex = Path();
     for (int i = 0; i < 6; i++) {
@@ -2545,7 +2545,7 @@ class _MandalaPainter extends CustomPainter {
     hex.close();
     canvas.drawPath(hex, p);
     // 8-point inner star
-    p.color = const Color(0xFFD4AF37).withOpacity(0.45);
+    p.color = const Color(0xFFD4AF37).withValues(alpha: 0.45);
     p.strokeWidth = 1.0;
     final star = Path();
     for (int i = 0; i < 16; i++) {
@@ -2557,7 +2557,7 @@ class _MandalaPainter extends CustomPainter {
     star.close();
     canvas.drawPath(star, p);
     canvas.drawCircle(Offset(cx, cy), 3,
-      Paint()..color = const Color(0xFFD4AF37).withOpacity(0.72)
+      Paint()..color = const Color(0xFFD4AF37).withValues(alpha: 0.72)
              ..style = PaintingStyle.fill);
   }
   @override bool shouldRepaint(_MandalaPainter o) => o.t != t;
@@ -2574,7 +2574,7 @@ class _KhatamPainter extends CustomPainter {
     final r  = size.width / 2 - 10;
     final p  = Paint()..style = PaintingStyle.stroke;
     // Square 1
-    p.color = color.withOpacity(0.12 + 0.10 * t);
+    p.color = color.withValues(alpha: 0.12 + 0.10 * t);
     p.strokeWidth = 1.0;
     final sq1 = Path();
     for (int i = 0; i < 4; i++) {
@@ -2594,11 +2594,11 @@ class _KhatamPainter extends CustomPainter {
     sq2.close();
     canvas.drawPath(sq2, p);
     // Pulsing outer glow ring
-    p.color = color.withOpacity(0.07 + 0.07 * t);
+    p.color = color.withValues(alpha: 0.07 + 0.07 * t);
     p.strokeWidth = 0.7;
     canvas.drawCircle(Offset(cx, cy), r + 8, p);
     // Inner circle
-    p.color = color.withOpacity(0.08 + 0.06 * t);
+    p.color = color.withValues(alpha: 0.08 + 0.06 * t);
     p.strokeWidth = 0.5;
     canvas.drawCircle(Offset(cx, cy), r * 0.40, p);
   }
@@ -2632,7 +2632,7 @@ class _IncensePainter extends CustomPainter {
           : phase > 0.72 ? (1.0 - phase) / 0.28 : 0.55;
       final isTeal = i % 5 == 3;
       final baseCol = isTeal ? _teal : engCol;
-      p.color = baseCol.withOpacity(op * 0.52);
+      p.color = baseCol.withValues(alpha: op * 0.52);
       final r = (i % 3 == 0) ? 2.0 : 1.4;
       canvas.drawCircle(Offset(dx, dy), r, p);
     }
@@ -2645,7 +2645,7 @@ class _GeoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()
-      ..color = const Color(0xFFC8A048).withOpacity(0.07)
+      ..color = const Color(0xFFC8A048).withValues(alpha: 0.07)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
     const cell = 120.0;
@@ -2706,7 +2706,7 @@ class _WaveProgressPainter extends CustomPainter {
     canvas.drawRect(
       Rect.fromLTWH(0, 0, fillW, size.height),
       Paint()..shader = LinearGradient(
-        colors: [Colors.transparent, Colors.white.withOpacity(0.14), Colors.transparent],
+        colors: [Colors.transparent, Colors.white.withValues(alpha: 0.14), Colors.transparent],
         stops: const [0.0, 0.5, 1.0],
         begin: Alignment(shimmer * 2 - 1, 0),
         end: Alignment(shimmer * 2 + 0.4, 0),
@@ -2730,7 +2730,7 @@ class _ScoreBurstPainter extends CustomPainter {
     final t = ((progress - 0.3) / 0.65).clamp(0.0, 1.0);
     final opacity = (1.0 - t) * 0.7;
     final paint = Paint()
-      ..color = color.withOpacity(opacity)
+      ..color = color.withValues(alpha: opacity)
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);

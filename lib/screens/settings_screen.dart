@@ -131,7 +131,7 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
                          const Color(0xFF061810)]),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: const Color(0xFFD4AF37).withOpacity(0.3))),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.3))),
             child: Row(children: [
               _langPill(context, s.arabic,  active: isAr,
                 onTap: () { if (!isAr) LangProvider.toggle(context); }),
@@ -182,9 +182,9 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
                 colors: [Color(0xFF0A1A10), Color(0xFF061015)]),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: const Color(0xFFD4AF37).withOpacity(0.25)),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.25)),
               boxShadow: [BoxShadow(
-                color: const Color(0xFFD4AF37).withOpacity(0.08),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
                 blurRadius: 20)]),
             child: Column(children: [
               // Small logo in About
@@ -193,7 +193,7 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   boxShadow: [BoxShadow(
-                    color: const Color(0xFFD4AF37).withOpacity(0.2),
+                    color: const Color(0xFFD4AF37).withValues(alpha: 0.2),
                     blurRadius: 12)]),
                 child: ClipOval(child: Image.asset(
                   'assets/images/logo.png', fit: BoxFit.cover,
@@ -364,7 +364,7 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
                 color: bg(), borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: bc().withOpacity(0.5))),
+                border: Border.all(color: bc().withValues(alpha: 0.5))),
               child: Text(e.badge, style: TextStyle(
                 color: bc(), fontSize: 9, fontWeight: FontWeight.bold))),
           const SizedBox(width: 8),
