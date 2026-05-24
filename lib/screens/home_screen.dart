@@ -36,7 +36,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin
+    implements WidgetsBindingObserver {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
   String  _engine    = 'v10.0';
@@ -155,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // S56: lifecycle observer
     final rng = Random(7777);
     _starList = List.generate(18, (_) => _StarParticle(rng));
     _glowCtrl = AnimationController(
@@ -193,6 +195,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // S56
     _serverTimer?.cancel();
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
@@ -905,6 +908,17 @@ class _HomeScreenState extends State<HomeScreen>
               color: _teal.withOpacity(0.08 + 0.08 * _glowCtrl.value),
               blurRadius: 10)]),
           child: Icon(icon, color: _textB, size: 20)))));
+  }
+
+  // S56: Resume polling when app returns to foreground
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _jobId != null && _busy && _pollTimer == null) {
+      _pollErrors = 0;
+      _processStart ??= DateTime.now(); // reset timeout from resume
+      _startPolling();
+    }
   }
 
   // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
