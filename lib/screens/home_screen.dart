@@ -676,51 +676,63 @@ class _HomeScreenState extends State<HomeScreen>
                     isComplex: true))))),
           SafeArea(
           child: CustomScrollView(slivers: [
-            SliverAppBar(
-              // S35-APPBAR
+            SliverAppBar( // S61-APPBAR
               pinned: true,
               floating: false,
-              backgroundColor: const Color(0xFF020D0C), // S40-AB-VOID
+              backgroundColor: const Color(0xFF020D0C),
               elevation: 0,
-              expandedHeight: 88,
+              expandedHeight: 72,
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(
+                  height: 1,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.transparent,
+                               Color(0xFFD4AF37),
+                               Color(0xFF1DB898),
+                               Colors.transparent])))),
               flexibleSpace: FlexibleSpaceBar(
                 centerTitle: true,
                 background: Container(
                   decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                    gradient: RadialGradient(
+                      center: Alignment.topCenter,
+                      radius: 1.8,
                       colors: [
-                        Color(0xFF0A2A1E),
-                        Color(0xFF020D0C),
-                      ]))),
+                        Color(0xFF0D2E1F),
+                        Color(0xFF020D0C)]))),
                 title: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Image.asset(
+                    Container(
+                      width: 34, height: 34,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(
+                          color: const Color(0xFFD4AF37).withOpacity(0.35),
+                          blurRadius: 12)]),
+                      child: ClipOval(child: Image.asset(
                         'assets/images/logo.png',
-                        width: 32, height: 32,
-                        fit: BoxFit.contain)),
-                    RichText(
-                      text: const TextSpan(
-                        style: TextStyle(fontFamily: 'Roboto'),
-                        children: [
-                          TextSpan(
-                            text: 'محسِّن ',
-                            style: TextStyle(
-                              color: Color(0xFFD4AF37),
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.3)),
-                          TextSpan(
-                            text: 'التلاوة',
-                            style: TextStyle(
-                              color: Color(0xFFF2EFE5),
-                              fontSize: 18,
-                              fontWeight: FontWeight.w300)),
-                        ])),
+                        fit: BoxFit.cover))),
+                    const SizedBox(width: 10),
+                    ShaderMask(
+                      shaderCallback: (b) => const LinearGradient(
+                        colors: [Color(0xFFD4AF37), Color(0xFFF0CF60),
+                                 Color(0xFFD4AF37)])
+                        .createShader(b),
+                      child: const Text('محسِّن ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5))),
+                    const Text('التلاوة',
+                      style: TextStyle(
+                        color: Color(0xFFE2CFA0),
+                        fontSize: 19,
+                        fontWeight: FontWeight.w300,
+                        letterSpacing: 0.3)),
                   ])),
             ),
             SliverToBoxAdapter(child: _header(s)),
@@ -834,16 +846,21 @@ class _HomeScreenState extends State<HomeScreen>
                 ]));
             }),
           const SizedBox(height: 16),
-          // App name — large gold gradient
+          // S61-HEADER-NAME — always Arabic, elegant sizing
           ShaderMask(
             shaderCallback: (b) => const LinearGradient(
-              colors: [Color(0xFFB8860B), _gold, _goldLight, _gold, Color(0xFFB8860B)],
-              stops: [0.0, 0.25, 0.5, 0.75, 1.0]).createShader(b),
-            child: Text(s.appName, textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 34, fontWeight: FontWeight.w900,
-                color: Colors.white, height: 1.1, letterSpacing: -0.5))),
-          const SizedBox(height: 6),
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFD4AF37), Color(0xFFF5E070),
+                       Color(0xFFD4AF37)])
+              .createShader(b),
+            child: const Text('محسِّن التلاوة',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 30, fontWeight: FontWeight.w800,
+                color: Colors.white, height: 1.1,
+                letterSpacing: 1.2))),
+          const SizedBox(height: 4),
           // Subtitle pill
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
@@ -1704,10 +1721,14 @@ class _HomeScreenState extends State<HomeScreen>
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: _tCard,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _tBorder)),
+                  decoration: BoxDecoration( // S61-ENG-CONTAINER
+                    color: const Color(0xFF061018),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFD4AF37).withOpacity(0.2)),
+                    boxShadow: [BoxShadow(
+                      color: const Color(0xFF1DB898).withOpacity(0.06),
+                      blurRadius: 20)]),
                   child: Column(
                     children: _engines.map((e) {
                       final col = _badgeColor(e.bc);
@@ -1729,13 +1750,29 @@ class _HomeScreenState extends State<HomeScreen>
                               fontWeight: FontWeight.bold, fontSize: 12)),
                           ]),
                           const SizedBox(height: 5),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(3),
-                            child: LinearProgressIndicator(
-                              value: e.score / 100,
-                              minHeight: 4,
-                              backgroundColor: _tBorder,
-                              valueColor: AlwaysStoppedAnimation<Color>(col))),
+                          // S61-ENG-BAR
+                          Stack(children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: e.score / 100,
+                                minHeight: 7,
+                                backgroundColor: _tBorder,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  col))),
+                            Positioned.fill(child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: FractionallySizedBox(
+                                widthFactor: e.score / 100,
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(4),
+                                    boxShadow: [BoxShadow(
+                                      color: col.withOpacity(0.5),
+                                      blurRadius: 6,
+                                      spreadRadius: 0)]))))],
+                          ),
                         ]));
                     }).toList())),
                 Container(

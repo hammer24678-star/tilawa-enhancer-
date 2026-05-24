@@ -123,12 +123,15 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
           // ── Language toggle ────────────────────────────────────────────────
           _section(context, s.language),
           Container(
-            margin: const EdgeInsets.only(bottom: 18),
+            margin: const EdgeInsets.only(bottom: 18), // S61-LANG-PILL
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: cCard,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: cBorder)),
+              gradient: LinearGradient(
+                colors: [const Color(0xFF0A1A10),
+                         const Color(0xFF061810)]),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFFD4AF37).withOpacity(0.3))),
             child: Row(children: [
               _langPill(context, s.arabic,  active: isAr,
                 onTap: () { if (!isAr) LangProvider.toggle(context); }),
@@ -147,15 +150,21 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
             margin: const EdgeInsets.only(bottom: 20),
             padding: const EdgeInsets.symmetric(
               horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A1A0F),
-              borderRadius: BorderRadius.circular(10),
+            decoration: BoxDecoration( // S61-TARGET
+              gradient: const LinearGradient(
+                colors: [Color(0xFF061810), Color(0xFF0A2015)]),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: const Color(0xFF3FB950).withOpacity(0.35))),
+                color: Color(0xFF1DB898), width: 0.8),
+              boxShadow: [BoxShadow(
+                color: Color(0xFF1DB898),
+                blurRadius: 12, spreadRadius: 0,
+                offset: Offset(0, 0))]),
             child: Text(s.target,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF3FB950), fontSize: 11))),
+                color: Color(0xFF1DB898),
+                fontSize: 11, letterSpacing: 0.5))),
 
           // ── Engine History ─────────────────────────────────────────────────
           _section(context, s.engineHistory),
@@ -165,11 +174,18 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
           const SizedBox(height: 8),
           _section(context, s.about),
           Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(18), // S61-ABOUT-CARD
             decoration: BoxDecoration(
-              color: cCard,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: cBorder)),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF0A1A10), Color(0xFF061015)]),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFFD4AF37).withOpacity(0.25)),
+              boxShadow: [BoxShadow(
+                color: const Color(0xFFD4AF37).withOpacity(0.08),
+                blurRadius: 20)]),
             child: Column(children: [
               // Small logo in About
               Container(
