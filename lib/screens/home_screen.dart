@@ -90,6 +90,7 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _resultCtrl; // S29: result card entrance
   late final AnimationController _particleCtrl; // S58: rising particles
 
+  static const _wakeCh = MethodChannel('com.tilawa.tilawa_enhancer/wake'); // S63
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
@@ -343,6 +344,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _startPolling() {
     _pollTimer?.cancel();
     _pollErrors = 0; // S22: fresh counter for each new polling session
+    _wakeCh.invokeMethod('acquire').catchError((_) {}); // S63
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (_jobId == null) return;
       try {
@@ -361,6 +363,7 @@ class _HomeScreenState extends State<HomeScreen>
 
         if (status == 'error') {
           _pollTimer?.cancel();
+          _wakeCh.invokeMethod('release').catchError((_) {}); // S63
           setState(() {
             _busy = false;
             _isMerging = false;  // S20-B: clear merge animation on server error
@@ -371,6 +374,7 @@ class _HomeScreenState extends State<HomeScreen>
 
         if (status == 'done') {
           _pollTimer?.cancel();
+          _wakeCh.invokeMethod('release').catchError((_) {}); // S63
           if (_downloading) return; // RC3
           _downloading = true;
           try {
