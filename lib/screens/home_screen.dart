@@ -652,21 +652,28 @@ class _HomeScreenState extends State<HomeScreen>
         child: Stack(children: [
           if (dark) Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(painter: _GeoPainter()))),
+              child: RepaintBoundary(
+                child: CustomPaint(
+                painter: _GeoPainter(),
+                isComplex: true,
+                willChange: false))),
           // S58: rising particles (engine-tinted incense dots)
           if (dark) Positioned.fill(
             child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _particleCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _IncensePainter(
-                    _particleCtrl.value, _engineColor))))),
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _particleCtrl,
+                  builder: (_, __) => CustomPaint(
+                    painter: _IncensePainter(
+                      _particleCtrl.value, _engineColor)))))),
           if (dark) Positioned.fill(
             child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _starCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _StarsPainter(_starCtrl.value, _starList))))),
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _starCtrl,
+                  builder: (_, __) => CustomPaint(
+                    painter: _StarsPainter(_starCtrl.value, _starList),
+                    isComplex: true))))),
           SafeArea(
           child: CustomScrollView(slivers: [
             SliverAppBar(
@@ -1132,7 +1139,7 @@ class _HomeScreenState extends State<HomeScreen>
                   color: col.withOpacity(0.55), blurRadius: 8)]))),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           // S54: Premium image engine card
-          if (e.imgAsset != null) AnimatedBuilder(
+          if (e.imgAsset != null) RepaintBoundary(child: AnimatedBuilder( // S59-CARD-IMG-RB
             animation: _glowCtrl,
             builder: (_, __) {
               final g = _glowCtrl.value;
@@ -1850,10 +1857,10 @@ class _HomeScreenState extends State<HomeScreen>
       ]),
       const SizedBox(height: 6),
       Center(child: SizedBox(width: 90, height: 90, // S46-MANDALA
-        child: AnimatedBuilder(
+        child: RepaintBoundary(child: AnimatedBuilder( // S59-MANDALA-RB
           animation: _geoRotCtrl,
           builder: (_, __) => CustomPaint(
-            painter: _MandalaPainter(_geoRotCtrl.value))))),
+            painter: _MandalaPainter(_geoRotCtrl.value)))))),
       const SizedBox(height: 6),
       ClipRRect(
         borderRadius: BorderRadius.circular(8),
