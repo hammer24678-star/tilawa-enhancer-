@@ -119,7 +119,8 @@ manifest.write_text(
 '<?xml version="1.0" encoding="utf-8"?>\n'
 '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
 '\n'
-'    <uses-permission android:name="android.permission.INTERNET"/>\n'
+'    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
 '    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>\n'
 '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\n'
 '        android:maxSdkVersion="32"/>\n'

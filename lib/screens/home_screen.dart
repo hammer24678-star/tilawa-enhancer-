@@ -11,6 +11,7 @@ import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
 
 // ── Sacred Cosmos tokens ─────────────────────────────────────────────────────
 const _bgDeep    = Color(0xFF020D17);
@@ -59,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen>
   int?    _latencyMs;              // S28-T2: server latency in ms
   DateTime? _processStart;     // S22: start time for 25-min hard timeout
   int _fallbackRetries = 0;    // S32: auto-retry counter for fallback mode
+  late FlutterLocalNotificationsPlugin _notif; // S61
 
 
   // S32: theme cache — updated at top of every build() so ALL sub-methods
@@ -156,6 +158,13 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this); // S56: lifecycle observer
+    _notif = FlutterLocalNotificationsPlugin();
+    _notif.initialize(const InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    )).then((_) {
+      _notif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+    });
     final rng = Random(7777);
     _starList = List.generate(18, (_) => _StarParticle(rng));
     _glowCtrl = AnimationController(
@@ -476,6 +485,7 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     if (file != null) _resultCtrl.forward(from: 0); // S29: animate in
+    if (file != null) _fireCompletionNotif(filename, score); // S61
 
     // S19: Save job record locally for persistent re-download
     if (file != null && _jobId != null) {
@@ -515,6 +525,23 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(seconds: 6),
       ));
     }
+  }
+
+  // ── S61: completion notification ──────────────────────────────────────────
+  Future<void> _fireCompletionNotif(String filename, dynamic score) async {
+    final s = score is num ? score.round() : 0;
+    final label = s >= 96 ? 'ممتاز' : s >= 90 ? 'رائع' : s >= 85 ? 'جيد جداً' : 'جيد';
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'tilawa_done', 'التحسين اكتمل',
+        channelDescription: 'إشعار عند اكتمال تحسين التلاوة',
+        importance: Importance.high, priority: Priority.high,
+        color: Color(0xFFC8A048),
+        icon: '@mipmap/ic_launcher',
+        playSound: true, enableVibration: true),);
+    try {
+      await _notif.show(0, 'محسِّن التلاوة ✦', '$filename · $s/100 $label', details);
+    } catch (_) {}
   }
 
   // ── Manual re-download button ──────────────────────────────────────────────
