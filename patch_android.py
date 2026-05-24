@@ -21,7 +21,7 @@ plugins {
 }
 android {
     namespace "com.tilawa.tilawa_enhancer"
-    compileSdk 34
+    compileSdk 36
     ndkVersion flutter.ndkVersion
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -31,7 +31,7 @@ android {
     defaultConfig {
         applicationId "com.tilawa.tilawa_enhancer"
         minSdk 21
-        targetSdk 34
+        targetSdk 36
         versionCode 9
         versionName "2.7.0"
     }
