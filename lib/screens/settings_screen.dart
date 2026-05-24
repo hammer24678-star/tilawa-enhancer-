@@ -278,7 +278,7 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
         size: 14, color: Color(0xFF484F58)),
       onTap: () async {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('seen_welcome_v2'); // S32
+        await prefs.remove('seen_welcome_v3'); // S32
         if (!context.mounted) return;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
