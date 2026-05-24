@@ -36,7 +36,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
   String  _engine    = 'v10.0';
