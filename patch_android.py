@@ -24,10 +24,11 @@ android {
     compileSdk 36
     ndkVersion flutter.ndkVersion
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
-    kotlinOptions { jvmTarget = "1.8" }
+    kotlinOptions { jvmTarget = "17" }
     defaultConfig {
         applicationId "com.tilawa.tilawa_enhancer"
         minSdk 21
@@ -56,6 +57,7 @@ configurations.all {
 flutter { source "../.." }
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
 }
 """)
 print("  build.gradle OK (v11: versionCode=9, versionName=2.7.0)")
