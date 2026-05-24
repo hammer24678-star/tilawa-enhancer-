@@ -1095,7 +1095,7 @@ class _HomeScreenState extends State<HomeScreen>
                     border: Border.all(
                       color: col.withOpacity(0.38 + 0.18 * g), width: 1))))),
             ]);
-          }),
+          })),
         ShaderMask(
           shaderCallback: (b) => LinearGradient(
             colors: [col, col.withOpacity(0.65)],
@@ -1256,7 +1256,7 @@ class _HomeScreenState extends State<HomeScreen>
                       color: col.withOpacity(0.55 + 0.35 * g),
                       width: 2.0)))),
               ]);
-            }),
+            })),
           // S50: JSX khatam card
           if (e.imgAsset == null) Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
