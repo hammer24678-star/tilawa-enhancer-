@@ -844,7 +844,7 @@ class _HomeScreenState extends State<HomeScreen>
                           child: const Icon(Icons.menu_book_rounded,
                             color: _gold, size: 44)))))),
                 ]));
-            }),
+            })),
           const SizedBox(height: 16),
           // S61-HEADER-NAME — always Arabic, elegant sizing
           ShaderMask(
@@ -961,7 +961,7 @@ class _HomeScreenState extends State<HomeScreen>
                             color: c.withOpacity(0.4 + 0.5 * t),
                             blurRadius: 5 + 8 * t)])),
                     ]));
-                }),
+                })),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
