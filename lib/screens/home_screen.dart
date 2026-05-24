@@ -166,8 +166,8 @@ class _HomeScreenState extends State<HomeScreen>
     _geoRotCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 80))
       ..repeat();
-    _audioBarsCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
+    _audioBarsCtrl = AnimationController( // S62-BARS-CTRL
+        vsync: this, duration: const Duration(milliseconds: 1800))
       ..repeat(reverse: true);
     _shimmerSweep = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1200));
@@ -1469,27 +1469,35 @@ class _HomeScreenState extends State<HomeScreen>
                     color: const Color(0xFFC8A048), size: 34)))),
             const SizedBox(height: 16),
             // ── Animated waveform bars (file selected) / empty placeholder ──
-            SizedBox(height: 32,
+            SizedBox(height: 48, // S62-FILE-BOX
               child: hasFile
-                ? AnimatedBuilder(
+                ? AnimatedBuilder( // S62-FILE-BARS
                     animation: _audioBarsCtrl,
                     builder: (_, __) => Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: List.generate(22, (i) {
-                        final phase = (_audioBarsCtrl.value + i * 0.13) % 1.0;
-                        final ht = 4.0 + 24.0 *
-                          sin(phase * pi).abs() *
-                          (0.4 + 0.6 * sin(i * 0.95).abs());
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: List.generate(26, (i) {
+                        final v = _audioBarsCtrl.value;
+                        final f1 = sin((v + i / 26) * 6.2832 * 1.4);
+                        final f2 = sin((v * 1.9 + i / 26) * 6.2832 * 0.7);
+                        final f3 = sin((v * 0.5 + i / 26) * 6.2832 * 2.1);
+                        final wave = f1 * 0.5 + f2 * 0.3 + f3 * 0.2;
+                        final barH = 5.0 + 36.0 * (wave * 0.5 + 0.5);
+                        final glow = 0.45 + 0.55 * v;
                         return Container(
-                          width: 3, height: ht,
+                          width: 3, height: barH,
                           margin: const EdgeInsets.symmetric(horizontal: 1.5),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(2),
-                            gradient: const LinearGradient(
+                            gradient: LinearGradient(
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
-                              colors: [Color(0xFF1DB898), Color(0xFFC8A048)])));
+                              colors: [
+                                const Color(0xFF1DB898).withOpacity(glow),
+                                const Color(0xFFD4AF37).withOpacity(glow * 0.8)]),
+                            boxShadow: [BoxShadow(
+                              color: const Color(0xFF1DB898).withOpacity(0.25 * v),
+                              blurRadius: 4)]));
                       })))
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1862,24 +1870,36 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(height: 10),
             AnimatedBuilder(
               animation: _audioBarsCtrl,
-              builder: (_, __) {
-                const n = 14;
+              builder: (_, __) { // S62-PROG-BARS
+                const n = 20;
+                final v = _audioBarsCtrl.value;
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: List.generate(n, (i) {
-                    final h = 4.0 + 14.0 * (sin(
-                      (_audioBarsCtrl.value + i/n) * 6.2832 * 1.5
-                    ) * 0.5 + 0.5);
+                    // Multi-frequency: primary + harmonic + slow swell
+                    final f1 = sin((v + i / n) * 6.2832 * 1.5);
+                    final f2 = sin((v * 1.7 + i / n) * 6.2832 * 0.8);
+                    final f3 = sin((v * 0.4 + i / n) * 6.2832 * 0.3);
+                    final wave = (f1 * 0.55 + f2 * 0.28 + f3 * 0.17);
+                    final h = 6.0 + 28.0 * (wave * 0.5 + 0.5);
                     final lit = (i / n) < _progress;
+                    final bright = 0.55 + 0.45 * v;
                     return Container(
-                      width: 3.5, height: h,
+                      width: 3.0, height: h,
                       margin: const EdgeInsets.only(right: 2.5),
                       decoration: BoxDecoration(
-                        color: lit
-                          ? _gold.withOpacity(0.65 + 0.35 * _audioBarsCtrl.value)
-                          : _teal.withOpacity(0.22),
-                        borderRadius: BorderRadius.circular(2)));
+                        gradient: lit ? LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            _gold.withOpacity(bright),
+                            _goldLight.withOpacity(bright * 0.7)]) : null,
+                        color: lit ? null : _teal.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(2),
+                        boxShadow: lit ? [BoxShadow(
+                          color: _gold.withOpacity(0.35 * v),
+                          blurRadius: 4)] : null));
                   }));
               }),
           ]))),
