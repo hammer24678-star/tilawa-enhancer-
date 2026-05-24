@@ -811,7 +811,8 @@ class _HomeScreenState extends State<HomeScreen>
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ]),
         ),
-      ]),
+        ]),
+      ),
     );
   }
 
