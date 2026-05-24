@@ -719,8 +719,7 @@ class _HomeScreenState extends State<HomeScreen>
                   builder: (_, __) => CustomPaint(
                     painter: _StarsPainter(_starCtrl.value, _starList),
                     isComplex: true))))),
-          SafeArea(
-          child: CustomScrollView(slivers: [
+          CustomScrollView(slivers: [ // S62b
             SliverAppBar( // S61-APPBAR
               pinned: true,
               floating: false,
