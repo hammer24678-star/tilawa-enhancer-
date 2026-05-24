@@ -654,9 +654,9 @@ class _HomeScreenState extends State<HomeScreen>
             child: IgnorePointer(
               child: RepaintBoundary(
                 child: CustomPaint(
-                painter: _GeoPainter(),
-                isComplex: true,
-                willChange: false))),
+                  painter: _GeoPainter(),
+                  isComplex: true,
+                  willChange: false)))),
           // S58: rising particles (engine-tinted incense dots)
           if (dark) Positioned.fill(
             child: IgnorePointer(
