@@ -87,7 +87,7 @@ class S {
   String get english      => ar ? 'الإنجليزية'       : 'English';
   String get engineHistory=> ar ? 'تاريخ المحركات'   : 'Engine History';
   String get about        => ar ? 'عن التطبيق'       : 'About';
-  String get version        => ar ? 'الإصدار 2.9'  : 'Version 2.9';
+  String get version        => ar ? 'الإصدار 1.0'  : 'Version 1.0';
   String get target         =>
     ar ? 'الهدف: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19'
        : 'Target: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19';
