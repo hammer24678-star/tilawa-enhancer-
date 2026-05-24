@@ -778,7 +778,7 @@ class _HomeScreenState extends State<HomeScreen>
         child: Column(children: [
           // Orbital ring + logo
           // S31-3RINGS
-          AnimatedBuilder(
+          RepaintBoundary(child: AnimatedBuilder( // S59b-ORBITAL-RB
             animation: Listenable.merge([_glowCtrl, _geoRotCtrl]),
             builder: (_, __) {
               final t  = _glowCtrl.value;
@@ -876,7 +876,7 @@ class _HomeScreenState extends State<HomeScreen>
     // S29-ICONBTN-SACRED
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedBuilder(
+      child: RepaintBoundary(child: AnimatedBuilder( // S59b-ICONBTN-RB
         animation: _glowCtrl,
         builder: (_, __) => Container(
           padding: const EdgeInsets.all(10),
@@ -923,7 +923,7 @@ class _HomeScreenState extends State<HomeScreen>
                   strokeWidth: 1.5,
                   color: Color(0xFFD4AF37)))
             else
-              AnimatedBuilder(
+              RepaintBoundary(child: AnimatedBuilder( // S59b-SRVDOT-RB
                 animation: _glowCtrl,
                 builder: (_, __) {
                   final t = _glowCtrl.value;
@@ -1053,7 +1053,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _khatamBadge(Color col, double score, {double size = 42}) {
     return SizedBox(width: size, height: size,
       child: Stack(alignment: Alignment.center, children: [
-        AnimatedBuilder(
+        RepaintBoundary(child: AnimatedBuilder( // S59b-ENGRING-RB
           animation: _glowCtrl,
           builder: (_, __) {
             final g = _glowCtrl.value;
