@@ -191,6 +191,19 @@ class _HomeScreenState extends State<HomeScreen>
     ApiService.loadLastEngine().then((e) {
       if (mounted) setState(() => _engine = e);
     });
+    // S57: restore in-progress job after app kill
+    ApiService.loadJobId().then((saved) {
+      if (!mounted || saved == null) return;
+      setState(() {
+        _jobId  = saved['job_id'];
+        _engine = saved['engine'] ?? _engine;
+        _busy   = true;
+        _status = 'استئناف المعالجة...';
+        _progress = 0.35;
+        _processStart = DateTime.now();
+      });
+      _startPolling();
+    });
   }
 
   @override
@@ -251,6 +264,7 @@ class _HomeScreenState extends State<HomeScreen>
       _status = ''; _isMerging = false;
       _jobId = null;
     });
+    ApiService.clearJobId(); // S57
   }
 
   // ── S28: Reset for new file ────────────────────────────────────────────────
@@ -262,6 +276,7 @@ class _HomeScreenState extends State<HomeScreen>
       _isMerging = false; _sizeLabel = '';
       _isLarge = false; _fileBytes = 0;
     });
+    ApiService.clearJobId(); // S57
   }
 
   // ── File picker ────────────────────────────────────────────────────────────
@@ -304,6 +319,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (mounted) setState(() { _progress = p; _status = label; });
       });
       _jobId = resp['job_id'];
+      ApiService.saveJobId(_jobId!, _engine); // S57
       _startPolling();
     } catch (e) {
       setState(() {

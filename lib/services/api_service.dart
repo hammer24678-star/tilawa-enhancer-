@@ -71,7 +71,39 @@ class ApiService {
     } catch (_) {
       return 'v10.0'; // S32-BUG5-FIX: was 'v9.0', inconsistent with normal path
     }
-  }  // ── Upload — auto-selects direct or chunked ────────────────────────────────
+  }
+
+  // S57: persist active job_id so app-kill never loses in-progress jobs
+  static const _activeJobKey    = 'active_job_id_v1';
+  static const _activeEngineKey = 'active_job_engine_v1';
+
+  static Future<void> saveJobId(String jobId, String engine) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_activeJobKey,    jobId);
+      await prefs.setString(_activeEngineKey, engine);
+    } catch (_) {}
+  }
+
+  static Future<void> clearJobId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_activeJobKey);
+      await prefs.remove(_activeEngineKey);
+    } catch (_) {}
+  }
+
+  static Future<Map<String, String>?> loadJobId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jobId  = prefs.getString(_activeJobKey);
+      final engine = prefs.getString(_activeEngineKey) ?? 'v10.0';
+      if (jobId != null && jobId.isNotEmpty) return {'job_id': jobId, 'engine': engine};
+    } catch (_) {}
+    return null;
+  }
+
+  // ── Upload — auto-selects direct or chunked ────────────────────────────────
 
   static Future<Map<String, dynamic>> uploadFile(
     File file,
