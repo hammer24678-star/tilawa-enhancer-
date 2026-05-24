@@ -810,7 +810,6 @@ class _HomeScreenState extends State<HomeScreen>
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ]),
-        ),
         ]),
       ),
     );
