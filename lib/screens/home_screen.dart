@@ -904,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen>
             boxShadow: [BoxShadow(
               color: _teal.withOpacity(0.08 + 0.08 * _glowCtrl.value),
               blurRadius: 10)]),
-          child: Icon(icon, color: _textB, size: 20))));
+          child: Icon(icon, color: _textB, size: 20)))));
   }
 
   // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
@@ -1779,7 +1779,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     boxShadow: [BoxShadow(
                                       color: col.withOpacity(0.5),
                                       blurRadius: 6,
-                                      spreadRadius: 0)]))))],
+                                      spreadRadius: 0)])))))],
                           ),
                         ]));
                     }).toList())),
