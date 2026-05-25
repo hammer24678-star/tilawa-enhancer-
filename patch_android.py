@@ -517,7 +517,13 @@ class LocalEngineRunner(
                 }
             }
         }
-        progress(36, "Alpine ready")
+        // Diagnose what tar actually extracted
+        val binDir = File(alpineDir, "bin")
+        val binContents = binDir.listFiles()?.joinToString(",") { it.name } ?: "bin/ missing"
+        val usrBinContents = File(alpineDir, "usr/bin").listFiles()?.take(5)?.joinToString(",") { it.name } ?: "usr/bin/ missing"
+        val libExists = File(alpineDir, "lib/ld-musl-aarch64.so.1").exists()
+        progress(36, "Alpine: bin=[$binContents] usrbin=[$usrBinContents] musl=$libExists")
+        android.os.SystemClock.sleep(8000) // pause so user can read
 
         // 3. Python + scipy + ffmpeg
         if (!File(alpineDir, "usr/bin/python3").exists()) {
