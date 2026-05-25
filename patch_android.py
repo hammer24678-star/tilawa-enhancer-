@@ -513,11 +513,11 @@ class LocalEngineRunner(
         // 3. Python + scipy + ffmpeg
         if (!File(alpineDir, "usr/bin/python3").exists()) {
             progress(38, "Installing Python + ffmpeg (4–8 min, ~120 MB)…")
-            val (rc, out) = runProot(listOf("/bin/sh", "-c",
-                "apk update --no-progress 2>&1 && " +
-                "apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1"),
-                timeoutMin = 20)
-            if (rc != 0) throw IOException("apk failed rc=$rc: $out")
+            val (rc1, out1) = runProot(listOf("/usr/bin/apk", "update", "--no-progress"), timeoutMin = 10)
+            if (rc1 != 0) throw IOException("apk update failed rc=$rc1: $out1")
+            val (rc, out) = runProot(listOf("/usr/bin/apk", "add", "--no-progress",
+                "python3", "py3-numpy", "py3-scipy", "ffmpeg"), timeoutMin = 20)
+            if (rc != 0) throw IOException("apk add failed rc=$rc: $out")
         }
         progress(78, "Python + ffmpeg ready")
 
