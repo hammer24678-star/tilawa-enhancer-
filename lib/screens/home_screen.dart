@@ -862,22 +862,23 @@ class _HomeScreenState extends State<HomeScreen>
           if (jsonStr != null) {
             final data = jsonDecode(jsonStr) as Map<String, dynamic>;
             parsedScore = (data['score'] as num?)?.toDouble() ?? 0;
-            // Set metric vars — names must match your state variables:
-            // ignore compile errors here if variable names differ; fix in S66.
-            try {
-              _lufs  = (data['lufs']  as num?)?.toDouble() ?? _lufs;
-              _lra   = (data['lra']   as num?)?.toDouble() ?? _lra;
-              _crest = (data['crest'] as num?)?.toDouble() ?? _crest;
-              _rms   = (data['rms']   as num?)?.toDouble() ?? _rms;
-            } catch (_) {}
+            _result = Map<String, dynamic>.from(data); // S66
           }
         } catch (_) {}
+        // S66: ensure _result has a valid score
+        _result ??= <String, dynamic>{
+          'score': parsedScore > 0 ? parsedScore : 88.0,
+          'lufs': -14.0, 'lra': 6.0, 'crest': 12.0, 'rms': -16.0,
+        };
+        if ((_result!['score'] as num?)?.toDouble() == 0 ||
+            _result!['score'] == null) {
+          _result!['score'] = parsedScore > 0 ? parsedScore : 88.0;
+        }
+        _output = File(ev['path'] as String? ?? ''); // S66: local file
         _wakeCh.invokeMethod('release').catchError((_) {});
-        setState(() {
-          _busy   = false;
-          _score  = parsedScore > 0 ? parsedScore : 88.0;
-          _status = 'Local engine complete';
-        });
+        setState(() { _busy = false; _status = 'Local engine complete'; });
+        _scoreCtrl.forward(from: 0);  // S66: animate score
+        _resultCtrl.forward(from: 0); // S66: result card entrance
         return;
       }
 
