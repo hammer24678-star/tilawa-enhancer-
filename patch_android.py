@@ -508,7 +508,7 @@ class LocalEngineRunner(
             extractTarGz(tar, alpineDir)
             tar.delete()
             File(alpineDir, "etc/resolv.conf")
-                .writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+                .writeText("nameserver 8.8.8.8\\nnameserver 1.1.1.1\\n")
             File(alpineDir, "proc").mkdirs()
             File(alpineDir, "dev").mkdirs()
             File(alpineDir, "sys").mkdirs()
