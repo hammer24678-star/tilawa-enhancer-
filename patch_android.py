@@ -649,6 +649,7 @@ class LocalEngineRunner(
             val prootTmp = context.codeCacheDir.also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             environment()["PROOT_FORCE_KOMPAT"] = "1"
+            File(context.applicationInfo.nativeLibraryDir, "libproot-loader.so").let { if (it.exists()) environment()["PROOT_LOADER"] = it.absolutePath }
         }.start()
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
         val code = try {
