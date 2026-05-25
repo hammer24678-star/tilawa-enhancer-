@@ -430,7 +430,7 @@ class LocalEngineRunner(
     private val alpineDir   = File(dataDir, "alpine")
     private val enginesDir  = File(dataDir, "engines")
     private val refAudioDir = File(dataDir, "reference_audio")
-    private val prootBin    = File(dataDir, "proot")
+    private val prootBin    get() = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
     private val cacheDir    = context.cacheDir
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -482,13 +482,7 @@ class LocalEngineRunner(
         progress(1, "Detecting device ($archStr)…")
 
         // 1. proot binary — bundled in APK assets
-        if (!prootBin.exists() || !prootBin.canExecute()) {
-            progress(3, "Extracting proot…")
-            context.assets.open("bin/proot-aarch64").use { inp ->
-                prootBin.outputStream().use { out -> inp.copyTo(out) }
-            }
-            prootBin.setExecutable(true)
-        }
+        if (!prootBin.canExecute()) throw Exception("libproot.so not executable")
         progress(10, "proot ready")
 
         // 2. Alpine rootfs
