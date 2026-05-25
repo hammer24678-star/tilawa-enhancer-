@@ -703,14 +703,23 @@ class LocalEngineRunner(
                 val dest = File(destDir, fullName)
                 try {
                 when (typeFlag) {
+                    '1' -> { // Hardlink — copy source file
+                        dest.parentFile?.mkdirs()
+                        val src = File(destDir, linkName.trimStart('/'))
+                        if (src.exists()) { src.copyTo(dest, overwrite = true)
+                            if (mode and 0b001_000_001L != 0L) dest.setExecutable(true, false) }
+                        skipPadded(size)
+                    }
                     '0', '\u0000', '7' -> {
                         dest.parentFile?.mkdirs()
                         FileOutputStream(dest).use { out ->
                             var rem = size; val buf = ByteArray(8192)
                             while (rem > 0) { val n = gz.read(buf, 0, minOf(rem, 8192L).toInt()); if (n == -1) break; out.write(buf, 0, n); rem -= n }
                         }
-                        val pad = ((512 - (size % 512)) % 512).toInt()
-                        if (pad > 0) { val tmp = ByteArray(pad); gz.read(tmp) }
+                        // Proper padded skip loop (single gz.read may return partial)
+                        var remPad = ((512 - (size % 512)) % 512)
+                        val padBuf = ByteArray(512)
+                        while (remPad > 0) { val n = gz.read(padBuf, 0, minOf(remPad, 512L).toInt()); if (n == -1) break; remPad -= n }
                         if (mode and 0b001_000_001L != 0L) dest.setExecutable(true, false)
                     }
                     '2' -> {
