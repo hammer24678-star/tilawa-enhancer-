@@ -483,6 +483,16 @@ class LocalEngineRunner(
 
         // 1. proot binary — bundled in APK assets
         if (!prootBin.canExecute()) throw Exception("libproot.so not executable")
+        // Copy libtalloc2.so -> libtalloc.so.2 in filesDir for proot
+        val tallocSrc = File(context.applicationInfo.nativeLibraryDir, "libtalloc2.so")
+        val tallocDst = File(dataDir, "libtalloc.so.2")
+        if (tallocSrc.exists() && !tallocDst.exists())
+            tallocSrc.copyTo(tallocDst, overwrite = true)
+        // Copy libtalloc2.so -> libtalloc.so.2 in filesDir for proot
+        val tallocSrc = File(context.applicationInfo.nativeLibraryDir, "libtalloc2.so")
+        val tallocDst = File(dataDir, "libtalloc.so.2")
+        if (tallocSrc.exists() && !tallocDst.exists())
+            tallocSrc.copyTo(tallocDst, overwrite = true)
         progress(10, "proot ready")
 
         // 2. Alpine rootfs
@@ -577,6 +587,7 @@ class LocalEngineRunner(
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 environment()["TERM"] = "xterm"
+            environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
             }.start()
             engineProc = proc
 
@@ -621,6 +632,7 @@ class LocalEngineRunner(
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             environment()["TERM"] = "xterm"
+            environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
         }.start()
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
         val code = try {
