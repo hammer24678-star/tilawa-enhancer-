@@ -626,10 +626,7 @@ class LocalEngineRunner(
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
             "-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf",
             "-w", "/",
-            "--kill-on-exit",
-            "--env", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "--env", "HOME=/root",
-            "--env", "TERM=xterm") + args
+            "--kill-on-exit") + args
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
