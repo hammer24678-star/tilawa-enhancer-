@@ -599,9 +599,8 @@ class LocalEngineRunner(
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 environment()["TERM"] = "xterm"
             environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
-            val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }
+            val prootTmp = context.codeCacheDir.also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-            environment()["PROOT_LOADER"] = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so").absolutePath
             environment()["PROOT_FORCE_KOMPAT"] = "1"
             }.start()
             engineProc = proc
@@ -647,9 +646,8 @@ class LocalEngineRunner(
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             environment()["TERM"] = "xterm"
             environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
-            val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }
+            val prootTmp = context.codeCacheDir.also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-            environment()["PROOT_LOADER"] = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so").absolutePath
             environment()["PROOT_FORCE_KOMPAT"] = "1"
         }.start()
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
