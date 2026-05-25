@@ -488,11 +488,7 @@ class LocalEngineRunner(
         val tallocDst = File(dataDir, "libtalloc.so.2")
         if (tallocSrc.exists() && !tallocDst.exists())
             tallocSrc.copyTo(tallocDst, overwrite = true)
-        // Copy libtalloc2.so -> libtalloc.so.2 in filesDir for proot
-        val tallocSrc = File(context.applicationInfo.nativeLibraryDir, "libtalloc2.so")
-        val tallocDst = File(dataDir, "libtalloc.so.2")
-        if (tallocSrc.exists() && !tallocDst.exists())
-            tallocSrc.copyTo(tallocDst, overwrite = true)
+
         progress(10, "proot ready")
 
         // 2. Alpine rootfs
