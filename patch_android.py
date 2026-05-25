@@ -507,11 +507,11 @@ class LocalEngineRunner(
         // 3. Python + scipy + ffmpeg
         if (!File(alpineDir, "usr/bin/python3").exists()) {
             progress(38, "Installing Python + ffmpeg (4–8 min, ~120 MB)…")
-            val rc = runProot(listOf("/bin/sh", "-c",
+            val (rc, out) = runProot(listOf("/bin/sh", "-c",
                 "apk update --no-progress 2>&1 && " +
                 "apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1"),
                 timeoutMin = 20)
-            if (rc != 0) throw IOException("apk failed rc=$rc: $output")
+            if (rc != 0) throw IOException("apk failed rc=$rc: $out")
         }
         progress(78, "Python + ffmpeg ready")
 
@@ -608,7 +608,7 @@ class LocalEngineRunner(
         } finally { engineProc = null }
     }
 
-    private fun runProot(args: List<String>, timeoutMin: Int = 35): Int {
+    private fun runProot(args: List<String>, timeoutMin: Int = 35): Pair<Int, String> {
         val cmd = mutableListOf(prootBin.absolutePath,
             "--link2symlink",
             "-0",
@@ -623,10 +623,11 @@ class LocalEngineRunner(
             environment()["TERM"] = "xterm"
         }.start()
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
-        return try {
+        val code = try {
             if (!proc.waitFor(timeoutMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
             else proc.exitValue()
         } catch (_: Exception) { proc.destroyForcibly(); -1 }
+        return Pair(code, output)
     }
 
     private fun download(url: String, dest: File, label: String, p0: Int, p1: Int) {
