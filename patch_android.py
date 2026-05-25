@@ -511,7 +511,7 @@ class LocalEngineRunner(
                 "apk update --no-progress 2>&1 && " +
                 "apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1"),
                 timeoutMin = 20)
-            if (rc != 0) throw IOException("apk install failed (rc=$rc)")
+            if (rc != 0) throw IOException("apk failed rc=$rc: $output")
         }
         progress(78, "Python + ffmpeg ready")
 
@@ -622,9 +622,7 @@ class LocalEngineRunner(
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             environment()["TERM"] = "xterm"
         }.start()
-        val output = proc.inputStream.bufferedReader().readText()
-        val logFile = File(dataDir, "proot_setup.log")
-        logFile.appendText("CMD: " + cmd.joinToString(" ") + "\nOUT: " + output + "\n---\n")
+        val output = proc.inputStream.bufferedReader().readText().takeLast(800)
         return try {
             if (!proc.waitFor(timeoutMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
             else proc.exitValue()
