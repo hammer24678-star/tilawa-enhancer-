@@ -605,10 +605,18 @@ class LocalEngineRunner(
 
     private fun runProot(args: List<String>, timeoutMin: Int = 35): Int {
         val cmd = mutableListOf(prootBin.absolutePath,
+            "--link2symlink",
+            "-0",
             "-r", alpineDir.absolutePath,
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
+            "-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf",
+            "-w", "/",
             "--kill-on-exit") + args
-        val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
+            environment()["HOME"] = "/root"
+            environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            environment()["TERM"] = "xterm"
+        }.start()
         proc.inputStream.bufferedReader().readText()
         return try {
             if (!proc.waitFor(timeoutMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
