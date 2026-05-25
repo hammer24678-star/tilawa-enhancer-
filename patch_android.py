@@ -492,7 +492,7 @@ class LocalEngineRunner(
         progress(10, "proot ready")
 
         // 2. Alpine rootfs
-        if (!File(alpineDir, "usr").exists()) {
+        if (!File(alpineDir, "usr/bin/busybox").exists()) {
             progress(12, "Downloading Alpine Linux $ALPINE_VER…")
             val url = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/$archStr/" +
                       "alpine-minirootfs-$ALPINE_VER-$archStr.tar.gz"
@@ -624,8 +624,7 @@ class LocalEngineRunner(
             "-0",
             "-r", alpineDir.absolutePath,
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
-            "-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf",
-            "-w", "/",
+                        "-w", "/",
             "--kill-on-exit") + args
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
             environment()["HOME"] = "/root"
