@@ -594,8 +594,10 @@ class LocalEngineRunner(
             val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
             val inParent  = File(inputPath).parent ?: cacheDir.absolutePath
 
+            val prootExeEng = File(dataDir, "proot-pkg/bin/proot").takeIf { it.exists() } ?: prootBin
+            val loaderExeEng = File(dataDir, "proot-pkg/libexec/proot/loader")
             val cmd = mutableListOf(
-                prootBin.absolutePath,
+                prootExeEng.absolutePath,
                 "--link2symlink", "-0",
                 "-r", alpineDir.absolutePath,
                 "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
@@ -614,10 +616,11 @@ class LocalEngineRunner(
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 environment()["TERM"] = "xterm"
-            environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
-            val prootTmp = context.codeCacheDir.also { it.mkdirs() }
-            environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-            environment()["PROOT_FORCE_KOMPAT"] = "1"
+                environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
+                val prootTmp = context.codeCacheDir.also { it.mkdirs() }
+                environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+                environment()["PROOT_FORCE_KOMPAT"] = "1"
+                if (loaderExeEng.exists()) environment()["PROOT_LOADER"] = loaderExeEng.absolutePath
             }.start()
             engineProc = proc
 
