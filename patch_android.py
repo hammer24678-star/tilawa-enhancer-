@@ -672,17 +672,57 @@ class LocalEngineRunner(
 
     private fun extractTarGz(tarGz: File, destDir: File) {
         destDir.mkdirs()
-        for (cmd in listOf(
-            listOf("/system/bin/tar",    "xzf", tarGz.absolutePath, "-C", destDir.absolutePath),
-            listOf("/system/xbin/tar",   "xzf", tarGz.absolutePath, "-C", destDir.absolutePath),
-            listOf("/system/bin/toybox", "tar", "xzf", tarGz.absolutePath, "-C", destDir.absolutePath),
-        )) {
-            if (!File(cmd[0]).exists()) continue
-            val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
-            proc.inputStream.bufferedReader().readText()
-            if (proc.waitFor(10, TimeUnit.MINUTES) && proc.exitValue() == 0) return
+        java.util.zip.GZIPInputStream(tarGz.inputStream().buffered(65536)).use { gz ->
+            val hdr = ByteArray(512)
+            fun readFull(buf: ByteArray): Boolean {
+                var off = 0
+                while (off < buf.size) {
+                    val n = gz.read(buf, off, buf.size - off)
+                    if (n == -1) return false
+                    off += n
+                }
+                return true
+            }
+            fun str(start: Int, len: Int) = String(hdr, start, len).trimEnd('\u0000').trim()
+            fun skipPadded(size: Long) {
+                if (size <= 0) return
+                val pad = ((size + 511) / 512 * 512)
+                var rem = pad; val tmp = ByteArray(4096)
+                while (rem > 0) { val n = gz.read(tmp, 0, minOf(rem, 4096L).toInt()); if (n == -1) break; rem -= n }
+            }
+            while (true) {
+                if (!readFull(hdr)) break
+                if (hdr.all { it == 0.toByte() }) break
+                val rawName = str(0, 100)
+                val prefix  = str(345, 155)
+                val size    = str(124, 12).toLongOrNull(8) ?: 0L
+                val mode    = str(100, 8).toLongOrNull(8) ?: 0L
+                val typeFlag= hdr[156].toInt().and(0xFF).toChar()
+                val linkName= str(157, 100)
+                val fullName= (if (prefix.isEmpty()) rawName else "$prefix/$rawName").trimStart('/')
+                if (fullName.isEmpty() || fullName == ".") { skipPadded(size); continue }
+                val dest = File(destDir, fullName)
+                when (typeFlag) {
+                    '0', '\u0000', '7' -> {
+                        dest.parentFile?.mkdirs()
+                        FileOutputStream(dest).use { out ->
+                            var rem = size; val buf = ByteArray(8192)
+                            while (rem > 0) { val n = gz.read(buf, 0, minOf(rem, 8192L).toInt()); if (n == -1) break; out.write(buf, 0, n); rem -= n }
+                        }
+                        val pad = ((512 - (size % 512)) % 512).toInt()
+                        if (pad > 0) { val tmp = ByteArray(pad); gz.read(tmp) }
+                        if (mode and 0b001_000_001L != 0L) dest.setExecutable(true, false)
+                    }
+                    '2' -> {
+                        dest.parentFile?.mkdirs(); dest.delete()
+                        try { android.system.Os.symlink(linkName, dest.absolutePath) } catch (_: Exception) {}
+                        skipPadded(size)
+                    }
+                    '5' -> { dest.mkdirs(); skipPadded(size) }
+                    else -> skipPadded(size)
+                }
+            }
         }
-        throw IOException("No usable tar binary found on device")
     }
 
     private fun extractEngines() {
