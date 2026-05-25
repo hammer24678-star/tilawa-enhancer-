@@ -624,7 +624,7 @@ class LocalEngineRunner(
         }.start()
         val output = proc.inputStream.bufferedReader().readText()
         val logFile = File(dataDir, "proot_setup.log")
-        logFile.appendText("CMD: ${cmd.joinToString(" ")}\nOUT: $output\n---\n")
+        logFile.appendText("CMD: " + cmd.joinToString(" ") + "\nOUT: " + output + "\n---\n")
         return try {
             if (!proc.waitFor(timeoutMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
             else proc.exitValue()
