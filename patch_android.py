@@ -699,8 +699,9 @@ class LocalEngineRunner(
                 val typeFlag= hdr[156].toInt().and(0xFF).toChar()
                 val linkName= str(157, 100)
                 val fullName= (if (prefix.isEmpty()) rawName else "$prefix/$rawName").trimStart('/')
-                if (fullName.isEmpty() || fullName == ".") { skipPadded(size); continue }
+                if (fullName.isEmpty() || fullName == "." || fullName.contains("..")) { skipPadded(size); continue }
                 val dest = File(destDir, fullName)
+                try {
                 when (typeFlag) {
                     '0', '\u0000', '7' -> {
                         dest.parentFile?.mkdirs()
@@ -720,6 +721,7 @@ class LocalEngineRunner(
                     '5' -> { dest.mkdirs(); skipPadded(size) }
                     else -> skipPadded(size)
                 }
+                } catch (_: Exception) { /* skip bad entry, continue */ }
             }
         }
     }
