@@ -513,10 +513,10 @@ class LocalEngineRunner(
         // 3. Python + scipy + ffmpeg
         if (!File(alpineDir, "usr/bin/python3").exists()) {
             progress(38, "Installing Python + ffmpeg (4–8 min, ~120 MB)…")
-            val (rc1, out1) = runProot(listOf("/usr/bin/apk", "update", "--no-progress"), timeoutMin = 10)
+            val (rc1, out1) = runProot(listOf("/bin/sh", "-c", "apk update --no-progress 2>&1"), timeoutMin = 10)
             if (rc1 != 0) throw IOException("apk update failed rc=$rc1: $out1")
-            val (rc, out) = runProot(listOf("/usr/bin/apk", "add", "--no-progress",
-                "python3", "py3-numpy", "py3-scipy", "ffmpeg"), timeoutMin = 20)
+            val (rc, out) = runProot(listOf("/bin/sh", "-c",
+                "apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1"), timeoutMin = 20)
             if (rc != 0) throw IOException("apk add failed rc=$rc: $out")
         }
         progress(78, "Python + ffmpeg ready")
@@ -626,7 +626,10 @@ class LocalEngineRunner(
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
             "-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf",
             "-w", "/",
-            "--kill-on-exit") + args
+            "--kill-on-exit",
+            "--env", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "--env", "HOME=/root",
+            "--env", "TERM=xterm") + args
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
