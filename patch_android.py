@@ -481,31 +481,12 @@ class LocalEngineRunner(
 
         progress(1, "Detecting device ($archStr)…")
 
-        // 1. Download proot + loader from green-green-avk (Android-specific build)
-        val prootPkg   = File(dataDir, "proot-android.tar.gz")
-        val prootReady = File(dataDir, "proot-bin/proot")
-        val loaderReady= File(dataDir, "proot-bin/loader")
-        if (!prootReady.exists() || !loaderReady.exists()) {
-            progress(2, "Downloading proot for Android…")
-            val pkgUrl = "https://raw.githubusercontent.com/green-green-avk/build-proot-android/master/packages/proot-android-$archStr.tar.gz"
-            download(pkgUrl, prootPkg, "proot", 2, 9)
-            progress(9, "Extracting proot…")
-            File(dataDir, "proot-bin").mkdirs()
-            extractTarGz(prootPkg, File(dataDir, "proot-bin"))
-            prootPkg.delete()
-            // The package extracts to root/bin/proot and root/bin/loader
-            val extractedProot  = File(dataDir, "proot-bin/root/bin/proot")
-            val extractedLoader = File(dataDir, "proot-bin/root/bin/loader")
-            if (extractedProot.exists()) {
-                extractedProot.copyTo(prootReady, overwrite = true)
-                prootReady.setExecutable(true)
-            } else throw Exception("proot binary not found in package")
-            if (extractedLoader.exists()) {
-                extractedLoader.copyTo(loaderReady, overwrite = true)
-                loaderReady.setExecutable(true)
-            }
-        }
-        progress(10, "proot ready")
+        // 1. Use bundled libproot.so from nativeLibraryDir (always executable on Android)
+        //    Android 10+ marks filesDir as noexec — downloaded binaries cannot run there.
+        //    libproot.so lives in /data/app/.../lib/ which has exec permission.
+        if (!prootBin.exists()) throw Exception("libproot.so not found in nativeLibraryDir")
+        if (!prootBin.canExecute()) prootBin.setExecutable(true)
+        progress(10, "proot ready (bundled libproot.so)")
 
         // 2. Alpine rootfs
         if (!File(alpineDir, "usr/bin/busybox").exists()) {
@@ -594,10 +575,8 @@ class LocalEngineRunner(
             val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
             val inParent  = File(inputPath).parent ?: cacheDir.absolutePath
 
-            val prootExeEng = File(dataDir, "proot-bin/proot").takeIf { it.exists() } ?: prootBin
-            val loaderExeEng = File(dataDir, "proot-bin/loader")
             val cmd = mutableListOf(
-                prootExeEng.absolutePath,
+                prootBin.absolutePath,
                 "--link2symlink", "-0",
                 "-r", alpineDir.absolutePath,
                 "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
@@ -619,7 +598,6 @@ class LocalEngineRunner(
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = context.codeCacheDir.also { it.mkdirs() }
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-                if (loaderExeEng.exists()) environment()["PROOT_LOADER"] = loaderExeEng.absolutePath
             }.start()
             engineProc = proc
 
@@ -652,9 +630,7 @@ class LocalEngineRunner(
     }
 
     private fun runProot(args: List<String>, timeoutMin: Int = 35): Pair<Int, String> {
-        val prootExe  = File(dataDir, "proot-bin/proot").takeIf { it.exists() } ?: prootBin
-        val loaderExe = File(dataDir, "proot-bin/loader")
-        val cmd = mutableListOf(prootExe.absolutePath,
+        val cmd = mutableListOf(prootBin.absolutePath,
             "--link2symlink",
             "-0",
             "-r", alpineDir.absolutePath,
