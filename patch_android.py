@@ -484,7 +484,7 @@ class LocalEngineRunner(
         // 1. proot binary — bundled in APK assets
         if (!prootBin.exists() || !prootBin.canExecute()) {
             progress(3, "Extracting proot…")
-            context.assets.open("bin/proot-aarch64").use { inp ->
+            context.assets.open("flutter_assets/bin/proot-aarch64").use { inp ->
                 prootBin.outputStream().use { out -> inp.copyTo(out) }
             }
             prootBin.setExecutable(true)
