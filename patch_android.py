@@ -601,6 +601,7 @@ class LocalEngineRunner(
             environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
             val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            environment()["PROOT_LOADER"] = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so").absolutePath
             environment()["PROOT_FORCE_KOMPAT"] = "1"
             }.start()
             engineProc = proc
@@ -648,6 +649,7 @@ class LocalEngineRunner(
             environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
             val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            environment()["PROOT_LOADER"] = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so").absolutePath
             environment()["PROOT_FORCE_KOMPAT"] = "1"
         }.start()
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
