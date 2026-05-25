@@ -427,7 +427,7 @@ class LocalEngineRunner(
     }
 
     private val dataDir     = context.filesDir
-    private val alpineDir   = File(dataDir, "alpine")
+    private val alpineDir   = File(dataDir, "alpine-318")
     private val enginesDir  = File(dataDir, "engines")
     private val refAudioDir = File(dataDir, "reference_audio")
     private val prootBin    get() = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
@@ -522,9 +522,9 @@ class LocalEngineRunner(
         // 3. Python + scipy + ffmpeg
         if (!File(alpineDir, "usr/bin/python3").exists()) {
             progress(38, "Installing Python + ffmpeg (4–8 min, ~120 MB)…")
-            val (rc1, out1) = runProot(listOf("/usr/bin/busybox", "sh", "-c", "apk update --no-progress 2>&1"), timeoutMin = 10)
+            val (rc1, out1) = runProot(listOf("/bin/sh", "-c", "apk update --no-progress 2>&1"), timeoutMin = 10)
             if (rc1 != 0) throw IOException("apk update failed rc=$rc1: $out1")
-            val (rc, out) = runProot(listOf("/usr/bin/busybox", "sh", "-c",
+            val (rc, out) = runProot(listOf("/bin/sh", "-c",
                 "apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1"), timeoutMin = 20)
             if (rc != 0) throw IOException("apk add failed rc=$rc: $out")
         }
