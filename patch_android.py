@@ -396,3 +396,337 @@ if dead.exists():
 print()
 print("patch_android.py v11: DONE")
 
+
+
+# ── S65-LOCAL-ENGINE ── appended by tilawa_fix_s65.py ─────────────────────────
+
+import os as _os65
+
+_LOCAL_RUNNER_KT = """package com.tilawa.tilawa_enhancer
+
+import android.app.Activity
+import android.content.Context
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+import kotlinx.coroutines.*
+import java.io.*
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.TimeUnit
+
+/** S65 — proot-based offline audio engine runner. */
+class LocalEngineRunner(
+    private val activity: Activity,
+    private val context: Context
+) {
+    companion object {
+        const val CHANNEL = "com.tilawa.tilawa_enhancer/local_engine"
+        private const val DF_VERSION   = "0.5.6"
+        private const val ALPINE_VER   = "3.21.3"
+        private const val PROOT_VER    = "5.3.0"
+    }
+
+    private val dataDir     = context.filesDir
+    private val alpineDir   = File(dataDir, "alpine")
+    private val enginesDir  = File(dataDir, "engines")
+    private val refAudioDir = File(dataDir, "reference_audio")
+    private val prootBin    = File(dataDir, "proot")
+    private val cacheDir    = context.cacheDir
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var engineProc: Process? = null
+    private var channel: MethodChannel? = null
+
+    fun registerWith(flutterEngine: FlutterEngine) {
+        channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        channel!!.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isSetupComplete" -> result.success(isSetupComplete())
+                "startSetup" -> { result.success(null); scope.launch { safeSetup() } }
+                "runEngine"  -> {
+                    result.success(null)
+                    val a = call.arguments as Map<*, *>
+                    scope.launch {
+                        runEngine(a["engineId"] as String, a["inputPath"] as String)
+                    }
+                }
+                "cancelEngine" -> { engineProc?.destroyForcibly(); engineProc = null; result.success(null) }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    fun isSetupComplete(): Boolean =
+        prootBin.exists() && prootBin.canExecute() &&
+        File(alpineDir, "usr/bin/python3").exists() &&
+        File(alpineDir, "usr/bin/ffmpeg").exists() &&
+        File(alpineDir, "usr/local/bin/deep-filter").exists() &&
+        enginesDir.exists() && (enginesDir.list()?.isNotEmpty() == true)
+
+    private suspend fun safeSetup() {
+        try { setup(); ui { channel?.invokeMethod("setupDone", null) } }
+        catch (e: Exception) {
+            ui { channel?.invokeMethod("setupError", mapOf("msg" to (e.message ?: "Setup failed"))) }
+        }
+    }
+
+    private fun progress(pct: Int, phase: String) {
+        ui { channel?.invokeMethod("setupProgress", mapOf("pct" to pct, "phase" to phase)) }
+    }
+
+    private suspend fun setup() = withContext(Dispatchers.IO) {
+        val arch   = System.getProperty("os.arch") ?: "aarch64"
+        val isArm  = arch.contains("aarch64") || arch.contains("arm")
+        val archStr = if (isArm) "aarch64" else "x86_64"
+
+        progress(1, "Detecting device ($archStr)…")
+
+        // 1. proot binary
+        if (!prootBin.exists() || !prootBin.canExecute()) {
+            progress(3, "Downloading proot…")
+            val termuxProot = File("/data/data/com.termux/files/usr/bin/proot")
+            if (termuxProot.exists()) {
+                termuxProot.copyTo(prootBin, overwrite = true)
+                prootBin.setExecutable(true)
+            } else {
+                download("https://github.com/termux/proot/releases/download/v$PROOT_VER/proot-$archStr",
+                    prootBin, "proot", 3, 10)
+                prootBin.setExecutable(true)
+            }
+        }
+        progress(10, "proot ready")
+
+        // 2. Alpine rootfs
+        if (!File(alpineDir, "usr").exists()) {
+            progress(12, "Downloading Alpine Linux $ALPINE_VER…")
+            val url = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/$archStr/" +
+                      "alpine-minirootfs-$ALPINE_VER-$archStr.tar.gz"
+            val tar = File(dataDir, "alpine.tar.gz")
+            download(url, tar, "Alpine rootfs", 12, 32)
+            progress(32, "Extracting Alpine…")
+            alpineDir.mkdirs()
+            extractTarGz(tar, alpineDir)
+            tar.delete()
+            File(alpineDir, "etc/resolv.conf")
+                .writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+            File(alpineDir, "proc").mkdirs()
+            File(alpineDir, "dev").mkdirs()
+            File(alpineDir, "sys").mkdirs()
+        }
+        progress(36, "Alpine ready")
+
+        // 3. Python + scipy + ffmpeg
+        if (!File(alpineDir, "usr/bin/python3").exists()) {
+            progress(38, "Installing Python + ffmpeg (4–8 min, ~120 MB)…")
+            val rc = runProot(listOf("/bin/sh", "-c",
+                "apk update --no-progress 2>&1 && " +
+                "apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1"),
+                timeoutMin = 20)
+            if (rc != 0) throw IOException("apk install failed (rc=$rc)")
+        }
+        progress(78, "Python + ffmpeg ready")
+
+        // 4. DeepFilter binary
+        val dfBin = File(alpineDir, "usr/local/bin/deep-filter")
+        if (!dfBin.exists()) {
+            progress(80, "Downloading DeepFilter v$DF_VERSION…")
+            val dfVer = DF_VERSION.replace(".", "_")
+            val dfUrl = "https://github.com/Rikorose/DeepFilterNet/releases/download/" +
+                        "v$DF_VERSION/deep-filter-${dfVer}-$archStr-unknown-linux-musl"
+            dfBin.parentFile?.mkdirs()
+            download(dfUrl, dfBin, "DeepFilter", 80, 88)
+            dfBin.setExecutable(true)
+        }
+        progress(88, "DeepFilter ready")
+
+        // 5. Engine scripts from APK assets
+        progress(89, "Extracting engine scripts…")
+        extractEngines()
+        progress(92, "Engine scripts ready")
+
+        // 6. Reference audio
+        progress(93, "Downloading reference audio…")
+        downloadRefAudio()
+        progress(100, "Local engine ready!")
+    }
+
+    private suspend fun runEngine(engineId: String, inputPath: String) =
+        withContext(Dispatchers.IO) {
+        try {
+            val script = mapOf(
+                "v11.0" to "engine_tajalli_v1.py",
+                "v11.1" to "true_engine_itiqan_v2_fixed.py",
+                "v11.2" to "engine_isteidad_v12.py",
+                "v10.0" to "engine_v100.py",
+                "v9.0"  to "engine_v90.py",
+                "v8.5"  to "engine_v85.py",
+                "v8.0"  to "engine_v80.py",
+                "v7.0"  to "engine_v70.py",
+            )[engineId] ?: "engine_tajalli_v1.py"
+
+            val outputPath = "${cacheDir.absolutePath}/tilawa_${engineId.replace('.','_')}_${System.currentTimeMillis()}.wav"
+            val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
+            val inParent  = File(inputPath).parent ?: cacheDir.absolutePath
+
+            val cmd = mutableListOf(
+                prootBin.absolutePath,
+                "-r", alpineDir.absolutePath,
+                "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
+                "-b", "${enginesDir.absolutePath}:/engines",
+                "-b", "${refAudioDir.absolutePath}:/reference_audio",
+                "-b", "$inParent:$inParent",
+                "-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}",
+                "--kill-on-exit",
+                "/usr/bin/python3", "/engines/$script",
+                "-i", inputPath, "-o", outputPath,
+                "--iterations", "3",
+            )
+            if (refMp3.exists()) cmd += listOf("--ref", "/reference_audio/ref_araf_1425h.mp3")
+
+            val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+            engineProc = proc
+
+            ui { channel?.invokeMethod("engineProgress", mapOf("pct" to 5, "msg" to "Engine started…")) }
+
+            val reader = BufferedReader(InputStreamReader(proc.inputStream))
+            var lastLine = ""; var lastJson: String? = null; var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                val l = line!!.trim(); if (l.isEmpty()) continue
+                lastLine = l
+                if (l.startsWith("{") && l.contains("score")) lastJson = l
+                ui { channel?.invokeMethod("engineProgress", mapOf("pct" to -1, "msg" to l)) }
+            }
+
+            val rc = try {
+                if (!proc.waitFor(90, TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
+                else proc.exitValue()
+            } catch (_: Exception) { -1 }
+
+            val outFile = File(outputPath)
+            if (rc == 0 && outFile.exists() && outFile.length() > 500) {
+                val extra = if (lastJson != null) mapOf("json" to lastJson) else emptyMap<String,Any>()
+                ui { channel?.invokeMethod("engineDone", mapOf("path" to outputPath) + extra) }
+            } else {
+                ui { channel?.invokeMethod("engineError", mapOf("msg" to "Engine failed (rc=$rc): $lastLine")) }
+            }
+        } catch (e: Exception) {
+            ui { channel?.invokeMethod("engineError", mapOf("msg" to (e.message ?: "Unknown error"))) }
+        } finally { engineProc = null }
+    }
+
+    private fun runProot(args: List<String>, timeoutMin: Int = 35): Int {
+        val cmd = mutableListOf(prootBin.absolutePath,
+            "-r", alpineDir.absolutePath,
+            "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
+            "--kill-on-exit") + args
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+        proc.inputStream.bufferedReader().readText()
+        return try {
+            if (!proc.waitFor(timeoutMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
+            else proc.exitValue()
+        } catch (_: Exception) { proc.destroyForcibly(); -1 }
+    }
+
+    private fun download(url: String, dest: File, label: String, p0: Int, p1: Int) {
+        dest.parentFile?.mkdirs()
+        var conn: HttpURLConnection? = null
+        try {
+            conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 30_000; conn.readTimeout = 300_000
+            conn.instanceFollowRedirects = true; conn.connect()
+            if (conn.responseCode !in 200..299)
+                throw IOException("HTTP ${conn.responseCode} for $url")
+            val total = conn.contentLengthLong; var done = 0L
+            conn.inputStream.use { inp ->
+                FileOutputStream(dest).use { out ->
+                    val buf = ByteArray(65_536); var n: Int
+                    while (inp.read(buf).also { n = it } != -1) {
+                        out.write(buf, 0, n); done += n
+                        if (total > 0) {
+                            val pct = p0 + ((done.toDouble() / total) * (p1 - p0)).toInt()
+                            ui { channel?.invokeMethod("setupProgress",
+                                mapOf("pct" to pct, "phase" to "Downloading $label…")) }
+                        }
+                    }
+                }
+            }
+        } finally { conn?.disconnect() }
+    }
+
+    private fun extractTarGz(tarGz: File, destDir: File) {
+        destDir.mkdirs()
+        for (cmd in listOf(
+            listOf("/system/bin/tar",    "xzf", tarGz.absolutePath, "-C", destDir.absolutePath),
+            listOf("/system/xbin/tar",   "xzf", tarGz.absolutePath, "-C", destDir.absolutePath),
+            listOf("/system/bin/toybox", "tar", "xzf", tarGz.absolutePath, "-C", destDir.absolutePath),
+        )) {
+            if (!File(cmd[0]).exists()) continue
+            val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+            proc.inputStream.bufferedReader().readText()
+            if (proc.waitFor(10, TimeUnit.MINUTES) && proc.exitValue() == 0) return
+        }
+        throw IOException("No usable tar binary found on device")
+    }
+
+    private fun extractEngines() {
+        enginesDir.mkdirs()
+        listOf("engine_tajalli_v1.py","true_engine_itiqan_v2_fixed.py",
+               "engine_isteidad_v12.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
+               "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",
+               "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
+            val dest = File(enginesDir, name)
+            if (dest.exists()) return@forEach
+            try { context.assets.open("engines/$name").use { inp ->
+                FileOutputStream(dest).use { inp.copyTo(it) } }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun downloadRefAudio() {
+        refAudioDir.mkdirs()
+        val base = "https://carm5333-tilawa-server.hf.space/reference_audio/"
+        listOf("ref_araf_1425h.mp3","ref_fath_1425h.mp3","ref_fatir_1425h.mp3")
+            .forEach { f ->
+                val dest = File(refAudioDir, f)
+                if (dest.exists() && dest.length() > 10_000) return@forEach
+                try { download("$base$f", dest, f, 93, 99) } catch (_: Exception) {}
+            }
+    }
+
+    private fun ui(block: () -> Unit) = activity.runOnUiThread(block)
+}
+"""
+
+def _patch_local_engine():
+    """Write LocalEngineRunner.kt and register it in MainActivity.kt."""
+    kt_dir = _os65.path.join(
+        'android','app','src','main','kotlin','com','tilawa','tilawa_enhancer')
+    if not _os65.path.isdir(kt_dir):
+        print(f'  --  S65: {kt_dir} not found (CI will create it) — skipping local engine patch')
+        return
+
+    # 1. Write LocalEngineRunner.kt
+    runner_path = _os65.path.join(kt_dir, 'LocalEngineRunner.kt')
+    with open(runner_path, 'w') as f:
+        f.write(_LOCAL_RUNNER_KT)
+    print('  OK  S65: LocalEngineRunner.kt written')
+
+    # 2. Patch MainActivity.kt — add registration after super.configureFlutterEngine
+    main_path = _os65.path.join(kt_dir, 'MainActivity.kt')
+    if not _os65.path.exists(main_path):
+        print('  XX  S65: MainActivity.kt not found — cannot register LocalEngineRunner')
+        return
+    src = open(main_path).read()
+    anchor  = 'super.configureFlutterEngine(flutterEngine)'
+    inject  = '    LocalEngineRunner(this, applicationContext).registerWith(flutterEngine) // S65'
+    if inject in src:
+        print('  OK  S65: LocalEngineRunner already registered in MainActivity.kt')
+    elif anchor in src:
+        src = src.replace(anchor, anchor + '\n' + inject, 1)
+        open(main_path, 'w').write(src)
+        print('  OK  S65: LocalEngineRunner registered in MainActivity.kt')
+    else:
+        print('  XX  S65: super.configureFlutterEngine not found in MainActivity.kt')
+
+_patch_local_engine()
+# ── end S65-LOCAL-ENGINE ────────────────────────────────────────────────────

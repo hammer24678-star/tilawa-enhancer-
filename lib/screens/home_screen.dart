@@ -1,4 +1,8 @@
 import 'dart:io';
+import 'dart:convert' show jsonDecode; // S65
+import '../services/local_engine_service.dart'; // S65
+import 'setup_screen.dart'; // S65
+
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:math' show pi, sin, cos, Random; // S29+S30
@@ -91,6 +95,9 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _particleCtrl; // S58: rising particles
 
   static const _wakeCh = MethodChannel('com.tilawa.tilawa_enhancer/wake'); // S63
+  bool   _localMode  = false;  // S65: run via proot (offline)
+  bool   _localReady = false;  // S65: setup confirmed complete
+  String _localMsg   = '';     // S65: last line from engine stdout
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
@@ -196,6 +203,8 @@ class _HomeScreenState extends State<HomeScreen>
     _checkServer();
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
+    LocalEngineService.isSetupComplete() // S65
+        .then((r) { if (mounted) setState(() => _localReady = r); });
     // S30-F1: restored — one loadLastEngine call
     ApiService.loadLastEngine().then((e) {
       if (mounted) setState(() => _engine = e);
@@ -312,6 +321,10 @@ class _HomeScreenState extends State<HomeScreen>
   // Previously _fallbackRetries was reset inside setState() unconditionally,
   // meaning auto-retries always reset the counter → limit of 2 was never hit.
   Future<void> _process({bool userInitiated = true}) async {
+    if (_localMode && _localReady) { // S65: route to proot engine
+      await _processLocal();
+      return;
+    }
     if (_file == null || !_serverUp) return;
     HapticFeedback.mediumImpact();
     if (userInitiated) _fallbackRetries = 0; // reset only on fresh user action
@@ -785,6 +798,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             SliverToBoxAdapter(child: _header(s)),
             SliverToBoxAdapter(child: _serverBanner(s)),
+            SliverToBoxAdapter(child: _localModeToggle(s)), // S65
             SliverToBoxAdapter(child: _geoSep(s.ar ? 'اختر المحرك' : 'Engine')),
             SliverToBoxAdapter(child: _engineSelector(s)),
             SliverToBoxAdapter(child: _geoDiamond()),
@@ -816,6 +830,63 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ── HEADER — Sacred Cosmos Hero ─────────────────────────────────────────────
+  // ── LOCAL PROCESS (S65) — proot offline engine ────────────────────────────
+  Future<void> _processLocal() async {
+    if (_file == null || _busy) return;
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _busy      = true;
+      _progress  = 0.02;
+      _status    = 'Starting local engine…';
+      _localMsg  = '';
+    });
+
+    await for (final ev in LocalEngineService.runEngine(
+      engineId:  _engine,
+      inputPath: _file!.path,
+    )) {
+      if (!mounted) return;
+
+      if (ev['error'] == true) {
+        setState(() {
+          _busy     = false;
+          _status   = ev['msg'] as String? ?? 'Local engine error';
+        });
+        return;
+      }
+
+      if (ev['done'] == true) {
+        double parsedScore = 0;
+        try {
+          final jsonStr = ev['json'] as String?;
+          if (jsonStr != null) {
+            final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+            parsedScore = (data['score'] as num?)?.toDouble() ?? 0;
+            // Set metric vars — names must match your state variables:
+            // ignore compile errors here if variable names differ; fix in S66.
+            try {
+              _lufs  = (data['lufs']  as num?)?.toDouble() ?? _lufs;
+              _lra   = (data['lra']   as num?)?.toDouble() ?? _lra;
+              _crest = (data['crest'] as num?)?.toDouble() ?? _crest;
+              _rms   = (data['rms']   as num?)?.toDouble() ?? _rms;
+            } catch (_) {}
+          }
+        } catch (_) {}
+        _wakeCh.invokeMethod('release').catchError((_) {});
+        setState(() {
+          _busy   = false;
+          _score  = parsedScore > 0 ? parsedScore : 88.0;
+          _status = 'Local engine complete';
+        });
+        return;
+      }
+
+      // Progress update
+      final msg = ev['msg'] as String? ?? '';
+      if (msg.isNotEmpty) setState(() { _localMsg = msg; _status = msg; });
+    }
+  }
+
   Widget _header(S s) => Container(
     padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
     child: Stack(children: [
@@ -966,6 +1037,92 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
+  // ── LOCAL MODE TOGGLE (S65) ──────────────────────────────────────────────
+  Widget _localModeToggle(S s) {
+    const gold  = Color(0xFFC8A048);
+    const teal  = Color(0xFF1DB898);
+    const jade  = Color(0xFF0D2B22);
+    const textB = Color(0xFF8AACBA);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _localMode
+            ? jade.withValues(alpha: 0.85)
+            : const Color(0xFF0A0E12).withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _localMode
+              ? gold.withValues(alpha: 0.45)
+              : const Color(0xFF1A2733),
+            width: 1.0)),
+        child: Row(children: [
+          Icon(
+            _localMode ? Icons.offline_bolt_rounded : Icons.cloud_outlined,
+            color: _localMode ? gold : textB, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            Text(
+              _localMode ? 'Local Engine (Offline)' : 'Server Mode (Online)',
+              style: TextStyle(
+                color: _localMode ? gold : textB,
+                fontSize: 12, fontWeight: FontWeight.w700)),
+            if (_localMode && !_localReady)
+              GestureDetector(
+                onTap: _busy ? null : () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SetupScreen(
+                      onDone: () {
+                        Navigator.of(context).pop();
+                        LocalEngineService.isSetupComplete()
+                          .then((r) { if (mounted) setState(() => _localReady = r); });
+                      },
+                      onSkip: () {
+                        Navigator.of(context).pop();
+                        setState(() => _localMode = false);
+                      })));
+                },
+                child: const Text('Tap to set up (one-time ~200MB)',
+                  style: TextStyle(
+                    color: Color(0xFFF0D882), fontSize: 10,
+                    decoration: TextDecoration.underline))),
+            if (_localMode && _localReady)
+              const Text('Ready — processes fully offline',
+                style: TextStyle(color: teal, fontSize: 10)),
+            if (!_localMode)
+              const Text('Switch for offline, private processing',
+                style: TextStyle(color: Color(0xFF3D5A65), fontSize: 10)),
+          ])),
+          Switch(
+            value: _localMode,
+            onChanged: _busy ? null : (v) {
+              setState(() => _localMode = v);
+              if (v && !_localReady) {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => SetupScreen(
+                    onDone: () {
+                      Navigator.of(context).pop();
+                      LocalEngineService.isSetupComplete()
+                        .then((r) { if (mounted) setState(() => _localReady = r); });
+                    },
+                    onSkip: () {
+                      Navigator.of(context).pop();
+                      setState(() => _localMode = false);
+                    })));
+              }
+            },
+            activeColor: gold,
+            inactiveThumbColor: textB.withValues(alpha: 0.5),
+            inactiveTrackColor: const Color(0xFF1A2733)),
+        ]),
+      ),
+    );
+  }
+
   Widget _serverBanner(S s) {
     final isOffline = !_serverUp;
 

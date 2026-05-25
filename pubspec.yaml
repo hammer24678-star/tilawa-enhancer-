@@ -26,3 +26,4 @@ flutter:
   assets:
     - assets/images/
     - assets/images/engines/
+    - assets/engines/ # S65: Python engine scripts
