@@ -507,6 +507,15 @@ class LocalEngineRunner(
             File(alpineDir, "proc").mkdirs()
             File(alpineDir, "dev").mkdirs()
             File(alpineDir, "sys").mkdirs()
+            // Fix Alpine 3.19+ symlinks that Android tar may not create
+            val root = alpineDir.toPath()
+            for (pair in listOf("bin" to "usr/bin", "lib" to "usr/lib", "sbin" to "usr/sbin")) {
+                val link = root.resolve(pair.first)
+                if (!java.nio.file.Files.exists(link)) {
+                    try { java.nio.file.Files.createSymbolicLink(link, java.nio.file.Paths.get(pair.second)) }
+                    catch (_: Exception) {}
+                }
+            }
         }
         progress(36, "Alpine ready")
 
