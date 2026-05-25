@@ -422,7 +422,7 @@ class LocalEngineRunner(
     companion object {
         const val CHANNEL = "com.tilawa.tilawa_enhancer/local_engine"
         private const val DF_VERSION   = "0.5.6"
-        private const val ALPINE_VER   = "3.21.3"
+        private const val ALPINE_VER   = "3.18.9"
         private const val PROOT_VER    = "5.3.0"
     }
 
@@ -494,7 +494,7 @@ class LocalEngineRunner(
         // 2. Alpine rootfs
         if (!File(alpineDir, "usr/bin/busybox").exists()) {
             progress(12, "Downloading Alpine Linux $ALPINE_VER…")
-            val url = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/$archStr/" +
+            val url = "https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/$archStr/" +
                       "alpine-minirootfs-$ALPINE_VER-$archStr.tar.gz"
             val tar = File(dataDir, "alpine.tar.gz")
             download(url, tar, "Alpine rootfs", 12, 32)
