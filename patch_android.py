@@ -56,7 +56,7 @@ configurations.all {
 }
 flutter { source "../.." }
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.0"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
 }
 """)
@@ -77,8 +77,8 @@ pluginManagement {
 }
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-    id "com.android.application" version "8.11.1" apply false
-    id "org.jetbrains.kotlin.android" version "2.2.20" apply false
+    id "com.android.application" version "8.10.0" apply false
+    id "org.jetbrains.kotlin.android" version "2.3.0" apply false
 }
 include ":app"
 """)
@@ -92,7 +92,7 @@ wrapper.write_text(
     "distributionPath=wrapper/dists\n"
     "zipStoreBase=GRADLE_USER_HOME\n"
     "zipStorePath=wrapper/dists\n"
-    "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-all.zip\n"
+    "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-all.zip\n"
 )
 print("  gradle-wrapper.properties OK (Gradle 8.3)")
 
