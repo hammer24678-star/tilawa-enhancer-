@@ -481,18 +481,13 @@ class LocalEngineRunner(
 
         progress(1, "Detecting device ($archStr)…")
 
-        // 1. proot binary
+        // 1. proot binary — bundled in APK assets
         if (!prootBin.exists() || !prootBin.canExecute()) {
-            progress(3, "Downloading proot…")
-            val termuxProot = File("/data/data/com.termux/files/usr/bin/proot")
-            if (termuxProot.exists()) {
-                termuxProot.copyTo(prootBin, overwrite = true)
-                prootBin.setExecutable(true)
-            } else {
-                download("https://github.com/termux/proot/releases/download/v${PROOT_VER}/proot-${archStr}",
-                    prootBin, "proot", 3, 10)
-                prootBin.setExecutable(true)
+            progress(3, "Extracting proot…")
+            context.assets.open("bin/proot-aarch64").use { inp ->
+                prootBin.outputStream().use { out -> inp.copyTo(out) }
             }
+            prootBin.setExecutable(true)
         }
         progress(10, "proot ready")
 
