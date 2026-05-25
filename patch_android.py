@@ -423,7 +423,7 @@ class LocalEngineRunner(
         const val CHANNEL = "com.tilawa.tilawa_enhancer/local_engine"
         private const val DF_VERSION   = "0.5.6"
         private const val ALPINE_VER   = "3.21.3"
-        private const val PROOT_VER    = "5.3.0"
+        private const val PROOT_VER    = "5.1.107-65"
     }
 
     private val dataDir     = context.filesDir
@@ -489,7 +489,7 @@ class LocalEngineRunner(
                 termuxProot.copyTo(prootBin, overwrite = true)
                 prootBin.setExecutable(true)
             } else {
-                download("https://github.com/termux/proot/releases/download/v$PROOT_VER/proot-$archStr",
+                download("https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_${PROOT_VER}_${archStr}.deb",
                     prootBin, "proot", 3, 10)
                 prootBin.setExecutable(true)
             }
