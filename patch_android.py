@@ -559,20 +559,25 @@ class LocalEngineRunner(
 
             val cmd = mutableListOf(
                 prootBin.absolutePath,
+                "--link2symlink", "-0",
                 "-r", alpineDir.absolutePath,
                 "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
                 "-b", "${enginesDir.absolutePath}:/engines",
                 "-b", "${refAudioDir.absolutePath}:/reference_audio",
                 "-b", "$inParent:$inParent",
                 "-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}",
-                "--kill-on-exit",
+                "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
                 "-i", inputPath, "-o", outputPath,
                 "--iterations", "3",
             )
             if (refMp3.exists()) cmd += listOf("--ref", "/reference_audio/ref_araf_1425h.mp3")
 
-            val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+            val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
+                environment()["HOME"] = "/root"
+                environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                environment()["TERM"] = "xterm"
+            }.start()
             engineProc = proc
 
             ui { channel?.invokeMethod("engineProgress", mapOf("pct" to 5, "msg" to "Engine started…")) }
