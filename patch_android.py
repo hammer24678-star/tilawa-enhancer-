@@ -527,11 +527,23 @@ class LocalEngineRunner(
         // 4. DeepFilter — bundled in APK assets/alpine/
         val dfBin = File(alpineDir, "usr/local/bin/deep-filter")
         if (!dfBin.exists()) {
-            progress(80, "Extracting DeepFilter (bundled)…")
             dfBin.parentFile?.mkdirs()
-            context.assets.open("flutter_assets/alpine/deep-filter")
-                .use { it.copyTo(FileOutputStream(dfBin)) }
-            dfBin.setExecutable(true)
+            try {
+                progress(80, "Extracting DeepFilter…")
+                context.assets.open("flutter_assets/alpine/deep-filter")
+                    .use { it.copyTo(FileOutputStream(dfBin)) }
+                dfBin.setExecutable(true)
+            } catch (_: Exception) {
+                try {
+                    progress(80, "Downloading DeepFilter…")
+                    val dfVer = "0_5_6"
+                    val url = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-${dfVer}-aarch64-unknown-linux-musl"
+                    download(url, dfBin, "DeepFilter", 80, 88)
+                    dfBin.setExecutable(true)
+                } catch (_: Exception) {
+                    progress(88, "DeepFilter unavailable — NR-only engines active")
+                }
+            }
         }
         progress(88, "DeepFilter ready")
 
