@@ -502,7 +502,7 @@ class LocalEngineRunner(
             progress(12, "Extracting Alpine Linux (bundled)…")
             alpineDir.mkdirs()
             val tmp = File(dataDir, "alpine.tar.gz")
-            context.assets.open("alpine/alpine-rootfs.tar.gz")
+            context.assets.open("flutter_assets/alpine/alpine-rootfs.tar.gz")
                 .use { it.copyTo(FileOutputStream(tmp)) }
             extractTarGz(tmp, alpineDir)
             tmp.delete()
@@ -534,7 +534,7 @@ class LocalEngineRunner(
         if (!dfBin.exists()) {
             progress(80, "Extracting DeepFilter (bundled)…")
             dfBin.parentFile?.mkdirs()
-            context.assets.open("alpine/deep-filter")
+            context.assets.open("flutter_assets/alpine/deep-filter")
                 .use { it.copyTo(FileOutputStream(dfBin)) }
             dfBin.setExecutable(true)
         }
@@ -745,7 +745,7 @@ class LocalEngineRunner(
                "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
             val dest = File(enginesDir, name)
             if (dest.exists()) return@forEach
-            try { context.assets.open("engines/$name").use { inp ->
+            try { context.assets.open("flutter_assets/engines/$name").use { inp ->
                 FileOutputStream(dest).use { inp.copyTo(it) } }
             } catch (_: Exception) {}
         }
