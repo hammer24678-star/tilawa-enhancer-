@@ -456,12 +456,16 @@ class LocalEngineRunner(
         }
     }
 
-    fun isSetupComplete(): Boolean =
-        prootBin.exists() && prootBin.canExecute() &&
-        File(alpineDir, "usr/bin/python3").exists() &&
-        File(alpineDir, "usr/bin/ffmpeg").exists() &&
-        File(alpineDir, "usr/local/bin/deep-filter").exists() &&
-        enginesDir.exists() && (enginesDir.list()?.isNotEmpty() == true)
+    fun isSetupComplete(): Boolean {
+        // S76: check actual files on disk — never trust stale SharedPreferences
+        if (!prootBin.exists()) return false
+        if (!File(alpineDir, "usr/bin/python3").exists()) return false
+        if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
+        if (!File(alpineDir, "usr/local/bin/deep-filter").exists()) return false
+        if (enginesDir.list()?.isNotEmpty() != true) return false
+        if (!File(dataDir, "libtalloc.so.2").exists()) return false
+        return true
+    }
 
     private suspend fun safeSetup() {
         try { setup(); ui { channel?.invokeMethod("setupDone", null) } }

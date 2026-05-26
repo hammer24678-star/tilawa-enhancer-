@@ -28,3 +28,5 @@ flutter:
     - assets/images/engines/
     - assets/engines/ # S65: Python engine scripts
     - assets/bin/ # S69: bundled proot binary
+    - assets/alpine/ # S75: bundled Alpine rootfs + Python env + DeepFilter
+    - assets/reference_audio/ # S75: bundled reference audio
