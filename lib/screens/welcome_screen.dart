@@ -112,7 +112,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   }
 
   // ── Page 0: Brand splash ──────────────────────────────────────────────────
-  Widget _page0(S s) => Padding(
+  Widget _page0(S s) => SingleChildScrollView(
+    child: Padding(
     padding: const EdgeInsets.symmetric(horizontal: 32),
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -244,7 +245,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         _dots(0),
       ],
     ),
-  );
+  ));
+
 
   // ── Page 1: How it works ──────────────────────────────────────────────────
   Widget _page1(S s) {
