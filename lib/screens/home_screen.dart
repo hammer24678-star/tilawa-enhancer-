@@ -1512,8 +1512,25 @@ class _HomeScreenState extends State<HomeScreen>
                     style: TextStyle(
                       color: sel ? col : col.withValues(alpha: 0.80),
                       fontSize: 18, fontWeight: FontWeight.w700, height: 1.1))),
+                  const SizedBox(width: 8),
+                  // S84-BADGE: LOCAL / SERVER mode badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: e.localOnly
+                        ? _teal.withValues(alpha: 0.18)
+                        : _tBorder.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: e.localOnly ? _teal : _tSub.withValues(alpha: 0.5))),
+                    child: Text(
+                      e.localOnly ? '🏠 LOCAL' : '☁ SERVER',
+                      style: TextStyle(
+                        color: e.localOnly ? _teal : _tSub,
+                        fontSize: 7, fontWeight: FontWeight.bold,
+                        letterSpacing: 0.6))),
                   if (e.badge.isNotEmpty) ...[
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
