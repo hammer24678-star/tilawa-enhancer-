@@ -431,6 +431,7 @@ class LocalEngineRunner(
     private val enginesDir  = File(dataDir, "engines")
     private val refAudioDir = File(dataDir, "reference_audio")
     private val prootBin    get() = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
+        private val prootLoader get() = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so")
     private val cacheDir    = context.cacheDir
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -585,6 +586,7 @@ class LocalEngineRunner(
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = context.codeCacheDir.also { it.mkdirs() }
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            environment()["PROOT_LOADER"] = prootLoader.absolutePath
             }.start()
             engineProc = proc
 
@@ -631,6 +633,7 @@ class LocalEngineRunner(
             environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
             val prootTmp = context.codeCacheDir.also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            environment()["PROOT_LOADER"] = prootLoader.absolutePath
         }.start()
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
         val code = try {
