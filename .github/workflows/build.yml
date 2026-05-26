@@ -13,6 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build asset bundles (Alpine + Python + DeepFilter)
+        run: bash build_assets.sh
+
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
@@ -83,9 +86,6 @@ jobs:
         run: |
           echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
           echo "google-services.json written"
-
-      - name: Build asset bundles (Alpine + Python + DeepFilter)
-        run: bash build_assets.sh
 
       - name: Build APK (release)
         run: |
