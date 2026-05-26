@@ -92,7 +92,7 @@ wrapper.write_text(
     "distributionPath=wrapper/dists\n"
     "zipStoreBase=GRADLE_USER_HOME\n"
     "zipStorePath=wrapper/dists\n"
-    "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-all.zip\n"
+    "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip\n"
 )
 print("  gradle-wrapper.properties OK (Gradle 8.3)")
 
