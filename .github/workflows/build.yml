@@ -64,19 +64,19 @@ jobs:
       # S26: Decode keystore from GitHub Secret
       - name: Decode keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/tilawa_release.jks
-          echo "Keystore size: $(wc -c < android/app/tilawa_release.jks) bytes"
+        # S73-SKIP: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/tilawa_release.jks
+        # S73-SKIP: echo "Keystore size: $(wc -c < android/app/tilawa_release.jks) bytes"
 
       # S26: Write key.properties for Gradle signing
-      - name: Write key.properties
+        # S73-SKIP: - name: Write key.properties
         run: |
-          cat > android/key.properties <<EOF
+        # S73-SKIP: cat > android/key.properties <<EOF
           storePassword=${{ secrets.STORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
           keyAlias=${{ secrets.KEY_ALIAS }}
-          storeFile=tilawa_release.jks
+        # S73-SKIP: storeFile=tilawa_release.jks
           EOF
-          echo "key.properties written"
+        # S73-SKIP: echo "key.properties written"
 
       # S26: Patch build.gradle to use signing config
       - name: Patch build.gradle for signing
@@ -89,8 +89,8 @@ jobs:
 
       - name: Build APK (release)
         run: |
-          flutter build apk --release --no-tree-shake-icons \
-            -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
+          flutter build apk --debug --no-tree-shake-icons  # S73 \
+        # S73-SKIP: -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
             -Pandroid.injected.signing.store.password=${{ secrets.STORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
             -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
@@ -98,7 +98,7 @@ jobs:
       - name: Build AAB (Play Store)
         run: |
           flutter build appbundle --release --no-tree-shake-icons \
-            -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
+        # S73-SKIP: -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
             -Pandroid.injected.signing.store.password=${{ secrets.STORE_PASSWORD }} \
             -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
             -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
@@ -109,7 +109,7 @@ jobs:
           tag_name: latest
           name: "Tilawa Enhancer - Latest"
           files: |
-            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-debug.apk  # S73
             build/app/outputs/bundle/release/app-release.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
