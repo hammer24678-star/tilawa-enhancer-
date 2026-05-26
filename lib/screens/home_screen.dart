@@ -1075,17 +1075,25 @@ class _HomeScreenState extends State<HomeScreen>
             if (_localMode && !_localReady)
               GestureDetector(
                 onTap: _busy ? null : () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => SetupScreen(
-                      onDone: () {
-                        Navigator.of(context).pop();
-                        LocalEngineService.isSetupComplete()
-                          .then((r) { if (mounted) setState(() => _localReady = r); });
-                      },
-                      onSkip: () {
-                        Navigator.of(context).pop();
-                        setState(() => _localMode = false);
-                      })));
+                  // S78: re-check before pushing SetupScreen
+                  LocalEngineService.isSetupComplete().then((ready) {
+                    if (!mounted) return;
+                    if (ready) {
+                      setState(() => _localReady = true);
+                    } else {
+                      Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => SetupScreen(
+                          onDone: () {
+                            Navigator.of(context).pop();
+                            LocalEngineService.isSetupComplete()
+                              .then((r) { if (mounted) setState(() => _localReady = r); });
+                          },
+                          onSkip: () {
+                            Navigator.of(context).pop();
+                            setState(() => _localMode = false);
+                          })));
+                    }
+                  });
                 },
                 child: const Text('Tap to set up (one-time ~200MB)',
                   style: TextStyle(
@@ -1103,17 +1111,25 @@ class _HomeScreenState extends State<HomeScreen>
             onChanged: _busy ? null : (v) {
               setState(() => _localMode = v);
               if (v && !_localReady) {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => SetupScreen(
-                    onDone: () {
-                      Navigator.of(context).pop();
-                      LocalEngineService.isSetupComplete()
-                        .then((r) { if (mounted) setState(() => _localReady = r); });
-                    },
-                    onSkip: () {
-                      Navigator.of(context).pop();
-                      setState(() => _localMode = false);
-                    })));
+                // S78: re-check before pushing SetupScreen — avoids race with initState async
+                LocalEngineService.isSetupComplete().then((ready) {
+                  if (!mounted) return;
+                  if (ready) {
+                    setState(() => _localReady = true);
+                  } else {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => SetupScreen(
+                        onDone: () {
+                          Navigator.of(context).pop();
+                          LocalEngineService.isSetupComplete()
+                            .then((r) { if (mounted) setState(() => _localReady = r); });
+                        },
+                        onSkip: () {
+                          Navigator.of(context).pop();
+                          setState(() => _localMode = false);
+                        })));
+                  }
+                });
               }
             },
             activeColor: gold,
