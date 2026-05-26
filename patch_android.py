@@ -509,12 +509,7 @@ class LocalEngineRunner(
             File(alpineDir, "etc/resolv.conf")
                 .writeText("nameserver 8.8.8.8\\nnameserver 1.1.1.1\\n")
             for (d in listOf("proc","dev","sys")) File(alpineDir, d).mkdirs()
-            val sh = File(alpineDir, "bin/sh")
-            if (!sh.exists()) {
-                val bb = File(alpineDir, "bin/busybox").takeIf { it.exists() }
-                    ?: File(alpineDir, "usr/bin/busybox")
-                if (bb.exists()) { bb.copyTo(sh, overwrite = true); sh.setExecutable(true) }
-            }
+
         }
         progress(35, "Alpine ready")
 
