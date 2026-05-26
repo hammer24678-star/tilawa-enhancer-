@@ -32,7 +32,6 @@ jobs:
       - name: Regenerate android/
         run: flutter create --platforms=android --project-name tilawa_enhancer .
 
-      # S19: Pillow required for icon generation in patch_android.py
       - name: Install Pillow for icon generation
         run: pip install Pillow --quiet
 
@@ -46,7 +45,6 @@ jobs:
             echo "INTERNET permission: CONFIRMED"
           else
             echo "ERROR: INTERNET missing!"
-            cat "$MANIFEST"
             exit 1
           fi
           if grep -q "networkSecurityConfig" "$MANIFEST"; then
@@ -55,53 +53,41 @@ jobs:
             echo "ERROR: networkSecurityConfig missing!"
             exit 1
           fi
-          if grep -q "queries" "$MANIFEST"; then
-            echo "queries block: CONFIRMED"
-          else
-            echo "WARNING: queries block missing (Open in Player may fail on API30+)"
-          fi
 
-      # S26: Decode keystore from GitHub Secret
       - name: Decode keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/tilawa_release.jks
           echo "Keystore size: $(wc -c < android/app/tilawa_release.jks) bytes"
 
-      # S26: Write key.properties for Gradle signing
-        - name: Write key.properties
+      - name: Write key.properties
         run: |
-        cat > android/key.properties <<EOF
-          storePassword=${{ secrets.STORE_PASSWORD }}
+          cat > android/key.properties << 'KEYEOF'
+          storePassword=${{ secrets.KEY_STORE_PASSWORD }}
           keyPassword=${{ secrets.KEY_PASSWORD }}
           keyAlias=${{ secrets.KEY_ALIAS }}
-        storeFile=tilawa_release.jks
-          EOF
-        echo "key.properties written"
+          storeFile=tilawa_release.jks
+          KEYEOF
+          echo "key.properties written"
 
-      # S26: Patch build.gradle to use signing config
       - name: Patch build.gradle for signing
         run: python3 patch_signing.py
 
       - name: Write google-services.json
         run: |
-          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
-          echo "google-services.json written"
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+            echo "google-services.json written"
+          else
+            echo "No GOOGLE_SERVICES_JSON secret — skipping"
+          fi
 
       - name: Build APK (release)
         run: |
-          flutter build apk --release --no-tree-shake-icons   \
-        -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
-            -Pandroid.injected.signing.store.password=${{ secrets.STORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+          flutter build apk --release --no-tree-shake-icons             -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks             -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }}             -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }}             -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
       - name: Build AAB (Play Store)
         run: |
-          flutter build appbundle --release --no-tree-shake-icons \
-        -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
-            -Pandroid.injected.signing.store.password=${{ secrets.STORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+          flutter build appbundle --release --no-tree-shake-icons             -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks             -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }}             -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }}             -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
 
       - name: Upload APK + AAB to GitHub Release
         uses: softprops/action-gh-release@v2
