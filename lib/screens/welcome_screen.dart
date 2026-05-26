@@ -62,7 +62,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   Future<void> _finish() async {
     HapticFeedback.lightImpact();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('seen_welcome_v3', true); // S32
+    await prefs.setBool('seen_welcome_v4', true); // S32
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
