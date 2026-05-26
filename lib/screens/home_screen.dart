@@ -44,7 +44,7 @@ class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   // ── State ──────────────────────────────────────────────────────────────────
   File?   _file;
-  String  _engine    = 'v10.0';
+  String  _engine    = 'v11.0';  // S84: default = strongest local engine
   String  _status    = '';
   double  _progress  = 0;
   bool    _busy      = false;
@@ -108,21 +108,21 @@ class _HomeScreenState extends State<HomeScreen>
       ['Tier Router', 'Auto-Path', 'DF3 NR', 'النقاء', 'البيان', 'النور'],
       'يُحلِّل المصدر تلقائياً ويختار المسار الأمثل: الإتقان للتسجيلات النظيفة، الاسترداد للتالفة.',
       'Auto-analyses the source and routes to the optimal path: الإتقان for clean, الاسترداد for damaged.',
-      imgAsset: 'assets/images/engines/tajalli.jpg'),
+      imgAsset: 'assets/images/engines/tajalli.jpg', localOnly: true),
     _EngineData(
       'v11.1', 'الإتقان', 'Perfection', 99.0,
       '', 'gold',
       ['Pristine Path', 'DF3 NR', 'L-BFGS-B EQ', 'Joint Opt', 'LUFS Ceil', 'LRA Tune'],
       'مسار التسجيلات النظيفة والمضغوطة. تخفيض ضوضاء ثنائي — تحسين طيفي — معايرة LUFS+LRA مشتركة.',
       'Path for clean and compressed recordings. Two-stage NR, spectral EQ, joint LUFS+LRA calibration.',
-      imgAsset: 'assets/images/engines/itiqan.jpg'),
+      imgAsset: 'assets/images/engines/itiqan.jpg', localOnly: true),
     _EngineData(
       'v11.2', 'الاسترداد', 'Recovery', 98.0,
       '', 'gold',
       ['Damaged Path', 'DF3 Heavy NR', 'Declip', 'Dereverberate', 'Reconstruct', 'إحياء'],
       'مسار التسجيلات التالفة. إزالة ضوضاء مكثفة — إزالة القطع — إعادة بناء الطيف الصوتي.',
       'Path for damaged recordings. Heavy NR, declipping, spectrum reconstruction.',
-      imgAsset: 'assets/images/engines/isteidad.jpg'),
+      imgAsset: 'assets/images/engines/isteidad.jpg', localOnly: true),
     // ── Legacy engines ────────────────────────────────────────────────
     _EngineData(
       'v10.0', 'الأثيريون — الأساس', 'Aetherion Foundation', 99.0,
@@ -1347,7 +1347,15 @@ class _HomeScreenState extends State<HomeScreen>
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick(); // S30-P1
-        setState(() => _engine = e.id);
+        setState(() {
+              _engine = e.id;
+              // S84: auto-switch mode to match engine requirement
+              if (e.localOnly && !_localMode) {
+                _localMode = true;
+              } else if (!e.localOnly && _localMode) {
+                _localMode = false;
+              }
+            });
         ApiService.saveLastEngine(e.id); // S28-T2: persist
       },
       child: AnimatedContainer(
@@ -2732,10 +2740,11 @@ class _EngineData {
   final double score;
   final List<String> features;
   final String whatsNewAr, whatsNewEn;
-  final String? imgAsset; // S47 — engine logo
+  final String? imgAsset;
+  final bool localOnly;   // S84: true = requires local proot engine // S47 — engine logo
   const _EngineData(this.id, this.nameAr, this.nameEn, this.score,
       this.badge, this.bc, this.features, this.whatsNewAr, this.whatsNewEn,
-      {this.imgAsset});
+      {this.imgAsset, this.localOnly = false});
 }
 
 // ── Sacred Cosmos painters ────────────────────────────────────────────────────

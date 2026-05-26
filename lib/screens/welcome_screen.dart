@@ -171,6 +171,65 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           style: const TextStyle(
             color: Color(0xFFF2EFE5), fontSize: 14, height: 1.9)),
         const SizedBox(height: 48),
+
+        const SizedBox(height: 28),
+        // S84: Mode info card
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.28),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFF1DB898).withOpacity(0.30))),
+          child: Column(children: [
+            // Local mode
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1DB898).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF1DB898).withOpacity(0.5))),
+                child: const Text('🏠 LOCAL',
+                  style: TextStyle(color: Color(0xFF1DB898),
+                    fontSize: 10, fontWeight: FontWeight.bold))),
+              const SizedBox(width: 12),
+              const Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('التجلي · الإتقان · الاسترداد',
+                  style: TextStyle(color: Color(0xFFD4AF37),
+                    fontSize: 13, fontWeight: FontWeight.bold)),
+                SizedBox(height: 3),
+                Text('يعمل على جهازك — بدون إنترنت — خصوصية تامة\nيتطلب إعداداً لمرة واحدة (~200MB)',
+                  style: TextStyle(color: Color(0xFF8AACBA), fontSize: 10, height: 1.6)),
+              ])),
+            ]),
+            const SizedBox(height: 14),
+            Divider(color: Colors.white10, height: 1),
+            const SizedBox(height: 14),
+            // Server mode
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white24)),
+                child: const Text('☁ SERVER',
+                  style: TextStyle(color: Color(0xFF8AACBA),
+                    fontSize: 10, fontWeight: FontWeight.bold))),
+              const SizedBox(width: 12),
+              const Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('v10.0 · v9.0 · v8.5 · v8.0',
+                  style: TextStyle(color: Color(0xFF8AACBA),
+                    fontSize: 12, fontWeight: FontWeight.w600)),
+                SizedBox(height: 3),
+                Text('يعمل على السحابة — يحتاج إنترنت — بدون تخزين',
+                  style: TextStyle(color: Color(0xFF3D5A65), fontSize: 10, height: 1.6)),
+              ])),
+            ]),
+          ])),
         _primaryBtn(s.howItWorks, () => _goPage(1)),
         const SizedBox(height: 14),
         TextButton(
