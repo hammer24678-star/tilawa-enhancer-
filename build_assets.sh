@@ -43,7 +43,7 @@ echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 # ── 3. DeepFilter binary ──────────────────────────────────────────────────────
 echo "==> Using bundled DeepFilter $DF_VERSION"
 # Real filename format: 0_5.6 (first dot→underscore only), gnu build for aarch64
-cp "$GITHUB_WORKSPACE/assets/alpine/deep-filter" "$ASSETS/deep-filter"
+[ "$GITHUB_WORKSPACE/assets/alpine/deep-filter" != "$ASSETS/deep-filter" ] && cp "$GITHUB_WORKSPACE/assets/alpine/deep-filter" "$ASSETS/deep-filter" || true
 chmod +x "$ASSETS/deep-filter"
 echo "    deep-filter: $(du -sh $ASSETS/deep-filter | cut -f1)"
 
