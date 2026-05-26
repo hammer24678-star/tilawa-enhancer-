@@ -497,13 +497,13 @@ class LocalEngineRunner(
             tallocSrc.copyTo(tallocDst, overwrite = true)
         progress(10, "proot ready (bundled libproot.so)")
 
-        // 2. Alpine rootfs — bundled in APK assets/alpine/
+        // 2. Alpine rootfs — download like Termux proot-distro
         if (!File(alpineDir, "usr/bin/busybox").exists()) {
-            progress(12, "Extracting Alpine Linux (bundled)…")
+            progress(12, "Downloading Alpine Linux (~4MB)…")
             alpineDir.mkdirs()
             val tmp = File(dataDir, "alpine.tar.gz")
-            context.assets.open("flutter_assets/alpine/alpine-rootfs.tar.gz")
-                .use { it.copyTo(FileOutputStream(tmp)) }
+            val _url = "https://mirrors.edge.kernel.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz"
+            download(_url, tmp, "Alpine rootfs", 12, 32)
             extractTarGz(tmp, alpineDir)
             tmp.delete()
             File(alpineDir, "etc/resolv.conf")
