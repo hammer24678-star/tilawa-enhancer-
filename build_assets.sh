@@ -40,12 +40,12 @@ docker run --rm \
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 
-# ── 3. DeepFilter binary ──────────────────────────────────────────────────────
-echo "==> Using bundled DeepFilter $DF_VERSION"
-# Real filename format: 0_5.6 (first dot→underscore only), gnu build for aarch64
-[ "$GITHUB_WORKSPACE/assets/alpine/deep-filter" != "$ASSETS/deep-filter" ] && cp "$GITHUB_WORKSPACE/assets/alpine/deep-filter" "$ASSETS/deep-filter" || true
-chmod +x "$ASSETS/deep-filter"
-echo "    deep-filter: $(du -sh $ASSETS/deep-filter | cut -f1)"
+# ── 3. DeepFilter — build from source inside arm64 Docker ──────────────────
+echo "==> Building deep-filter for aarch64 (Rust, takes ~20 min)"
+docker run --rm --platform linux/arm64 \
+    --volume "$PWD/$ASSETS:/out" \
+    rust:alpine3.18 sh -c "apk add --no-progress musl-dev 2>&1 | tail -1 && cargo install df --version 0.5.6 --root /out/df 2>&1 | tail -2 && cp /out/df/bin/df /out/deep-filter && chmod +x /out/deep-filter && echo OK"
+echo "    deep-filter: $(du -sh $ASSETS/deep-filter 2>/dev/null | cut -f1 || echo FAILED)"
 
 # ── 4. Reference audio ────────────────────────────────────────────────────────
 echo "==> Downloading reference audio"
