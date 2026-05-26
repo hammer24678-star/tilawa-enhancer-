@@ -40,11 +40,19 @@ docker run --rm \
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 
-# ── 3. DeepFilter — build from source inside arm64 Docker ──────────────────
-echo "==> Building deep-filter for aarch64 (Rust, takes ~20 min)"
-docker run --rm --platform linux/arm64 \
-    --volume "$PWD/$ASSETS:/out" \
-    rust:alpine3.18 sh -c "apk add --no-progress musl-dev 2>&1 | tail -1 && cargo install df --version 0.5.6 --root /out/df 2>&1 | tail -2 && cp /out/df/bin/df /out/deep-filter && chmod +x /out/deep-filter && echo OK"
+# ── 3. DeepFilter — cross-compile x86_64 → aarch64-musl ────────────────────
+echo "==> Cross-compiling deep-filter for aarch64-musl"
+sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu musl-tools 2>&1 | tail -2
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable 2>&1 | tail -3
+source "$HOME/.cargo/env"
+rustup target add aarch64-unknown-linux-musl
+cargo install cross --quiet
+cat > /tmp/Cross.toml << 'EOF'
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
+EOF
+cargo install deep_filter --target aarch64-unknown-linux-musl --root /tmp/df --config /tmp/Cross.toml 2>&1 | tail -5 || true
+[ -f /tmp/df/bin/deep_filter ] && cp /tmp/df/bin/deep_filter "$ASSETS/deep-filter" && chmod +x "$ASSETS/deep-filter"
 echo "    deep-filter: $(du -sh $ASSETS/deep-filter 2>/dev/null | cut -f1 || echo FAILED)"
 
 # ── 4. Reference audio ────────────────────────────────────────────────────────
