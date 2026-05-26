@@ -486,6 +486,11 @@ class LocalEngineRunner(
         //    libproot.so lives in /data/app/.../lib/ which has exec permission.
         if (!prootBin.exists()) throw Exception("libproot.so not found in nativeLibraryDir")
         if (!prootBin.canExecute()) prootBin.setExecutable(true)
+        // libtalloc.so.2 must be in filesDir so the dynamic linker finds it
+        val tallocSrc = File(context.applicationInfo.nativeLibraryDir, "libtalloc2.so")
+        val tallocDst = File(dataDir, "libtalloc.so.2")
+        if (tallocSrc.exists() && !tallocDst.exists())
+            tallocSrc.copyTo(tallocDst, overwrite = true)
         progress(10, "proot ready (bundled libproot.so)")
 
         // 2. Alpine rootfs
