@@ -64,8 +64,8 @@ jobs:
       # S26: Decode keystore from GitHub Secret
       - name: Decode keystore
         run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/tilawa_release.jks
-        echo "Keystore size: $(wc -c < android/app/tilawa_release.jks) bytes"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/tilawa_release.jks
+          echo "Keystore size: $(wc -c < android/app/tilawa_release.jks) bytes"
 
       # S26: Write key.properties for Gradle signing
         - name: Write key.properties
