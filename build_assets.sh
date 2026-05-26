@@ -41,15 +41,9 @@ docker run --rm \
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 
 # ── 3. DeepFilter binary ──────────────────────────────────────────────────────
-echo "==> Downloading DeepFilter $DF_VERSION $ARCH"
+echo "==> Using bundled DeepFilter $DF_VERSION"
 # Real filename format: 0_5.6 (first dot→underscore only), gnu build for aarch64
-DF_VER="${DF_VERSION/./_}"      # 0.5.6 → 0_5.6 (only first dot replaced)
-curl -fsSL --retry 3 \
-    "https://github.com/Rikorose/DeepFilterNet/releases/download/v${DF_VERSION}/deep-filter-${DF_VER}-${ARCH}-unknown-linux-gnu" \
-    -o "$ASSETS/deep-filter" || \
-curl -fsSL --retry 3 \
-    "https://github.com/Rikorose/DeepFilterNet/releases/download/v${DF_VERSION}/deep-filter-${DF_VER}-${ARCH}-unknown-linux-musl" \
-    -o "$ASSETS/deep-filter"
+cp "$GITHUB_WORKSPACE/assets/alpine/deep-filter" "$ASSETS/deep-filter"
 chmod +x "$ASSETS/deep-filter"
 echo "    deep-filter: $(du -sh $ASSETS/deep-filter | cut -f1)"
 
