@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""
+tilawa_fix_s74_workflow.py  —  rewrite build.yml with clean YAML
+Run:
+  cp /sdcard/Download/tilawa_fix_s74_workflow.py ~/tilawa-enhancer/
+  cd ~/tilawa-enhancer
+  python3 tilawa_fix_s74_workflow.py
+  git add .github/workflows/build.yml
+  git commit -m "S74: rewrite build.yml — fix all YAML indentation errors"
+  git push
+"""
+from pathlib import Path
+
+wf = Path.home() / 'tilawa-enhancer/.github/workflows/build.yml'
+wf.parent.mkdir(parents=True, exist_ok=True)
+
+wf.write_text('''\
+name: Build APK + AAB
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build asset bundles (Alpine + Python + DeepFilter)
+        run: bash build_assets.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: \'17\'
+          distribution: \'temurin\'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: \'3.38.0\'
+          channel: \'stable\'
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Regenerate android/
+        run: flutter create --platforms=android --project-name tilawa_enhancer .
+
+      - name: Install Pillow for icon generation
+        run: pip install Pillow --quiet
+
+      - name: Patch android/ v11
+        run: python3 patch_android.py
+
+      - name: Verify INTERNET permission in manifest
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            echo "INTERNET permission: CONFIRMED"
+          else
+            echo "ERROR: INTERNET missing!"
+            exit 1
+          fi
+          if grep -q "networkSecurityConfig" "$MANIFEST"; then
+            echo "networkSecurityConfig: CONFIRMED"
+          else
+            echo "ERROR: networkSecurityConfig missing!"
+            exit 1
+          fi
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/tilawa_release.jks
+          echo "Keystore size: $(wc -c < android/app/tilawa_release.jks) bytes"
+
+      - name: Write key.properties
+        run: |
+          cat > android/key.properties << 'KEYEOF'
+          storePassword=${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=tilawa_release.jks
+          KEYEOF
+          echo "key.properties written"
+
+      - name: Patch build.gradle for signing
+        run: python3 patch_signing.py
+
+      - name: Write google-services.json
+        run: |
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo \'${{ secrets.GOOGLE_SERVICES_JSON }}\' > android/app/google-services.json
+            echo "google-services.json written"
+          else
+            echo "No GOOGLE_SERVICES_JSON secret — skipping"
+          fi
+
+      - name: Build APK (release)
+        run: |
+          flutter build apk --release --no-tree-shake-icons \
+            -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+
+      - name: Build AAB (Play Store)
+        run: |
+          flutter build appbundle --release --no-tree-shake-icons \
+            -Pandroid.injected.signing.store.file=$PWD/android/app/tilawa_release.jks \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEY_STORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload APK + AAB to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Tilawa Enhancer - Latest"
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+''')
+
+print('OK build.yml rewritten cleanly')
+print('Next:')
+print('  git add .github/workflows/build.yml')
+print('  git commit -m "S74: rewrite build.yml — fix all YAML indentation errors"')
+print('  git push')
