@@ -56,7 +56,7 @@ configurations.all {
 }
 flutter { source "../.." }
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.0"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
 }
 """)
@@ -78,7 +78,7 @@ pluginManagement {
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
     id "com.android.application" version "8.10.0" apply false
-    id "org.jetbrains.kotlin.android" version "2.0.21" apply false
+    id "org.jetbrains.kotlin.android" version "2.1.0" apply false
 }
 include ":app"
 """)
@@ -556,9 +556,7 @@ class LocalEngineRunner(
         extractEngines()
         progress(92, "Engine scripts ready")
 
-        // 6. Reference audio
-        progress(93, "Downloading reference audio…")
-        downloadRefAudio()
+        // 6. Reference audio — bundled in APK assets (extracted in setup above)
         progress(100, "Local engine ready!")
     }
 
