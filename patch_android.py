@@ -514,13 +514,14 @@ class LocalEngineRunner(
         }
         progress(35, "Alpine ready")
 
-        // 3. Python + ffmpeg — installed via apk add
+        // 3. Python + ffmpeg — bundled in APK assets/alpine/
         if (!File(alpineDir, "usr/bin/python3").exists()) {
-            progress(38, "Installing Python + ffmpeg via apk (4-8 min)…")
-            val (rc1, out1) = runProot(listOf("/sbin/apk", "update", "--no-progress"), timeoutMin=10)
-            if (rc1 != 0) throw IOException("apk update failed rc=$rc1: $out1")
-            val (rc2, out2) = runProot(listOf("/sbin/apk", "add", "--no-progress", "python3", "py3-numpy", "py3-scipy", "ffmpeg"), timeoutMin=25)
-            if (rc2 != 0) throw IOException("apk add failed rc=$rc2: $out2")
+            progress(38, "Extracting Python + ffmpeg (bundled)…")
+            val tmp = File(dataDir, "python-env.tar.gz")
+            context.assets.open("alpine/python-env.tar.gz")
+                .use { it.copyTo(FileOutputStream(tmp)) }
+            extractTarGz(tmp, alpineDir)
+            tmp.delete()
         }
         progress(78, "Python + ffmpeg ready")
 
@@ -530,7 +531,7 @@ class LocalEngineRunner(
             dfBin.parentFile?.mkdirs()
             try {
                 progress(80, "Extracting DeepFilter…")
-                context.assets.open("flutter_assets/alpine/deep-filter")
+                context.assets.open("alpine/deep-filter")
                     .use { it.copyTo(FileOutputStream(dfBin)) }
                 dfBin.setExecutable(true)
             } catch (_: Exception) {
@@ -597,7 +598,7 @@ class LocalEngineRunner(
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = context.codeCacheDir.also { it.mkdirs() }
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-            environment()["PROOT_LOADER"] = prootLoader.absolutePath
+            if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
             }.start()
             engineProc = proc
 
@@ -644,7 +645,7 @@ class LocalEngineRunner(
             environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
             val prootTmp = context.codeCacheDir.also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-            environment()["PROOT_LOADER"] = prootLoader.absolutePath
+            if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
         }.start()
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
         val code = try {
@@ -754,7 +755,7 @@ class LocalEngineRunner(
                "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
             val dest = File(enginesDir, name)
             if (dest.exists()) return@forEach
-            try { context.assets.open("flutter_assets/engines/$name").use { inp ->
+            try { context.assets.open("engines/$name").use { inp ->
                 FileOutputStream(dest).use { inp.copyTo(it) } }
             } catch (_: Exception) {}
         }
