@@ -497,60 +497,45 @@ class LocalEngineRunner(
             tallocSrc.copyTo(tallocDst, overwrite = true)
         progress(10, "proot ready (bundled libproot.so)")
 
-        // 2. Alpine rootfs
+        // 2. Alpine rootfs — bundled in APK assets/alpine/
         if (!File(alpineDir, "usr/bin/busybox").exists()) {
-            progress(12, "Downloading Alpine Linux $ALPINE_VER…")
-            val url = "https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/$archStr/" +
-                      "alpine-minirootfs-$ALPINE_VER-$archStr.tar.gz"
-            val tar = File(dataDir, "alpine.tar.gz")
-            download(url, tar, "Alpine rootfs", 12, 32)
-            progress(32, "Extracting Alpine…")
+            progress(12, "Extracting Alpine Linux (bundled)…")
             alpineDir.mkdirs()
-            extractTarGz(tar, alpineDir)
-            tar.delete()
+            val tmp = File(dataDir, "alpine.tar.gz")
+            context.assets.open("alpine/alpine-rootfs.tar.gz")
+                .use { it.copyTo(FileOutputStream(tmp)) }
+            extractTarGz(tmp, alpineDir)
+            tmp.delete()
             File(alpineDir, "etc/resolv.conf")
                 .writeText("nameserver 8.8.8.8\\nnameserver 1.1.1.1\\n")
-            File(alpineDir, "proc").mkdirs()
-            File(alpineDir, "dev").mkdirs()
-            File(alpineDir, "sys").mkdirs()
-            // Fix Alpine 3.19+ symlinks that Android tar may not create
-            val root = alpineDir.toPath()
-            for (pair in listOf("bin" to "usr/bin", "lib" to "usr/lib", "sbin" to "usr/sbin")) {
-                val link = root.resolve(pair.first)
-                if (!java.nio.file.Files.exists(link)) {
-                    try { java.nio.file.Files.createSymbolicLink(link, java.nio.file.Paths.get(pair.second)) }
-                    catch (_: Exception) {}
-                }
+            for (d in listOf("proc","dev","sys")) File(alpineDir, d).mkdirs()
+            val sh = File(alpineDir, "bin/sh")
+            if (!sh.exists()) {
+                val bb = File(alpineDir, "bin/busybox").takeIf { it.exists() }
+                    ?: File(alpineDir, "usr/bin/busybox")
+                if (bb.exists()) { bb.copyTo(sh, overwrite = true); sh.setExecutable(true) }
             }
         }
-        // Diagnose what tar actually extracted
-        val binDir = File(alpineDir, "bin")
-        val binContents = binDir.listFiles()?.joinToString(",") { it.name } ?: "bin/ missing"
-        val usrBinContents = File(alpineDir, "usr/bin").listFiles()?.take(5)?.joinToString(",") { it.name } ?: "usr/bin/ missing"
-        val libExists = File(alpineDir, "lib/ld-musl-aarch64.so.1").exists()
-        progress(36, "Alpine: bin=[$binContents] usrbin=[$usrBinContents] musl=$libExists")
-        android.os.SystemClock.sleep(8000) // pause so user can read
+        progress(35, "Alpine ready")
 
-        // 3. Python + scipy + ffmpeg
+        // 3. Python + ffmpeg — bundled in APK assets/alpine/
         if (!File(alpineDir, "usr/bin/python3").exists()) {
-            progress(38, "Installing Python + ffmpeg (4–8 min, ~120 MB)…")
-            val (rc1, out1) = runProot(listOf("/bin/sh", "-c", "apk update --no-progress 2>&1"), timeoutMin = 10)
-            if (rc1 != 0) throw IOException("apk update failed rc=$rc1: $out1")
-            val (rc, out) = runProot(listOf("/bin/sh", "-c",
-                "apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1"), timeoutMin = 20)
-            if (rc != 0) throw IOException("apk add failed rc=$rc: $out")
+            progress(38, "Extracting Python + ffmpeg (bundled)…")
+            val tmp = File(dataDir, "python-env.tar.gz")
+            context.assets.open("alpine/python-env.tar.gz")
+                .use { it.copyTo(FileOutputStream(tmp)) }
+            extractTarGz(tmp, alpineDir)
+            tmp.delete()
         }
         progress(78, "Python + ffmpeg ready")
 
-        // 4. DeepFilter binary
+        // 4. DeepFilter — bundled in APK assets/alpine/
         val dfBin = File(alpineDir, "usr/local/bin/deep-filter")
         if (!dfBin.exists()) {
-            progress(80, "Downloading DeepFilter v$DF_VERSION…")
-            val dfVer = DF_VERSION.replace(".", "_")
-            val dfUrl = "https://github.com/Rikorose/DeepFilterNet/releases/download/" +
-                        "v$DF_VERSION/deep-filter-${dfVer}-$archStr-unknown-linux-musl"
+            progress(80, "Extracting DeepFilter (bundled)…")
             dfBin.parentFile?.mkdirs()
-            download(dfUrl, dfBin, "DeepFilter", 80, 88)
+            context.assets.open("alpine/deep-filter")
+                .use { it.copyTo(FileOutputStream(dfBin)) }
             dfBin.setExecutable(true)
         }
         progress(88, "DeepFilter ready")
