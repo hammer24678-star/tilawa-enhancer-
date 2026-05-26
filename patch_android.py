@@ -56,7 +56,7 @@ configurations.all {
 }
 flutter { source "../.." }
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.0"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
 }
 """)
@@ -78,7 +78,7 @@ pluginManagement {
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
     id "com.android.application" version "8.10.0" apply false
-    id "org.jetbrains.kotlin.android" version "2.3.0" apply false
+    id "org.jetbrains.kotlin.android" version "2.0.21" apply false
 }
 include ":app"
 """)
@@ -764,16 +764,7 @@ class LocalEngineRunner(
         }
     }
 
-    private fun downloadRefAudio() {
-        refAudioDir.mkdirs()
-        val base = "https://carm5333-tilawa-server.hf.space/reference_audio/"
-        listOf("ref_araf_1425h.mp3","ref_fath_1425h.mp3","ref_fatir_1425h.mp3")
-            .forEach { f ->
-                val dest = File(refAudioDir, f)
-                if (dest.exists() && dest.length() > 10_000) return@forEach
-                try { download("$base$f", dest, f, 93, 99) } catch (_: Exception) {}
-            }
-    }
+    // downloadRefAudio() removed — ref audio now bundled in APK assets
 
     private fun ui(block: () -> Unit) = activity.runOnUiThread(block)
 }
