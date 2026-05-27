@@ -321,10 +321,8 @@ class _HomeScreenState extends State<HomeScreen>
   // Previously _fallbackRetries was reset inside setState() unconditionally,
   // meaning auto-retries always reset the counter → limit of 2 was never hit.
   Future<void> _process({bool userInitiated = true}) async {
-    if (_localMode) { // S65: local mode — never fall through to server
-      if (_localReady) { await _processLocal(); return; }
-      setState(() { _status = 'Setup not complete — open setup first'; });
-      return;
+    if (_localMode) {  // S87: always attempt local, no _localReady gate
+      await _processLocal(); return;
     }
     if (_file == null || !_serverUp) return;
     HapticFeedback.mediumImpact();
@@ -1346,22 +1344,12 @@ class _HomeScreenState extends State<HomeScreen>
     final sel = _engine == e.id;
     final col = _badgeColor(e.bc);
     final bg  = _badgeBg(e.bc);
-    final _wrongMode = (_localMode && !e.localOnly) || (!_localMode && e.localOnly);  // S85
-    return Opacity(
-      opacity: _wrongMode ? 0.38 : 1.0,  // S85: grey wrong-mode engines
-      child: AbsorbPointer(
-        absorbing: false,  // S85: still tappable to auto-switch mode
-        child: GestureDetector(
+    return GestureDetector(  // S87: removed Opacity/AbsorbPointer wrapper
       onTap: () {
         HapticFeedback.selectionClick(); // S30-P1
         setState(() {
               _engine = e.id;
-              // S84: auto-switch mode to match engine requirement
-              if (e.localOnly && !_localMode) {
-                _localMode = true;
-              } else if (!e.localOnly && _localMode) {
-                _localMode = false;
-              }
+              // S87: removed auto-mode switch — user controls mode
             });
         ApiService.saveLastEngine(e.id); // S28-T2: persist
       },
