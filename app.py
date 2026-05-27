@@ -38,11 +38,11 @@ BASE = Path(__file__).parent
 # S25: v8.4 added (Source Tier Intelligence); v8.1 replaced
 ENGINE_SCRIPTS = {
     # S47: Sacred Engines (v11.x)
-    "v11.0": BASE / "engine_v100.py",  # التجلي
-    "v11.1": BASE / "engine_v100.py",  # الإتقان  (routes internally)
-    "v11.2": BASE / "engine_v100.py",  # الاسترداد (routes internally)
+    "v11.0": BASE / "engine_tajalli_v1.py",           # التجلي
+    "v11.1": BASE / "true_engine_itiqan_v2_fixed.py", # الإتقان
+    "v11.2": BASE / "engine_isteidad_v12.py",         # الاسترداد
     # Legacy engines
-    "v10.0": BASE / "engine_v100.py",
+    "v10.0": BASE / "engine_tajalli_v1.py",
     "v9.0":  BASE / "engine_v90.py",
     "v8.7":  BASE / "engine_v87.py",
     "v8.5":  BASE / "engine_v85.py",
