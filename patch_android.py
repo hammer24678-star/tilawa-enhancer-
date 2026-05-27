@@ -768,10 +768,14 @@ class LocalEngineRunner(
                "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",
                "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
             val dest = File(enginesDir, name)
-            if (dest.exists()) return@forEach
-            try { context.assets.open("engines/$name").use { inp ->
+            if (dest.exists() && dest.length() > 1024) return@forEach  // S88
+            try { context.assets.open("flutter_assets/assets/engines/$name").use { inp ->
                 FileOutputStream(dest).use { inp.copyTo(it) } }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                try { context.assets.open("engines/$name").use { inp ->
+                    FileOutputStream(dest).use { inp.copyTo(it) } }
+                } catch (_: Exception) {}
+            }
         }
     }
 
