@@ -37,26 +37,25 @@ for d in [UPLOAD_DIR, CHUNK_DIR, OUTPUT_DIR]:
 BASE = Path(__file__).parent
 # S25: v8.4 added (Source Tier Intelligence); v8.1 replaced
 ENGINE_SCRIPTS = {
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
-    "v8.7":  BASE / "engine_v87.py",
+    # S47: Sacred Engines (v11.x)
+    "v11.0": BASE / "engine_v100.py",  # التجلي
+    "v11.1": BASE / "engine_v100.py",  # الإتقان  (routes internally)
+    "v11.2": BASE / "engine_v100.py",  # الاسترداد (routes internally)
+    # Legacy engines
+    "v10.0": BASE / "engine_v100.py",
+    "v9.0":  BASE / "engine_v90.py",
     "v8.7":  BASE / "engine_v87.py",
     "v8.5":  BASE / "engine_v85.py",
-    "v8.4": BASE / "engine_v84.py",
-    "v8.0": BASE / "engine_v80.py",
-    "v7.0": BASE / "engine_v70.py",
+    "v8.4":  BASE / "engine_v84.py",
+    "v8.0":  BASE / "engine_v80.py",
+    "v7.0":  BASE / "engine_v70.py",
 }
 REF_DIR = BASE / "reference_audio"
 
 CHUNK_SIZE = 4 * 1024 * 1024  # S25: 4MB — aligns with client, better mobile retry granularity
+
+# S59: concurrency guard — max 2 engine subprocesses at once on HF free tier
+SEMAPHORE = threading.Semaphore(2)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.route("/")
