@@ -1577,8 +1577,7 @@ class _HomeScreenState extends State<HomeScreen>
         ]), // end Column
         ]), // end accent-bar Stack
       ),
-    );
-      )));  // S85: close Opacity+AbsorbPointer+child
+    )));  // S85: close Opacity+AbsorbPointer+child
   }
 
   Widget _engineExpanded(_EngineData e, S s, Color col) => Padding(
