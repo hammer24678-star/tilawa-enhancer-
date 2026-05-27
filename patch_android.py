@@ -499,11 +499,18 @@ class LocalEngineRunner(
 
         // 2. Alpine rootfs — download like Termux proot-distro
         if (!File(alpineDir, "usr/bin/busybox").exists()) {
-            progress(12, "Downloading Alpine Linux (~4MB)…")
+            progress(12, "Extracting Alpine Linux (bundled)…")
             alpineDir.mkdirs()
             val tmp = File(dataDir, "alpine.tar.gz")
-            val _url = "https://mirrors.edge.kernel.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz"
-            download(_url, tmp, "Alpine rootfs", 12, 32)
+            var alpineOk = false
+            try {
+                context.assets.open("alpine/alpine-rootfs.tar.gz")
+                    .use { it.copyTo(java.io.FileOutputStream(tmp)) }
+                alpineOk = true
+            } catch (_: Exception) {}
+                progress(12, "Downloading Alpine Linux (~4MB)…")
+                download("https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/aarch64/alpine-minirootfs-3.18.9-aarch64.tar.gz", tmp, "Alpine rootfs", 12, 32)
+            }
             extractTarGz(tmp, alpineDir)
             tmp.delete()
             File(alpineDir, "etc/resolv.conf")
