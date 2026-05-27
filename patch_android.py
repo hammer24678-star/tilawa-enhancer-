@@ -508,6 +508,7 @@ class LocalEngineRunner(
                     .use { it.copyTo(java.io.FileOutputStream(tmp)) }
                 alpineOk = true
             } catch (_: Exception) {}
+            if (!alpineOk) {
                 progress(12, "Downloading Alpine Linux (~4MB)…")
                 download("https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/aarch64/alpine-minirootfs-3.18.9-aarch64.tar.gz", tmp, "Alpine rootfs", 12, 32)
             }
