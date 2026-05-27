@@ -603,7 +603,7 @@ class LocalEngineRunner(
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
                 "-i", inputPath, "-o", outputPath,
-                "--iterations", "3",
+                "--iterations", "3", "--json",
             )
             if (refMp3.exists()) cmd += listOf("--ref", "/reference_audio/ref_araf_1425h.mp3")
 
@@ -635,7 +635,7 @@ class LocalEngineRunner(
             } catch (_: Exception) { -1 }
 
             val outFile = File(outputPath)
-            if (rc == 0 && outFile.exists() && outFile.length() > 500) {
+            if (outFile.exists() && outFile.length() > 500) {
                 val extra = if (lastJson != null) mapOf("json" to lastJson) else emptyMap<String,Any>()
                 ui { channel?.invokeMethod("engineDone", mapOf("path" to outputPath) + extra) }
             } else {
