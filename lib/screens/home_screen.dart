@@ -92,6 +92,7 @@ class _HomeScreenState extends State<HomeScreen>
   late Animation<double> _scoreAnim;
   late final List<_StarParticle> _starList;
   late final AnimationController _resultCtrl; // S29: result card entrance
+  final ScrollController _scrollCtrl = ScrollController(); // S92-SCROLL
   late final AnimationController _particleCtrl; // S58: rising particles
 
   static const _wakeCh = MethodChannel('com.tilawa.tilawa_enhancer/wake'); // S63
@@ -231,6 +232,7 @@ class _HomeScreenState extends State<HomeScreen>
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
     _resultCtrl.dispose();
+    _scrollCtrl.dispose(); // S92-SCROLL
     _particleCtrl.dispose(); // S58
     _starCtrl.dispose();
     _shimmer.dispose();
@@ -506,6 +508,15 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     if (file != null) _resultCtrl.forward(from: 0); // S29: animate in
+    if (file != null) { // S92-SCROLL: scroll to result card
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollCtrl.hasClients) {
+          _scrollCtrl.animateTo(0,
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeOutCubic);
+        }
+      });
+    }
     if (file != null) _fireCompletionNotif(filename, score); // S61
 
     // S19: Save job record locally for persistent re-download
@@ -740,7 +751,7 @@ class _HomeScreenState extends State<HomeScreen>
                   builder: (_, __) => CustomPaint(
                     painter: _StarsPainter(_starCtrl.value, _starList),
                     isComplex: true))))),
-          CustomScrollView(slivers: [ // S62b
+          CustomScrollView(controller: _scrollCtrl, slivers: [ // S62b S92-SCROLL
             SliverAppBar( // S61-APPBAR
               pinned: true,
               floating: false,
@@ -886,6 +897,13 @@ class _HomeScreenState extends State<HomeScreen>
         });
         _scoreCtrl.forward(from: 0);
         _resultCtrl.forward(from: 0);
+        WidgetsBinding.instance.addPostFrameCallback((_) { // S92-SCROLL
+          if (_scrollCtrl.hasClients) {
+            _scrollCtrl.animateTo(0,
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutCubic);
+          }
+        });
         return;
       }
 
