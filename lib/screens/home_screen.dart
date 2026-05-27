@@ -476,10 +476,10 @@ class _HomeScreenState extends State<HomeScreen>
 
     final score = double.tryParse(sd['score']?.toString() ?? '0') ?? 0.0;
 
-    // S32: fallback auto-retry ────────────────────────────────────────────
-    // score ≤ 78 with a valid file = server was in fallback mode (reference
-    // audio not loaded yet).  Auto-reprocess up to 2 times.
-    if (score <= 78 && file != null && _fallbackRetries < 2) {
+    // S63: fallback auto-retry — only retry if score == 75.0 exactly
+    // (ffmpeg fallback always returns hardcoded score=75).
+    // Real engines can score anywhere from 55-100; never discard them.
+    if (score == 75.0 && file != null && _fallbackRetries < 2) {
       _fallbackRetries++;
       final retryNum = _fallbackRetries;
       if (mounted) {
