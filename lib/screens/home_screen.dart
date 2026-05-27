@@ -1825,7 +1825,7 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 18),
               // ── Elevate button — gold gradient ──
               GestureDetector(
-                onTap: (_busy || !_serverUp) ? null : () {
+                onTap: (_busy || (!_localMode && !_serverUp)) ? null : () {  // S86
                   HapticFeedback.mediumImpact();
                   _process();
                 },
@@ -1835,7 +1835,7 @@ class _HomeScreenState extends State<HomeScreen>
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    gradient: (_busy || !_serverUp)
+                    gradient: (_busy || (!_localMode && !_serverUp))  // S86
                       ? LinearGradient(colors: [
                           const Color(0xFF1A1200).withValues(alpha: 0.6),
                           const Color(0xFF1A1200).withValues(alpha: 0.6)])
@@ -1849,7 +1849,7 @@ class _HomeScreenState extends State<HomeScreen>
                             Color(0xFFC8A048),
                           ],
                           stops: [0.0, 0.3, 0.6, 1.0]),
-                    boxShadow: (_busy || !_serverUp) ? null : [
+                    boxShadow: (_busy || (!_localMode && !_serverUp)) ? null : [  // S86
                       BoxShadow(
                         color: const Color(0xFFC8A048).withValues(alpha: 0.40),
                         blurRadius: 24, offset: const Offset(0, 6)),
@@ -1872,7 +1872,7 @@ class _HomeScreenState extends State<HomeScreen>
                         s.ar ? 'ارفع التلاوة' : 'Elevate This Recitation',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: (_busy || !_serverUp)
+                          color: (_busy || (!_localMode && !_serverUp))  // S86
                             ? const Color(0xFF3D5A65)
                             : const Color(0xFF020D0C),
                           fontWeight: FontWeight.w900, fontSize: 14,
