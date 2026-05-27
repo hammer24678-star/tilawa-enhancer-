@@ -324,8 +324,29 @@ class _HomeScreenState extends State<HomeScreen>
   // meaning auto-retries always reset the counter → limit of 2 was never hit.
   Future<void> _process({bool userInitiated = true}) async {
     if (_localMode) {  // S90: gate restored — setup must complete first
+      // S101: re-check ready in case initState ran before setup completed
       if (!_localReady) {
-        setState(() { _status = 'Local engine not ready — complete setup first'; });
+        _localReady = await LocalEngineService.isSetupComplete();
+      }
+      if (!_localReady) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Local engine not set up — tap the setup link first'),
+          backgroundColor: Color(0xFF200D0D),
+          duration: Duration(seconds: 5)));
+        return;
+      }
+      if (_file == null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Pick an audio file first'),
+          backgroundColor: Color(0xFF200D0D),
+          duration: Duration(seconds: 4)));
+        return;
+      }
+      if (_busy) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Engine already running…'),
+          backgroundColor: Color(0xFF1A1200),
+          duration: Duration(seconds: 3)));
         return;
       }
       await _processLocal(); return;
