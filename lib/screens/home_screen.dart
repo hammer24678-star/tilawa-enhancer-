@@ -1565,6 +1565,7 @@ class _HomeScreenState extends State<HomeScreen>
         ]), // end Column
         ]), // end accent-bar Stack
       ),
+    );  // S87c: close GestureDetector
   }
 
   Widget _engineExpanded(_EngineData e, S s, Color col) => Padding(
