@@ -522,7 +522,7 @@ class LocalEngineRunner(
 
         // 3. Python + ffmpeg — try bundled asset, else download from release  // S89-PYENV
         if (!File(alpineDir, "usr/bin/python3").exists()) {
-            val tmp = File(dataDir, "python-env.tar.gz")
+            val tmp2 = File(dataDir, "python-env.tar.gz")
             var pyOk = false
             // Try bundled asset first
             try {
@@ -535,13 +535,13 @@ class LocalEngineRunner(
             if (!pyOk) {
                 progress(38, "Downloading Python + ffmpeg (~135 MB, one-time)…")
                 val pyUrl = "https://github.com/hammer24678-star/tilawa-enhancer-/releases/download/latest/python-env.tar.gz"
-                download(pyUrl, tmp, "Python env", 38, 75)
-                pyOk = tmp.exists() && tmp.length() > 1_000_000
+                download(pyUrl, tmp2, "Python env", 38, 75)
+                pyOk = tmp2.exists() && tmp2.length() > 1_000_000
             }
             if (!pyOk) throw IOException("python-env.tar.gz unavailable — check internet connection")
             progress(75, "Extracting Python + ffmpeg…")
-            extractTarGz(tmp, alpineDir)
-            tmp.delete()
+            extractTarGz(tmp2, alpineDir)
+            tmp2.delete()
         }
         progress(78, "Python + ffmpeg ready")
 
