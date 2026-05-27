@@ -878,11 +878,14 @@ class _HomeScreenState extends State<HomeScreen>
             _result!['score'] == null) {
           _result!['score'] = parsedScore > 0 ? parsedScore : 88.0;
         }
-        _output = File(ev['path'] as String? ?? ''); // S66: local file
         _wakeCh.invokeMethod('release').catchError((_) {});
-        setState(() { _busy = false; _progress = 0; _status = 'Local engine complete'; });  // S85: reset progress so UI unlocks
-        _scoreCtrl.forward(from: 0);  // S66: animate score
-        _resultCtrl.forward(from: 0); // S66: result card entrance
+        setState(() { // S91: result+output inside setState so card rebuilds
+          _busy = false; _progress = 0;
+          _status = 'Local engine complete';
+          _output = File(ev['path'] as String? ?? '');
+        });
+        _scoreCtrl.forward(from: 0);
+        _resultCtrl.forward(from: 0);
         return;
       }
 
