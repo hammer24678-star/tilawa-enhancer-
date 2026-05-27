@@ -880,20 +880,17 @@ class _HomeScreenState extends State<HomeScreen>
             _result = Map<String, dynamic>.from(data); // S66
           }
         } catch (_) {}
-        // S66: ensure _result has a valid score
-        _result ??= <String, dynamic>{
-          'score': parsedScore > 0 ? parsedScore : 88.0,
-          'lufs': -14.0, 'lra': 6.0, 'crest': 12.0, 'rms': -16.0,
-        };
-        if ((_result!['score'] as num?)?.toDouble() == 0 ||
-            _result!['score'] == null) {
-          _result!['score'] = parsedScore > 0 ? parsedScore : 88.0;
+        final fallbackScore = parsedScore > 0 ? parsedScore : 88.0;
+        final resultData = _result ?? {'score': fallbackScore, 'lufs': -14.0, 'lra': 6.0, 'crest': 12.0, 'rms': -16.0};
+        if ((resultData['score'] as num?)?.toDouble() == 0 || resultData['score'] == null) {
+          resultData['score'] = fallbackScore;
         }
         _wakeCh.invokeMethod('release').catchError((_) {});
-        setState(() { // S91: result+output inside setState so card rebuilds
+        setState(() { // S92: ALL result state inside setState
           _busy = false; _progress = 0;
           _status = 'Local engine complete';
           _output = File(ev['path'] as String? ?? '');
+          _result = resultData;
         });
         _scoreCtrl.forward(from: 0);
         _resultCtrl.forward(from: 0);
