@@ -329,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen>
       await _processLocal(); return;
     }
     if (_file == null) return;  // S91
-    if (!_serverUp) { _wakeServer(); return; }  // S91: wake instead of silent fail
+    if (!_serverUp) { _wakeServer(); setState(() { _status = "Connecting to server…"; }); return; }  // S91
     HapticFeedback.mediumImpact();
     if (userInitiated) _fallbackRetries = 0; // reset only on fresh user action
     setState(() {
