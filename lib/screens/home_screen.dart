@@ -256,7 +256,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (_waking) return;
     _wakeTimer?.cancel();
     _wakeAttempts = 0;
-    setState(() { _waking = true; _serverUp = false; });
+    setState(() { _waking = true; });  // S95: keep serverUp state during wake
 
     _wakeTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       _wakeAttempts++;
@@ -1817,7 +1817,7 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 18),
               // ── Elevate button — gold gradient ──
               GestureDetector(
-                onTap: (_busy || (!_localMode && !_serverUp)) ? null : () {  // S86
+                onTap: _busy ? null : () {  // S95
                   HapticFeedback.mediumImpact();
                   _process();
                 },
@@ -1827,7 +1827,7 @@ class _HomeScreenState extends State<HomeScreen>
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    gradient: (_busy || (!_localMode && !_serverUp))  // S86
+                    gradient: _busy  // S95
                       ? LinearGradient(colors: [
                           const Color(0xFF1A1200).withValues(alpha: 0.6),
                           const Color(0xFF1A1200).withValues(alpha: 0.6)])
@@ -1841,7 +1841,7 @@ class _HomeScreenState extends State<HomeScreen>
                             Color(0xFFC8A048),
                           ],
                           stops: [0.0, 0.3, 0.6, 1.0]),
-                    boxShadow: (_busy || (!_localMode && !_serverUp)) ? null : [  // S86
+                    boxShadow: _busy ? null : [  // S95
                       BoxShadow(
                         color: const Color(0xFFC8A048).withValues(alpha: 0.40),
                         blurRadius: 24, offset: const Offset(0, 6)),
@@ -1864,7 +1864,7 @@ class _HomeScreenState extends State<HomeScreen>
                         s.ar ? 'ارفع التلاوة' : 'Elevate This Recitation',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: (_busy || (!_localMode && !_serverUp))  // S86
+                          color: _busy  // S95
                             ? const Color(0xFF3D5A65)
                             : const Color(0xFF020D0C),
                           fontWeight: FontWeight.w900, fontSize: 14,
