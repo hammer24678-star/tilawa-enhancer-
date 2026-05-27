@@ -464,7 +464,6 @@ class LocalEngineRunner(
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
         if (!File(alpineDir, "usr/local/bin/deep-filter").exists()) return false
         if (enginesDir.list()?.isNotEmpty() != true) return false
-        if (!File(dataDir, "libtalloc.so.2").exists()) return false
         return true
     }
 
