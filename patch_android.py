@@ -529,7 +529,7 @@ class LocalEngineRunner(
             try {
                 progress(38, "Extracting Python + ffmpeg (bundled)…")
                 context.assets.open("alpine/python-env.tar.gz")
-                    .use { it.copyTo(FileOutputStream(tmp)) }
+                    .use { it.copyTo(FileOutputStream(tmp2)) }
                 pyOk = true
             } catch (_: Exception) {}
             // Fallback: download from GitHub Release
