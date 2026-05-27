@@ -586,6 +586,7 @@ class LocalEngineRunner(
             )[engineId] ?: "engine_tajalli_v1.py"
 
             val outputPath = "${cacheDir.absolutePath}/tilawa_${engineId.replace('.','_')}_${System.currentTimeMillis()}.wav"
+            refAudioDir.mkdirs()  // S89: ensure exists before proot bind
             val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
             val inParent  = File(inputPath).parent ?: cacheDir.absolutePath
 
@@ -595,7 +596,8 @@ class LocalEngineRunner(
                 "-r", alpineDir.absolutePath,
                 "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
                 "-b", "${enginesDir.absolutePath}:/engines",
-                "-b", "${refAudioDir.absolutePath}:/reference_audio",
+                // S89: only bind if dir exists
+                *( if (refAudioDir.exists()) arrayOf("-b", "${refAudioDir.absolutePath}:/reference_audio") else emptyArray() ),
                 "-b", "$inParent:$inParent",
                 "-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}",
                 "-w", "/", "--kill-on-exit",
