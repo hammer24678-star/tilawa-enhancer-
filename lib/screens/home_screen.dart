@@ -1115,13 +1115,12 @@ class _HomeScreenState extends State<HomeScreen>
             value: _localMode,
             onChanged: _busy ? null : (v) {
               setState(() => _localMode = v);
-              if (v && !_localReady) {
-                // S78: re-check before pushing SetupScreen — avoids race with initState async
+              // S93: always re-check on toggle ON
+              if (v) {
                 LocalEngineService.isSetupComplete().then((ready) {
                   if (!mounted) return;
-                  if (ready) {
-                    setState(() => _localReady = true);
-                  } else {
+                  setState(() => _localReady = ready);
+                  if (!ready) {
                     Navigator.of(context).push(MaterialPageRoute(
                       builder: (_) => SetupScreen(
                         onDone: () {
