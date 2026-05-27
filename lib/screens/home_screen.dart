@@ -321,8 +321,9 @@ class _HomeScreenState extends State<HomeScreen>
   // Previously _fallbackRetries was reset inside setState() unconditionally,
   // meaning auto-retries always reset the counter → limit of 2 was never hit.
   Future<void> _process({bool userInitiated = true}) async {
-    if (_localMode && _localReady) { // S65: route to proot engine
-      await _processLocal();
+    if (_localMode) { // S65: local mode — never fall through to server
+      if (_localReady) { await _processLocal(); return; }
+      setState(() { _status = 'Setup not complete — open setup first'; });
       return;
     }
     if (_file == null || !_serverUp) return;
@@ -1077,6 +1078,7 @@ class _HomeScreenState extends State<HomeScreen>
                 onTap: _busy ? null : () {
                   // S78: re-check before pushing SetupScreen
                   LocalEngineService.isSetupComplete().then((ready) {
+                    if (mounted) setState(() => _localReady = ready);
                     if (!mounted) return;
                     if (ready) {
                       setState(() => _localReady = true);
@@ -1365,7 +1367,9 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: sel
             ? col.withValues(alpha: 0.10)
-            : const Color(0xFF0D2B22).withValues(alpha: 0.70),
+            : (_localMode && !e.localOnly) || (!_localMode && e.localOnly)
+              ? const Color(0xFF0D2B22).withValues(alpha: 0.28)
+              : const Color(0xFF0D2B22).withValues(alpha: 0.70),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: sel
