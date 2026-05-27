@@ -321,7 +321,11 @@ class _HomeScreenState extends State<HomeScreen>
   // Previously _fallbackRetries was reset inside setState() unconditionally,
   // meaning auto-retries always reset the counter → limit of 2 was never hit.
   Future<void> _process({bool userInitiated = true}) async {
-    if (_localMode) {  // S87: always attempt local, no _localReady gate
+    if (_localMode) {  // S90: gate restored — setup must complete first
+      if (!_localReady) {
+        setState(() { _status = 'Local engine not ready — complete setup first'; });
+        return;
+      }
       await _processLocal(); return;
     }
     if (_file == null || !_serverUp) return;
