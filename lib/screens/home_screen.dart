@@ -578,6 +578,39 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Manual re-download button ──────────────────────────────────────────────
   Future<void> _reDownload() async {
+    // S100: Local mode — copy cached output to Downloads
+    if (_localMode && _output != null) {
+      final src = _output!;
+      try {
+        final ts    = DateTime.now().millisecondsSinceEpoch;
+        final ext   = src.path.endsWith('.mp3') ? 'mp3' : 'wav';
+        final fname = 'tilawa_${_engine.replaceAll('.', '_')}_$ts.$ext';
+        final dest  = File('/storage/emulated/0/Download/$fname');
+        await dest.parent.create(recursive: true);
+        await src.copy(dest.path);
+        if (!mounted) return;
+        setState(() { _output = dest; });
+        final s = LangProvider.strings(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            s.ar ? '✅ تم الحفظ في Downloads\n📁 ${dest.path}'
+                 : '✅ Saved to Downloads\n📁 ${dest.path}',
+            style: const TextStyle(fontSize: 12)),
+          backgroundColor: const Color(0xFF0D2015),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: s.ar ? 'حسناً' : 'OK',
+            textColor: const Color(0xFF3FB950),
+            onPressed: () {})));
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('❌ Save failed: $e', style: const TextStyle(fontSize: 12)),
+          backgroundColor: const Color(0xFF200D0D),
+          duration: const Duration(seconds: 6)));
+      }
+      return;
+    }
     if (_jobId == null) return;
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
