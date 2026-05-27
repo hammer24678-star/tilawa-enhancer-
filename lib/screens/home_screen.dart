@@ -877,7 +877,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
         _output = File(ev['path'] as String? ?? ''); // S66: local file
         _wakeCh.invokeMethod('release').catchError((_) {});
-        setState(() { _busy = false; _status = 'Local engine complete'; });
+        setState(() { _busy = false; _progress = 0; _status = 'Local engine complete'; });  // S85: reset progress so UI unlocks
         _scoreCtrl.forward(from: 0);  // S66: animate score
         _resultCtrl.forward(from: 0); // S66: result card entrance
         return;
@@ -1346,7 +1346,12 @@ class _HomeScreenState extends State<HomeScreen>
     final sel = _engine == e.id;
     final col = _badgeColor(e.bc);
     final bg  = _badgeBg(e.bc);
-    return GestureDetector(
+    final _wrongMode = (_localMode && !e.localOnly) || (!_localMode && e.localOnly);  // S85
+    return Opacity(
+      opacity: _wrongMode ? 0.38 : 1.0,  // S85: grey wrong-mode engines
+      child: AbsorbPointer(
+        absorbing: false,  // S85: still tappable to auto-switch mode
+        child: GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick(); // S30-P1
         setState(() {
@@ -1367,9 +1372,7 @@ class _HomeScreenState extends State<HomeScreen>
         decoration: BoxDecoration(
           color: sel
             ? col.withValues(alpha: 0.10)
-            : (_localMode && !e.localOnly) || (!_localMode && e.localOnly)
-              ? const Color(0xFF0D2B22).withValues(alpha: 0.28)
-              : const Color(0xFF0D2B22).withValues(alpha: 0.70),
+            : const Color(0xFF0D2B22).withValues(alpha: 0.70),  // S85: grey handled by Opacity wrapper
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: sel
@@ -1575,6 +1578,7 @@ class _HomeScreenState extends State<HomeScreen>
         ]), // end accent-bar Stack
       ),
     );
+      )));  // S85: close Opacity+AbsorbPointer+child
   }
 
   Widget _engineExpanded(_EngineData e, S s, Color col) => Padding(
