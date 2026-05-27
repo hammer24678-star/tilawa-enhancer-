@@ -144,6 +144,7 @@ manifest.write_text(
 '\n'
 '    <application\n'
 '        android:label="\u0645\u062d\u0633\u0650\u0651\u0646 \u0627\u0644\u062a\u0644\u0627\u0648\u0629"\n'
+'        android:requestLegacyExternalStorage="true"\n'
 '        android:name="${applicationName}"\n'
 '        android:icon="@mipmap/ic_launcher"\n'
 '        android:hardwareAccelerated="true"\n'
