@@ -27,7 +27,7 @@ class LocalEngineRunner(
     private val enginesDir  = File(dataDir, "engines")
     private val refAudioDir = File(dataDir, "reference_audio")
     private val prootBin    get() = File(context.applicationInfo.nativeLibraryDir, "libproot.so")
-        private val prootLoader get() = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so")
+    private val prootLoader get() = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so")
     private val cacheDir    = context.cacheDir
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
