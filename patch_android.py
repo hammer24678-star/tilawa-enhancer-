@@ -459,11 +459,12 @@ class LocalEngineRunner(
     }
 
     fun isSetupComplete(): Boolean {
-        // S76: check actual files on disk — never trust stale SharedPreferences
+        if (!File(dataDir, ".tilawa_setup_done").exists()) return false
         if (!prootBin.exists()) return false
         if (!File(alpineDir, "usr/bin/python3").exists()) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
-        if (!File(alpineDir, "usr/local/bin/deep-filter").exists()) return false
+        val df = File(alpineDir, "usr/local/bin/deep-filter")
+        if (!df.exists() || df.length() < 1_000_000L) return false
         if (enginesDir.list()?.isNotEmpty() != true) return false
         return true
     }
@@ -564,7 +565,7 @@ class LocalEngineRunner(
                     download(url, dfBin, "DeepFilter", 80, 88)
                     dfBin.setExecutable(true)
                 } catch (_: Exception) {
-                    progress(88, "DeepFilter unavailable — NR-only engines active")
+                    throw IOException("DeepFilter install failed — check internet and retry setup")
                 }
             }
         }
@@ -576,6 +577,7 @@ class LocalEngineRunner(
         progress(92, "Engine scripts ready")
 
         // 6. Reference audio — bundled in APK assets (extracted in setup above)
+        File(dataDir, ".tilawa_setup_done").writeText("ok")
         progress(100, "Local engine ready!")
     }
 
