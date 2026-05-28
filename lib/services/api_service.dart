@@ -6,11 +6,38 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // S65: dual-server pool — load balanced, auto-failover
-  static const List<String> _servers = [
+  // S66: dynamic server pool — loaded from assets/servers.json
+  // Add new servers by updating servers.json — no APK rebuild needed
+  static List<String> _servers = [
     'https://carm5333-tilawa-server.hf.space',
     'https://carm5333-background.hf.space',
   ];
+  static bool _serversLoaded = false;
+
+  static Future<void> loadServers() async {
+    if (_serversLoaded) return;
+    try {
+      // Load from bundled asset
+      final txt = await rootBundle.loadString('assets/servers.json');
+      final data = jsonDecode(txt) as Map<String, dynamic>;
+      final local = (data['servers'] as List).cast<String>();
+      if (local.isNotEmpty) _servers = local;
+      // Optionally fetch fresh list from GitHub (non-blocking)
+      final remoteUrl = data['remote_url'] as String?;
+      if (remoteUrl != null) {
+        http.get(Uri.parse(remoteUrl))
+            .timeout(const Duration(seconds: 5))
+            .then((res) {
+          if (res.statusCode == 200) {
+            final rd = jsonDecode(res.body) as Map<String, dynamic>;
+            final remote = (rd['servers'] as List).cast<String>();
+            if (remote.isNotEmpty) _servers = remote;
+          }
+        }).catchError((_) {});
+      }
+    } catch (_) {} // keep defaults on any error
+    _serversLoaded = true;
+  }
 
   // Server health cache: {url: {latency, queue, ts}}
   static final Map<String, Map<String, dynamic>> _health = {};
@@ -58,6 +85,7 @@ class ApiService {
 
   // Pre-warm all servers (call on app init + file picker open)
   static Future<void> preWarm() async {
+    await loadServers(); // S66: ensure server list is current
     await Future.wait(_servers.map(_refreshHealth));
   }
 

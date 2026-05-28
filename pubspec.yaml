@@ -24,6 +24,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/
+    - assets/servers.json
     - assets/images/
     - assets/images/engines/
     - assets/engines/ # S65: Python engine scripts
