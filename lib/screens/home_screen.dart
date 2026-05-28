@@ -612,6 +612,7 @@ class _HomeScreenState extends State<HomeScreen>
         final dest  = File('/storage/emulated/0/Download/$fname');
         await dest.parent.create(recursive: true);
         await src.copy(dest.path);
+        await LocalEngineService.scanFile(dest.path); // S103: notify MediaStore
         if (!mounted) return;
         setState(() { _output = dest; });
         final s = LangProvider.strings(context);
