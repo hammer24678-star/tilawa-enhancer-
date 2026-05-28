@@ -1037,6 +1037,8 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
               ),
+            if (_result != null)
+                SliverToBoxAdapter(child: _abCard(s)),
             SliverToBoxAdapter(child: _bottomRow(s)),
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
