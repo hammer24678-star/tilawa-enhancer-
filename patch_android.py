@@ -554,7 +554,7 @@ class LocalEngineRunner(
             dfBin.parentFile?.mkdirs()
             try {
                 progress(80, "Extracting DeepFilter…")
-                context.assets.open("alpine/deep-filter")
+                context.assets.open("flutter_assets/assets/alpine/deep-filter")
                     .use { it.copyTo(FileOutputStream(dfBin)) }
                 dfBin.setExecutable(true)
             } catch (_: Exception) {
