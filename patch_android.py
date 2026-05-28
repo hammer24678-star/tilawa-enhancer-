@@ -453,6 +453,12 @@ class LocalEngineRunner(
                     }
                 }
                 "cancelEngine" -> { engineProc?.destroyForcibly(); engineProc = null; result.success(null) }
+                "scanFile" -> {
+                    val path = (call.arguments as Map<*, *>)["path"] as String
+                    android.media.MediaScannerConnection.scanFile(
+                        context, arrayOf(path), null, null)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
