@@ -1036,13 +1036,10 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
               ),
-<<<<<<< HEAD
-=======
             if (_result != null)
                 SliverToBoxAdapter(child: _reportCard(s)),
             if (_result != null)
                 SliverToBoxAdapter(child: _abCard(s)),
->>>>>>> facd69b (S105: enhancement report card — human-readable insights from LUFS/RMS/Crest/LRA deltas)
             SliverToBoxAdapter(child: _bottomRow(s)),
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
