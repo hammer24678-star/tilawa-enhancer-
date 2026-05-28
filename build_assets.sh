@@ -1,5 +1,6 @@
 #!/bin/bash
 # build_assets.sh — CI asset builder (S82: Docker-based, reliable in GH Actions)
+# S106: force rebuild — ensure numpy/scipy in python-env.tar.gz
 set -euo pipefail
 
 ARCH="aarch64"
