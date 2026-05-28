@@ -6,8 +6,71 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String _base = 'https://carm5333-tilawa-server.hf.space';
-  static const int _chunkSize = 4 * 1024 * 1024; // S25: 4MB — better mobile retry granularity
+  // S65: dual-server pool — load balanced, auto-failover
+  static const List<String> _servers = [
+    'https://carm5333-tilawa-server.hf.space',
+    'https://carm5333-background.hf.space',
+  ];
+
+  // Server health cache: {url: {latency, queue, ts}}
+  static final Map<String, Map<String, dynamic>> _health = {};
+
+  // Adaptive chunk size — updated based on upload speed
+  static int _chunkSize = 4 * 1024 * 1024; // S65: adaptive, starts at 4MB
+
+  // Pick best server: lowest score = latency * (1 + queue_depth)
+  static Future<String> _bestServer() async {
+    String best = _servers[0]; double bestScore = double.infinity;
+    for (final url in _servers) {
+      final h = _health[url];
+      if (h == null) { best = url; break; } // untested = try it
+      final age = DateTime.now().millisecondsSinceEpoch - (h['ts'] as int);
+      if (age > 30000) { best = url; break; } // stale = refresh
+      final latency = (h['latency'] as int? ?? 9999).toDouble();
+      final queue   = (h['queue']   as int? ?? 0).toDouble();
+      final score   = latency * (1.0 + queue * 0.5);
+      if (score < bestScore) { bestScore = score; best = url; }
+    }
+    return best;
+  }
+
+  // Refresh health for one server
+  static Future<void> _refreshHealth(String url) async {
+    try {
+      final t0 = DateTime.now().millisecondsSinceEpoch;
+      final res = await http
+          .get(Uri.parse('$url/queue'))
+          .timeout(const Duration(seconds: 6));
+      final ms = DateTime.now().millisecondsSinceEpoch - t0;
+      if (res.statusCode == 200) {
+        final d = jsonDecode(res.body) as Map<String, dynamic>;
+        _health[url] = {
+          'latency': ms,
+          'queue':   (d['queued'] as int? ?? 0) + (d['running'] as int? ?? 0),
+          'ts':      DateTime.now().millisecondsSinceEpoch,
+        };
+      }
+    } catch (_) {
+      _health[url] = {'latency': 9999, 'queue': 99,
+                      'ts': DateTime.now().millisecondsSinceEpoch};
+    }
+  }
+
+  // Pre-warm all servers (call on app init + file picker open)
+  static Future<void> preWarm() async {
+    await Future.wait(_servers.map(_refreshHealth));
+  }
+
+  // Estimated wait time in seconds based on queue depth + file size
+  static int estimateWaitSeconds(String serverUrl, int fileSizeBytes) {
+    final h = _health[serverUrl];
+    final queue = h != null ? (h['queue'] as int? ?? 0) : 0;
+    final fileMb = fileSizeBytes / (1024 * 1024);
+    final processSec = (fileMb * 8).clamp(30, 480).toInt(); // ~8s/MB
+    return queue * 120 + processSec; // 2min per queued job + own job
+  }
+
+  static const int _chunkSizeConst = 4 * 1024 * 1024;
   static const _mediaChannel = MethodChannel('com.tilawa.tilawa_enhancer/media');
 
   // SharedPreferences key for locally persisted job records
@@ -16,8 +79,9 @@ class ApiService {
   // ── Health check ───────────────────────────────────────────────────────────
   static Future<bool> isServerRunning() async {
     try {
+      final url = await _bestServer();
       final res = await http
-          .get(Uri.parse('$_base/'))
+          .get(Uri.parse('$url/'))
           .timeout(const Duration(seconds: 8));
       return res.statusCode == 200;
     } catch (_) {
@@ -28,24 +92,21 @@ class ApiService {
   // ── S28-T2: Server latency check ──────────────────────────────────────────
   /// Returns latency in ms if server is up, null if unreachable.
   static Future<int?> checkServer() async {
-    try {
-      final t0 = DateTime.now().millisecondsSinceEpoch;
-      final res = await http
-          .get(Uri.parse('$_base/'))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        return DateTime.now().millisecondsSinceEpoch - t0;
-      }
-      return null;
-    } catch (_) {
-      return null;
+    // S65: refresh both servers, return best latency
+    await Future.wait(_servers.map(_refreshHealth));
+    int? best;
+    for (final h in _health.values) {
+      final lat = h['latency'] as int?;
+      if (lat != null && lat < 9000 && (best == null || lat < best)) best = lat;
     }
+    return best;
   }
 
   // ── S32: Silent keep-alive ping ─────────────────────────────────────────────
   static Future<void> pingServer() async {
     try {
-      await http.get(Uri.parse('$_base/')).timeout(const Duration(seconds: 8));
+      final url = await _bestServer();
+      await http.get(Uri.parse('$url/ping')).timeout(const Duration(seconds: 8));
     } catch (_) {}
   }
 
@@ -111,19 +172,30 @@ class ApiService {
     void Function(double, String)? onProgress,
   }) async {
     final size = await file.length();
-    if (size <= _chunkSize) {
-      onProgress?.call(0.05, 'رفع الملف...');
-      return _uploadDirect(file, engine);
+    await Future.wait(_servers.map(_refreshHealth));
+    final server = await _bestServer();
+    onProgress?.call(0.01, 'اختيار الخادم الأمثل...');
+    // S65: small files (<5MB) get priority direct upload
+    if (size <= 5 * 1024 * 1024) {
+      return _uploadDirectTo(file, engine, server);
     }
-    return _uploadChunked(file, engine, size, onProgress: onProgress);
+    try {
+      return await _uploadChunkedTo(file, engine, size, server, onProgress: onProgress);
+    } catch (_) {
+      // S65: auto-retry on alternate server
+      final alt = _servers.firstWhere((s) => s != server, orElse: () => server);
+      if (alt == server) rethrow;
+      onProgress?.call(0, 'تحويل إلى خادم احتياطي...');
+      return await _uploadChunkedTo(file, engine, size, alt, onProgress: onProgress);
+    }
   }
 
-  static Future<Map<String, dynamic>> _uploadDirect(
-      File file, String engine) async {
+  static Future<Map<String, dynamic>> _uploadDirectTo(
+      File file, String engine, String server) async {
     // S25-DART5: retry wrapper (was fire-and-forget)
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
-        final req = http.MultipartRequest('POST', Uri.parse('$_base/upload'));
+        final req = http.MultipartRequest('POST', Uri.parse('$server/upload'));
         req.files.add(await http.MultipartFile.fromPath('file', file.path));
         req.fields['engine'] = engine;
         final res = await req.send().timeout(const Duration(seconds: 60));
@@ -138,10 +210,11 @@ class ApiService {
     throw Exception('unreachable');
   }
 
-  static Future<Map<String, dynamic>> _uploadChunked(
+  static Future<Map<String, dynamic>> _uploadChunkedTo(
     File file,
     String engine,
-    int fileSize, {
+    int fileSize,
+    String server, {
     void Function(double, String)? onProgress,
   }) async {
     final filename = file.path.split('/').last;
@@ -150,7 +223,7 @@ class ApiService {
     // S25-DART2: use server-negotiated chunk size (server may differ)
     final startRes = await http
         .post(
-          Uri.parse('$_base/upload_start'),
+          Uri.parse('$server/upload_start'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'filename': filename,
@@ -179,7 +252,7 @@ class ApiService {
         for (int attempt = 0; attempt < 3; attempt++) {
           try {
             final req =
-                http.MultipartRequest('POST', Uri.parse('$_base/upload_chunk'));
+                http.MultipartRequest('POST', Uri.parse('$server/upload_chunk'));
             req.fields['job_id'] = jobId;
             req.fields['index'] = i.toString();
             req.files.add(http.MultipartFile.fromBytes('chunk', bytes,
@@ -206,7 +279,7 @@ class ApiService {
     onProgress?.call(0.67, 'دمج الأجزاء...');
     final finalRes = await http
         .post(
-          Uri.parse('$_base/upload_finalize'),
+          Uri.parse('$server/upload_finalize'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'job_id': jobId,
@@ -226,7 +299,7 @@ class ApiService {
   // ── Poll status ────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getStatus(String jobId) async {
     final res = await http
-        .get(Uri.parse('$_base/status/$jobId'))
+        .get(Uri.parse('${_servers[0]}/status/$jobId'))
         .timeout(const Duration(seconds: 10));
     // S22 BUG2: 404 = job gone (server restarted).
     // Without this check, Flutter parses the error JSON as a normal
@@ -248,7 +321,7 @@ class ApiService {
     File? tempFile;
     try {
       final req =
-          http.Request('GET', Uri.parse('$_base/download/$jobId'));
+          http.Request('GET', Uri.parse('${_servers[0]}/download/$jobId'));
       final res =
           await client.send(req).timeout(const Duration(minutes: 15));
 

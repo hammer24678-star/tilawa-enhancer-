@@ -206,6 +206,8 @@ class _HomeScreenState extends State<HomeScreen>
         const Duration(seconds: 6), (_) => _checkServer());
     LocalEngineService.isSetupComplete() // S65
         .then((r) { if (mounted) setState(() => _localReady = r); });
+    // S65: pre-warm both servers on app init
+    ApiService.preWarm();
     // S30-F1: restored — one loadLastEngine call
     ApiService.loadLastEngine().then((e) {
       if (mounted) setState(() => _engine = e);
@@ -301,6 +303,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── File picker ────────────────────────────────────────────────────────────
   Future<void> _pickFile() async {
+    ApiService.preWarm(); // S65: predictive pre-warm on file picker open
     final r = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['mp3', 'wav', 'm4a', 'flac', 'aac']);
