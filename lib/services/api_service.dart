@@ -380,7 +380,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> getHistory() async {
     try {
       final res = await http
-          .get(Uri.parse('$_base/history'))
+          .get(Uri.parse('${_servers[0]}/history'))
           .timeout(const Duration(seconds: 5));
       return List<Map<String, dynamic>>.from(
           jsonDecode(res.body)['jobs'] ?? []);
