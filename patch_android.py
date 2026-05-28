@@ -620,7 +620,7 @@ class LocalEngineRunner(
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                environment()["PYTHONPATH"] = "/usr/lib/python3.12/site-packages:/usr/lib/python3:/usr/lib/python312.zip"
+                environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3:/usr/lib/python3/dist-packages"
                 environment()["TERM"] = "xterm"
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = context.codeCacheDir.also { it.mkdirs() }
