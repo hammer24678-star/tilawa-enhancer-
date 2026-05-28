@@ -13,23 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Restore cached assets
-        id: asset-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            assets/alpine
-            assets/engines
-            assets/reference_audio
-          key: tilawa-assets-${{ hashFiles('build_assets.sh') }}
-
       - name: Build asset bundles (Alpine + Python + DeepFilter)
-        if: steps.asset-cache.outputs.cache-hit != 'true'
         run: bash build_assets.sh
-
-      - name: Assets from cache
-        if: steps.asset-cache.outputs.cache-hit == 'true'
-        run: echo "All assets restored from cache — skipping 40min build"
 
       - uses: actions/setup-java@v4
         with:

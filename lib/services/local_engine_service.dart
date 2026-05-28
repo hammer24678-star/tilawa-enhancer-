@@ -79,8 +79,4 @@ class LocalEngineService {
   static Future<void> cancelEngine() async {
     try { await _ch.invokeMethod('cancelEngine'); } catch (_) {}
   }
-
-  static Future<void> scanFile(String path) async {
-    try { await _ch.invokeMethod('scanFile', {'path': path}); } catch (_) {}
-  }
 }

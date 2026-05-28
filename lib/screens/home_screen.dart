@@ -4,7 +4,6 @@ import '../services/local_engine_service.dart'; // S65
 import 'setup_screen.dart'; // S65
 
 import 'dart:async';
-import 'package:audioplayers/audioplayers.dart';
 import 'dart:math' as math;
 import 'dart:math' show pi, sin, cos, Random; // S29+S30
 import 'package:flutter/material.dart';
@@ -52,12 +51,6 @@ class _HomeScreenState extends State<HomeScreen>
   bool    _serverUp  = false;
   String? _jobId;
   File?   _output;
-  // S104: A/B comparison player
-  final AudioPlayer _abPlayer  = AudioPlayer();
-  bool   _abPlaying   = false;
-  bool   _abIsB       = true;   // true=enhanced, false=original
-  double _abPos       = 0.0;
-  double _abDur       = 1.0;
   Map<String, dynamic>? _result;
   Timer?  _serverTimer;
   Timer?  _pollTimer;
@@ -249,7 +242,6 @@ class _HomeScreenState extends State<HomeScreen>
     _audioBarsCtrl.dispose();
     _shimmerSweep.dispose();
     _scoreCtrl.dispose();
-    _abPlayer.dispose();
     _glowCtrl.dispose();
     super.dispose();
   }
@@ -609,142 +601,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ── Manual re-download button ──────────────────────────────────────────────
-  // S104: A/B comparison ─────────────────────────────────────────────────────
-  Future<void> _abToggleTrack() async {
-    setState(() { _abIsB = !_abIsB; _abPos = 0; });
-    final src = _abIsB ? _output : _file;
-    if (src == null) return;
-    await _abPlayer.stop();
-    await _abPlayer.play(DeviceFileSource(src.path));
-    setState(() { _abPlaying = true; });
-  }
-
-  Future<void> _abTogglePlay() async {
-    if (_abPlaying) {
-      await _abPlayer.pause();
-      setState(() { _abPlaying = false; });
-    } else {
-      final src = _abIsB ? _output : _file;
-      if (src == null) return;
-      if (_abPos >= _abDur - 0.1) {
-        await _abPlayer.play(DeviceFileSource(src.path));
-      } else {
-        await _abPlayer.resume();
-      }
-      setState(() { _abPlaying = true; });
-    }
-  }
-
-  Widget _abCard(S s) {
-    if (_file == null || _output == null) return const SizedBox.shrink();
-    _abPlayer.onDurationChanged.listen((d) {
-      if (mounted) setState(() { _abDur = d.inMilliseconds.toDouble().clamp(1, 1e9); });
-    });
-    _abPlayer.onPositionChanged.listen((p) {
-      if (mounted) setState(() { _abPos = p.inMilliseconds.toDouble(); });
-    });
-    _abPlayer.onPlayerComplete.listen((_) {
-      if (mounted) setState(() { _abPlaying = false; _abPos = 0; });
-    });
-    final progress = (_abPos / _abDur).clamp(0.0, 1.0);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A1A14),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1DB898).withValues(alpha: 0.35))),
-      child: Column(children: [
-        Row(children: [
-          const Icon(Icons.compare_arrows_rounded,
-            color: Color(0xFF1DB898), size: 14),
-          const SizedBox(width: 6),
-          Text(s.ar ? 'مقارنة قبل / بعد' : 'Before / After',
-            style: const TextStyle(
-              color: Color(0xFF1DB898), fontSize: 11,
-              fontWeight: FontWeight.w600, letterSpacing: 1.2)),
-        ]),
-        const SizedBox(height: 10),
-        Row(children: [
-          // A button
-          Expanded(child: GestureDetector(
-            onTap: () async {
-              if (_abIsB) await _abToggleTrack();
-              else await _abTogglePlay();
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: !_abIsB
-                  ? const Color(0xFF1DB898).withValues(alpha: 0.18)
-                  : const Color(0xFF0D2B22),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: !_abIsB
-                    ? const Color(0xFF1DB898)
-                    : const Color(0xFF1DB898).withValues(alpha: 0.25))),
-              child: Column(children: [
-                Icon(!_abIsB && _abPlaying
-                  ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  color: const Color(0xFF1DB898), size: 18),
-                const SizedBox(height: 2),
-                Text(s.ar ? 'الأصلي' : 'Original',
-                  style: const TextStyle(
-                    color: Color(0xFF1DB898), fontSize: 10)),
-              ]),
-            ))),
-          const SizedBox(width: 8),
-          // B button
-          Expanded(child: GestureDetector(
-            onTap: () async {
-              if (!_abIsB) await _abToggleTrack();
-              else await _abTogglePlay();
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: _abIsB
-                  ? const Color(0xFFD4AF37).withValues(alpha: 0.18)
-                  : const Color(0xFF1A1200),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _abIsB
-                    ? const Color(0xFFD4AF37)
-                    : const Color(0xFFD4AF37).withValues(alpha: 0.25))),
-              child: Column(children: [
-                Icon(_abIsB && _abPlaying
-                  ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  color: const Color(0xFFD4AF37), size: 18),
-                const SizedBox(height: 2),
-                Text(s.ar ? 'المُحسَّن' : 'Enhanced',
-                  style: const TextStyle(
-                    color: Color(0xFFD4AF37), fontSize: 10)),
-              ]),
-            ))),
-        ]),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: progress, minHeight: 4,
-            backgroundColor: const Color(0xFF1A2733),
-            valueColor: AlwaysStoppedAnimation<Color>(
-              _abIsB ? const Color(0xFFD4AF37) : const Color(0xFF1DB898)))),
-        const SizedBox(height: 4),
-        Text(
-          _abIsB
-            ? (s.ar ? '▶ المُحسَّن' : '▶ Enhanced')
-            : (s.ar ? '▶ الأصلي' : '▶ Original'),
-          style: TextStyle(
-            color: _abIsB
-              ? const Color(0xFFD4AF37).withValues(alpha: 0.6)
-              : const Color(0xFF1DB898).withValues(alpha: 0.6),
-            fontSize: 9)),
-      ]));
-  }
-
   Future<void> _reDownload() async {
     // S100: Local mode — copy cached output to Downloads
     if (_localMode && _output != null) {
@@ -756,7 +612,6 @@ class _HomeScreenState extends State<HomeScreen>
         final dest  = File('/storage/emulated/0/Download/$fname');
         await dest.parent.create(recursive: true);
         await src.copy(dest.path);
-        await LocalEngineService.scanFile(dest.path); // S103: notify MediaStore
         if (!mounted) return;
         setState(() { _output = dest; });
         final s = LangProvider.strings(context);
@@ -1037,8 +892,6 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
               ),
-            if (_result != null)
-                SliverToBoxAdapter(child: _abCard(s)),
             SliverToBoxAdapter(child: _bottomRow(s)),
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
