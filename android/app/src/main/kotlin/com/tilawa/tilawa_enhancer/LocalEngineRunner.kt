@@ -230,7 +230,7 @@ class LocalEngineRunner(
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 environment()["TERM"] = "xterm"
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
-                val prootTmp = context.codeCacheDir.also { it.mkdirs() }
+                val prootTmp = File(context.cacheDir, "proot-tmp").also { it.mkdirs() }
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             environment()["PROOT_LOADER"] = prootLoader.absolutePath
             }.start()
