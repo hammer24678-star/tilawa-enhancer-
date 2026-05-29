@@ -614,6 +614,7 @@ class LocalEngineRunner(
             refAudioDir.mkdirs()  // S89: ensure exists before proot bind
             val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
             val inParent  = File(inputPath).parent ?: cacheDir.absolutePath
+            File(inParent).mkdirs()  // S103: ensure dir exists before proot bind
 
             val cmd = mutableListOf(
                 prootBin.absolutePath,
