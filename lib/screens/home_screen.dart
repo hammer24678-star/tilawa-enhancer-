@@ -54,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen>
   File?   _output;
   // S104: A/B comparison player
   final AudioPlayer _abPlayer  = AudioPlayer();
+  bool _abListenersSet = false;
   bool   _abPlaying   = false;
   bool   _abIsB       = true;   // true=enhanced, false=original
   double _abPos       = 0.0;
@@ -620,6 +621,18 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _abTogglePlay() async {
+    if (!_abListenersSet) {
+      _abListenersSet = true;
+      _abPlayer.onDurationChanged.listen((d) {
+        if (mounted) setState(() { _abDur = d.inMilliseconds.toDouble().clamp(1, 1e9); });
+      });
+      _abPlayer.onPositionChanged.listen((p) {
+        if (mounted) setState(() { _abPos = p.inMilliseconds.toDouble(); });
+      });
+      _abPlayer.onPlayerComplete.listen((_) {
+        if (mounted) setState(() { _abPlaying = false; _abPos = 0; });
+      });
+    }
     if (_abPlaying) {
       await _abPlayer.pause();
       setState(() { _abPlaying = false; });
@@ -637,15 +650,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _abCard(S s) {
     if (_file == null || _output == null) return const SizedBox.shrink();
-    _abPlayer.onDurationChanged.listen((d) {
-      if (mounted) setState(() { _abDur = d.inMilliseconds.toDouble().clamp(1, 1e9); });
-    });
-    _abPlayer.onPositionChanged.listen((p) {
-      if (mounted) setState(() { _abPos = p.inMilliseconds.toDouble(); });
-    });
-    _abPlayer.onPlayerComplete.listen((_) {
-      if (mounted) setState(() { _abPlaying = false; _abPos = 0; });
-    });
     final progress = (_abPos / _abDur).clamp(0.0, 1.0);
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
