@@ -9,57 +9,70 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   static const _history = [
-        _EHist('v11.0','التجلي — The Manifestation','≥ 99.5/100','LATEST','gold',
-      'محرك التوجيه الذكي: يختار مسار الإتقان أو الاسترداد تلقائياً.',
-      'Smart router: auto-selects Itiqan or Isteidad path based on source tier.'),
+    _EHist('v11.0','التجلي — The Manifestation','≥ 99.5/100','LATEST','gold',
+      'المحرك الموحَّد والذكي. يصنِّف التسجيل في 5 مستويات ثم يوجِّهه للمسار الأمثل: الإتقان للنظيف، والاسترداد للتالف. يمرُّ الصوت عبر البيان والنور قبل الترميز النهائي مع توقيع SHA-256.',
+      'The unified smart router. Classifies the recording into 5 tiers then routes to the optimal path: Itiqan for clean, Isteidad for damaged. Passes through Bayan and Noor before final TPDF encode with SHA-256 provenance.',
+      'S+'),
     _EHist('v11.1','الإتقان — Perfection','≥ 99/100','','gold',
-      'مسار التسجيلات النظيفة: NR ثنائي + EQ طيفي + معايرة LUFS+LRA.',
-      'Clean recordings path: two-stage NR, spectral EQ, joint LUFS+LRA.'),
+      'تسعة مراحل متتالية للتسجيلات النظيفة. يعمل بـ 48 حزمة طيفية مع محسِّن L-BFGS-B لضبط الـ EQ. يحمي مناطق الفورمانت بحدٍّ ±2dB. أفضل محرك للتسجيلات عالية الجودة.',
+      '9-phase pipeline for pristine sources. Operates on 48 spectral bands with L-BFGS-B optimizer for EQ. Protects formant zones with ±2dB cap. Best engine for high-quality recordings.',
+      'S'),
     _EHist('v11.2','الاسترداد — Recovery','≥ 98/100','','gold',
-      'مسار التسجيلات التالفة: NR مكثف + إزالة قطع + إعادة بناء طيفي.',
-      'Damaged path: heavy NR, declip, spectrum reconstruction.'),
+      'مخصَّص للتسجيلات التالفة والحرجة. يكشف ثلاثة أنواع من التلف (A/B/C) ويعالج كلاً منها بمسار مختلف. يشمل إزالة القطع وتوسيع النطاق الترددي وإعادة بناء الطيف. الخيار الأول لمسجلات الجوامع والأشرطة القديمة.',
+      'Built for damaged and critical recordings. Detects three damage types (A/B/C) and treats each with a dedicated path. Includes declipping, BWE, and spectrum reconstruction. First choice for mosque recordings and old cassettes.',
+      'S-'),
     _EHist('v9.0','The Evolution','≥ 99/100','LATEST','gold',
-      'إعادة كتابة كاملة: 1,890 سطرًا. NR دائمًا قبل EQ. محسِّن LUFS+LRA مشترك. نسب ثقة منفصلة لكل معامل.',
-      'Full rewrite: 1,890 lines. NR always before EQ. Joint LUFS+LRA optimizer. Per-parameter confidence vectors.'),
+      'إعادة كتابة كاملة من الصفر: 1,890 سطراً. لأول مرة يُطبَّق NR دائماً قبل EQ. محسِّن LUFS+LRA مشترك بدل منفصل. ناقلات ثقة مستقلة لكل معامل. أقوى محرك مستقل.',
+      'Complete rewrite from scratch: 1,890 lines. NR always applied before EQ for the first time. Joint LUFS+LRA optimizer instead of separate. Independent confidence vectors per parameter. Most powerful standalone engine.',
+      'S'),
     _EHist('v8.5','Tier-Adjusted Scoring','≥ 99/100','DEFAULT','gold',
-      'أوزان MDS مختلفة لكل فئة. أسقف Crest/LRA/LUFS محسوبة لكل فئة. حذف تحكّم 64K_FLOOR.',
-      'Different MDS weights per source tier. Per-tier Crest/LRA/LUFS ceilings. 64K_FLOOR hack removed.'),
-    _EHist('v8.4','Source Tier Intelligence','≥98/100','LATEST','gold',
-      'يحلِّل جودة المصدر: يكشف تردد قطع الكودك، نوع الضوضاء، والقطع. يضبط NR والـ EQ بناءً على التصنيف.',
-      'Analyzes source quality: detects codec cutoff, noise type, clipping. Adapts NR, EQ, LRA per tier.'),
-_EHist('v8.1','Android-Hardened','≥98/100','','gold',
-      'إصلاح خطأ حرج في v8.0: مسار /tmp غير متاح على أندرويد — يستخدم الآن مجلد عمل آمن عبر tempfile. كل مزايا v8.0 محتفظة.',
-      'Critical fix from v8.0: /tmp path inaccessible on Android — now uses safe tempfile workdir. All v8.0 improvements preserved.'),
-    _EHist('v8.0','Calibrated Precision','≥96/100','','gold',
-      'إصلاح 5 أخطاء: SPECTRAL_BIAS معكوس، double compand، 5 limiters تراكمية، خطأ DR/LRA، Crest guard ضعيف',
-      'Fixes 5 v7.6 bugs: reversed bias, double compand stacking, 5 cumulative limiters, wrong DR/LRA type, weak Crest guard'),
+      'كل فئة مصدر تحصل على أوزان MDS وأسقف Crest/LRA/LUFS خاصة بها. حذف اختراق 64K_FLOOR الذي كان يرفع النتيجة زوراً. أول محرك يقيس بدقة حقيقية.',
+      'Each source tier gets its own MDS weights and Crest/LRA/LUFS ceilings. Removed 64K_FLOOR hack that falsely inflated scores. First engine to measure with true accuracy.',
+      'A+'),
+    _EHist('v8.4','Source Tier Intelligence','≥ 98/100','LATEST','gold',
+      'أول محرك يحلِّل جودة المصدر قبل المعالجة: يكشف تردد قطع الكودك، ونوع الضوضاء، والقطع. يضبط NR والـ EQ بناءً على التصنيف. مفتاح تطوُّر سلسلة v8.',
+      'First engine to analyze source quality before processing: detects codec cutoff, noise type, clipping. Adapts NR and EQ based on classification. The key breakthrough of the v8 series.',
+      'A'),
+    _EHist('v8.1','Android-Hardened','≥ 98/100','','gold',
+      'إصلاح حرج: مسار /tmp لا يعمل على أندرويد. يستخدم الآن مجلد عمل آمن عبر tempfile. كل مزايا v8.0 محتفظة. الفرق الوحيد: يعمل.',
+      'Critical fix: /tmp path fails on Android. Now uses safe tempfile workdir. All v8.0 features preserved. Only difference: it actually works on Android.',
+      'A'),
+    _EHist('v8.0','Calibrated Precision','≥ 96/100','','gold',
+      'أصلح 5 أخطاء متراكمة من v7.6: SPECTRAL_BIAS معكوس، compand مضاعف، 5 limiters متراكمة، خطأ DR/LRA، حراسة Crest ضعيفة. خطوة نظافة ضرورية.',
+      'Fixed 5 bugs inherited from v7.6: reversed bias, double compand, 5 stacked limiters, wrong DR/LRA, weak Crest guard. A necessary cleanup step.',
+      'A-'),
     _EHist('v7.6','Intelligent Assessment','~94/100','MDS','blue',
-      'نظام MDS: SFM + DR + Spectral Distance + Per-Band SNR. تشخيص مستمر 0-100 بدل 5 تصنيفات',
-      'MDS system: SFM + DR + Spectral Distance + Per-Band SNR. Continuous 0-100 score instead of 5 binary tiers'),
+      'ثورة في القياس: نظام MDS يجمع SFM + DR + Spectral Distance + Per-Band SNR في نتيجة مستمرة 0-100 بدل 5 تصنيفات ثنائية. الأساس الذي بُني عليه كل شيء بعده.',
+      'A measurement revolution: MDS system combines SFM + DR + Spectral Distance + Per-Band SNR into a continuous 0-100 score instead of 5 binary tiers. The foundation everything after was built on.',
+      'B+'),
     _EHist('v7.55','Forensic Fix','~95/100','','green',
-      'Crest-aware warmth nodes. LRA target الحقيقي 4.19 من قياس كامل الملف. SPECTRAL_BIAS_755 محدَّث',
-      'Crest-aware warmth nodes. True LRA target 4.19 from full-file measurement. Updated SPECTRAL_BIAS_755'),
+      'warmth nodes مرتبطة بـ Crest. هدف LRA الحقيقي 4.19 مقاساً من الملف كاملاً. تحديث SPECTRAL_BIAS_755. إصلاحات دقيقة لكن أثرها محسوس.',
+      'Crest-aware warmth nodes. True LRA target 4.19 measured from full file. Updated SPECTRAL_BIAS_755. Small fixes with noticeable impact.',
+      'B+'),
     _EHist('v7.5','Disciplined Precision','94/100','BEST','green',
-      'مبدأ Do-No-Harm. v7.0 compand + 9-segment spectral + Quality Gate. أول نسخة تتجاوز 90 بثبات',
-      'Do-No-Harm principle. v7.0 compand + 9-segment spectral + Quality Gate. First consistently above 90'),
-    _EHist('v7.4','Forensic Precision','~90/100','','',
-      'فشل: upward compand أفسد dynamic range. +12dB عدوانية 4kHz/8kHz. LRA gate رفع LUFS لـ -5.20',
-      'Failed: upward compand ruined dynamic range. Aggressive +12dB at 4kHz/8kHz. LRA gate pushed LUFS to -5.20'),
-    _EHist('v7.3','Game Changer','~91/100','','',
-      '7 Presence filters + compressors متراكمة + harmonic exciter = تشويه. أسوأ من v7.0',
-      '7 presence filters + stacked compressors + harmonic exciter = distortion. Worse than v7.0'),
+      'مبدأ Do-No-Harm: لأول مرة يتوقف المحرك عن المعالجة إذا كانت ستضر. 9 شرائح طيفية. Quality Gate. أول نسخة تتجاوز 90 بثبات. اللحظة التي نضجت فيها الفكرة.',
+      'Do-No-Harm principle: first time the engine stops processing if it would cause harm. 9 spectral segments. Quality Gate. First version consistently above 90. The moment the concept matured.',
+      'B'),
+    _EHist('v7.4','Forensic Precision','~90/100','FAIL','',
+      'فشل: upward compand دمَّر النطاق الديناميكي. +12dB عدوانية عند 4kHz/8kHz. LRA gate رفع LUFS إلى -5.20. مثال على أن الإضافة بلا ضبط تؤدي إلى عكس المطلوب.',
+      'Failed: upward compand destroyed dynamic range. Aggressive +12dB at 4kHz/8kHz. LRA gate pushed LUFS to -5.20. A lesson that adding without calibration achieves the opposite.',
+      'F'),
+    _EHist('v7.3','Overengineered','~91/100','FAIL','',
+      'فشل: 7 فلاتر presence + compressors متراكمة + harmonic exciter = تشويه كامل. أسوأ من v7.0. درس آخر في الأقل أحياناً أكثر.',
+      'Failed: 7 presence filters + stacked compressors + harmonic exciter = complete distortion. Worse than v7.0. Another lesson that less is sometimes more.',
+      'D'),
     _EHist('v7.0','Convergence','~91/100','CLASSIC','gold',
-      'THREE-PASS Pipeline. تقارب تكراري حتى score≥97. LRA + RMS feedback. أفضل بنية غير معقدة',
-      'THREE-PASS pipeline. Iterative convergence until score≥97. LRA + RMS feedback. Best clean architecture'),
+      'أول بنية ناضجة: THREE-PASS Pipeline مع تقارب تكراري حتى score≥97. LRA + RMS feedback. البنية الأنظف والأبسط في كل تاريخ المشروع. الأساس الحقيقي.',
+      'First mature architecture: THREE-PASS Pipeline with iterative convergence until score≥97. LRA + RMS feedback. The cleanest and simplest architecture in the entire project history. The true foundation.',
+      'B'),
     _EHist('v6.6','Scale Fix','~82/100','','',
-      'scale تصحيح الطيف 0.60→0.68. ref_lra الحقيقي 2.26. Warmth protection أذكى',
-      'Spectral correction scale 0.60→0.68. Real ref_lra 2.26. Smarter warmth protection'),
+      'تصحيح scale الطيف من 0.60 إلى 0.68. ref_lra الحقيقي 2.26. warmth protection أذكى. تحسين صغير لكنه صحيح.',
+      'Spectral correction scale fix 0.60→0.68. Real ref_lra 2.26. Smarter warmth protection. Small but correct improvement.',
+      'C+'),
     _EHist('v6.5','Stable Reference','~80/100','','',
-      'STABLE FINGERPRINT: median من كل المقاطع. TILT-BASED WARMTH. NR Guard <96kbps',
-      'STABLE FINGERPRINT: median from all segments. TILT-BASED WARMTH. NR Guard for <96kbps sources'),
-    _EHist('v6.0','Psychoacoustic Pipeline','~75/100','FIRST','blue',
-      'البداية: De-Clipping + A-Weighting + Bark Scale EQ (24 نطاق) + Two-Pass LUFS. أساس كل شيء',
-      'The beginning: De-Clipping + A-Weighting + Bark Scale EQ (24 bands) + Two-Pass LUFS. The foundation'),
+      'STABLE FINGERPRINT: median من كل المقاطع. TILT-BASED WARMTH. NR Guard للمصادر أقل من 96kbps. أول محاولة جدية للاستقرار.',
+      'STABLE FINGERPRINT: median from all segments. TILT-BASED WARMTH. NR Guard for <96kbps sources. First serious attempt at stability.',
+      'C'),
   ];
 
   // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
@@ -377,11 +390,42 @@ _EHist('v8.1','Android-Hardened','≥98/100','','gold',
           textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
           style: TextStyle(
             color: _cSub(ctx), fontSize: 11, height: 1.5)),
+        if (e.rating.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            Text(isAr ? 'تقييم المطوِّر:' : 'Dev Rating:',
+              style: const TextStyle(
+                color: Color(0xFF484F58), fontSize: 9,
+                letterSpacing: 0.5)),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: _ratingColor(e.rating).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(
+                  color: _ratingColor(e.rating).withValues(alpha: 0.5))),
+              child: Text(e.rating,
+                style: TextStyle(
+                  color: _ratingColor(e.rating),
+                  fontSize: 11, fontWeight: FontWeight.w900,
+                  letterSpacing: 1.0))),
+          ]),
+        ],
       ]));
+  }
+
+  Color _ratingColor(String r) {
+    if (r.startsWith('S')) return const Color(0xFFD4AF37);
+    if (r == 'A+' || r == 'A') return const Color(0xFF3FB950);
+    if (r == 'A-') return const Color(0xFF1DB898);
+    if (r.startsWith('B')) return const Color(0xFF58A6FF);
+    if (r.startsWith('C')) return const Color(0xFF8B949E);
+    return const Color(0xFFF85149);
   }
 }
 
 class _EHist {
-  final String v, name, score, badge, bc, ar, en;
-  const _EHist(this.v, this.name, this.score, this.badge, this.bc, this.ar, this.en);
+  final String v, name, score, badge, bc, ar, en, rating;
+  const _EHist(this.v, this.name, this.score, this.badge, this.bc, this.ar, this.en, [this.rating = '']);
 }
