@@ -552,6 +552,15 @@ class LocalEngineRunner(
             extractTarGz(tmp2, alpineDir)
             tmp2.delete()
         }
+        // S102: install numpy/scipy via pip to ensure correct Python version path
+        if (!File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists() &&
+            !File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() &&
+            !File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()) {
+            progress(79, "Installing numpy + scipy via pip…")
+            runProot(listOf("/bin/sh", "-c",
+                "pip3 install --quiet --no-cache-dir numpy scipy 2>&1 || " +
+                "pip install --quiet --no-cache-dir numpy scipy 2>&1"), timeoutMin=15)
+        }
         progress(78, "Python + ffmpeg ready")
 
         // 4. DeepFilter — bundled in APK assets/alpine/
