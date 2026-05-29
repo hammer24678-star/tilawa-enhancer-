@@ -205,7 +205,8 @@ class ApiService {
     onProgress?.call(0.01, 'اختيار الخادم الأمثل...');
     // S65: small files (<5MB) get priority direct upload
     if (size <= 5 * 1024 * 1024) {
-      return _uploadDirectTo(file, engine, server);
+      onProgress?.call(0.02, 'جار الرفع...');
+      return _uploadDirectTo(file, engine, server, onProgress: onProgress);
     }
     try {
       return await _uploadChunkedTo(file, engine, size, server, onProgress: onProgress);
@@ -219,15 +220,19 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> _uploadDirectTo(
-      File file, String engine, String server) async {
+      File file, String engine, String server, {
+      void Function(double, String)? onProgress}) async {
     // S25-DART5: retry wrapper (was fire-and-forget)
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
+        if (attempt > 0) onProgress?.call(0.02, 'إعادة محاولة الرفع أثناء الشبكة...');
         final req = http.MultipartRequest('POST', Uri.parse('$server/upload'));
         req.files.add(await http.MultipartFile.fromPath('file', file.path));
         req.fields['engine'] = engine;
         final res = await req.send().timeout(const Duration(seconds: 60));
-        final body = await res.stream.bytesToString();
+        final body = await res.stream
+            .bytesToString()
+            .timeout(const Duration(seconds: 30)); // FIX: was no timeout
         if (res.statusCode == 200) return Map<String, dynamic>.from(jsonDecode(body) as Map);
         throw Exception('direct upload HTTP ${res.statusCode}');
       } catch (e) {
