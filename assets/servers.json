@@ -1,16 +1,7 @@
 {
   "servers": [
     "https://carm5333-tilawa-server.hf.space",
-    "https://carm5333-background.hf.space",
-    "https://carm5333-background2.hf.space",
-    "https://carm5333-background3.hf.space",
-    "https://carm5333-background4.hf.space",
-    "https://carm5333-background5.hf.space",
-    "https://carm5333-background6.hf.space",
-    "https://carm5333-background7.hf.space",
-    "https://carm5333-background8.hf.space",
-    "https://carm5333-background9.hf.space",
-    "https://carm5333-background10.hf.space"
+    "https://carm5333-background.hf.space"
   ],
   "remote_url": "https://raw.githubusercontent.com/hammer24678-star/tilawa-enhancer-/master/assets/servers.json"
 }
