@@ -25,7 +25,7 @@ void main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final langAr      = prefs.getBool('lang_ar')      ?? true;
-  final seenWelcome = prefs.getBool('seen_welcome_v4') ?? false; // S32
+  final seenWelcome = prefs.getBool('seen_welcome_v5') ?? false; // S32
   final isDark      = prefs.getBool('is_dark')       ?? true; // S31-F4
 
   runApp(TilawaApp(
