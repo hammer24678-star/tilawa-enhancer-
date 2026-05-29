@@ -47,7 +47,7 @@ class ApiService {
 
   // Pick best server: lowest score = latency * (1 + queue_depth)
   static Future<String> _bestServer() async {
-    String best = _servers[0]; double bestScore = double.infinity;
+    String best = await _bestServer(); double bestScore = double.infinity;
     for (final url in _servers) {
       final h = _health[url];
       if (h == null) { best = url; break; } // untested = try it
@@ -327,7 +327,7 @@ class ApiService {
   // ── Poll status ────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getStatus(String jobId) async {
     final res = await http
-        .get(Uri.parse('${_servers[0]}/status/$jobId'))
+        .get(Uri.parse('${await _bestServer()}/status/$jobId'))
         .timeout(const Duration(seconds: 10));
     // S22 BUG2: 404 = job gone (server restarted).
     // Without this check, Flutter parses the error JSON as a normal
@@ -349,7 +349,7 @@ class ApiService {
     File? tempFile;
     try {
       final req =
-          http.Request('GET', Uri.parse('${_servers[0]}/download/$jobId'));
+          http.Request('GET', Uri.parse('${await _bestServer()}/download/$jobId'));
       final res =
           await client.send(req).timeout(const Duration(minutes: 15));
 
@@ -408,7 +408,7 @@ class ApiService {
   static Future<List<Map<String, dynamic>>> getHistory() async {
     try {
       final res = await http
-          .get(Uri.parse('${_servers[0]}/history'))
+          .get(Uri.parse('${await _bestServer()}/history'))
           .timeout(const Duration(seconds: 5));
       return List<Map<String, dynamic>>.from(
           jsonDecode(res.body)['jobs'] ?? []);
