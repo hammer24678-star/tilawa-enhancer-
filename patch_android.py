@@ -584,7 +584,7 @@ class LocalEngineRunner(
         extractEngines()
         val dfSrc = File(alpineDir, "usr/local/bin/deep-filter")
         val dfDst = File(enginesDir, "deep-filter")
-        if (dfSrc.exists() && !dfDst.exists()) { dfSrc.copyTo(dfDst, overwrite=true); dfDst.setExecutable(true) }
+        if (dfSrc.exists() && !dfDst.exists()) { dfSrc.copyTo(dfDst, overwrite = true); dfDst.setExecutable(true) }
         progress(92, "Engine scripts ready")
 
         // 6. Reference audio — extract from APK assets
