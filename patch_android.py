@@ -621,6 +621,8 @@ class LocalEngineRunner(
             }
         }
         File(dataDir, ".tilawa_setup_done").writeText("ok")
+        context.getSharedPreferences("tilawa_local", 0)
+            .edit().putBoolean("setup_complete", true).apply()  // S106
         progress(100, "Local engine ready!")
     }
 
