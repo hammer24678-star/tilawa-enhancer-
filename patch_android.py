@@ -555,13 +555,15 @@ class LocalEngineRunner(
             extractTarGz(tmp2, alpineDir)
             tmp2.delete()
         }
-        // S102: install numpy/scipy via pip to ensure correct Python version path
-        if (!File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists() &&
-            !File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() &&
-            !File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()) {
-            progress(79, "Installing numpy + scipy via apk…")
+                // S106: install numpy/scipy to fixed known path
+        val numpyTarget = File(alpineDir, "tilawa_numpy")
+        if (!File(numpyTarget, "numpy").exists()) {
+            progress(79, "Installing numpy + scipy (one-time ~2 min)…")
+            numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
-                "apk add --no-progress py3-numpy py3-scipy 2>&1"), timeoutMin=10)
+                "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
+                "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                timeoutMin=20)
         }
         // S104: discover actual Python site-packages path at runtime
         val pyPathResult = runProot(listOf("/usr/bin/python3", "-c",
@@ -637,7 +639,19 @@ class LocalEngineRunner(
             )[engineId] ?: "engine_tajalli_v1.py"
 
             val outputPath = "${cacheDir.absolutePath}/tilawa_${engineId.replace('.','_')}_${System.currentTimeMillis()}.wav"
-            refAudioDir.mkdirs()  // S89: ensure exists before proot bind
+            refAudioDir.mkdirs()
+            // S106: re-extract ref audio if missing (in case setup ran before S105)
+            listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
+                val dest = File(refAudioDir, rf)
+                if (!dest.exists() || dest.length() < 10_000) {
+                    try { context.assets.open("flutter_assets/assets/reference_audio/$rf")
+                        .use { it.copyTo(java.io.FileOutputStream(dest)) }
+                    } catch (_: Exception) {
+                        try { context.assets.open("assets/reference_audio/$rf")
+                            .use { it.copyTo(java.io.FileOutputStream(dest)) }
+                        } catch (_: Exception) {} }
+                }
+            }
             val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
             val inParent  = File(inputPath).parent ?: cacheDir.absolutePath
             File(inParent).mkdirs()  // S103: ensure dir exists before proot bind
@@ -662,7 +676,7 @@ class LocalEngineRunner(
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3:/usr/lib/python3/dist-packages"
+                environment()["PYTHONPATH"] = "/tilawa_numpy"  // S106
                 environment()["TERM"] = "xterm"
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = context.codeCacheDir.also { it.mkdirs() }
