@@ -545,15 +545,6 @@ class LocalEngineRunner(
             tmp2.delete()
         }
                 // S106: install numpy/scipy to fixed known path
-        // S107: write sitecustomize.py so Python auto-finds numpy
-        File(alpineDir, "usr/lib/python3/").mkdirs()
-        File(alpineDir, "usr/lib/python3/sitecustomize.py").writeText(
-            "import sys
-for p in ['/usr/lib/python3.11/site-packages'," +
-            "'/usr/lib/python3.12/site-packages','/usr/lib/python3/dist-packages']:
-" +
-            "    if p not in sys.path: sys.path.insert(0, p)
-")
         progress(78, "Python + ffmpeg ready")
 
         // 4. DeepFilter — bundled in APK assets/alpine/
