@@ -1153,11 +1153,13 @@ class _HomeScreenState extends State<HomeScreen>
         });
         _scoreCtrl.forward(from: 0);
         _resultCtrl.forward(from: 0);
-        _reDownload();  // S110: auto-save to Downloads
-        // S112: fire completion notification for local mode
-        final _localScore = ((_result?['score'] as num?)?.toDouble() ?? 88.0);
-        final _localFile = _file?.path.split('/').last ?? 'audio';
-        _fireCompletionNotif(_localFile, _localScore.toStringAsFixed(1));
+        // S113: await _reDownload after setState settles
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          await _reDownload();
+          final sc = ((_result?['score'] as num?)?.toDouble() ?? 88.0);
+          final fn = _file?.path.split('/').last ?? 'audio';
+          _fireCompletionNotif(fn, sc.toStringAsFixed(1));
+        });
         WidgetsBinding.instance.addPostFrameCallback((_) { // S92-SCROLL
           if (_scrollCtrl.hasClients) {
             _scrollCtrl.animateTo(0,
