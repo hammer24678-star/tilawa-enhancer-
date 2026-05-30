@@ -150,11 +150,13 @@ manifest.write_text(
 '        android:hardwareAccelerated="true"\n'
 '        android:networkSecurityConfig="@xml/network_security_config"\n'
 '        android:usesCleartextTraffic="true"\n'
-'        >\n'
+'        android:extractNativeLibs="true">\n'
+'\n'
 '        <activity\n'
 '            android:name=".MainActivity"\n'
 '            android:exported="true"\n'
 '            android:launchMode="singleTop"\n'
+'            android:taskAffinity=""\n'
 '            android:theme="@style/LaunchTheme"\n'
 '            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"\n'
 '            android:hardwareAccelerated="true"\n'
@@ -554,6 +556,24 @@ class LocalEngineRunner(
             tmp2.delete()
         }
                 // S106: install numpy/scipy to fixed known path
+        val numpyTarget = File(alpineDir, "tilawa_numpy")
+        if (!File(numpyTarget, "numpy").exists()) {
+            progress(79, "Installing numpy + scipy (one-time ~2 min)…")
+            numpyTarget.mkdirs()
+            runProot(listOf("/bin/sh", "-c",
+                "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
+                "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                timeoutMin=20)
+        }
+        // S104: discover actual Python site-packages path at runtime
+        val pyPathResult = runProot(listOf("/usr/bin/python3", "-c",
+            "import sys; print('PYPATH:' + ':'.join(sys.path))"), timeoutMin=2)
+        val pyPath = pyPathResult.second.lines()
+            .firstOrNull { it.startsWith("PYPATH:") }
+            ?.removePrefix("PYPATH:") ?: ""
+        if (pyPath.isNotEmpty()) {
+            File(dataDir, "python_path.txt").writeText(pyPath)
+        }
         progress(78, "Python + ffmpeg ready")
 
         // 4. DeepFilter — bundled in APK assets/alpine/
@@ -582,9 +602,6 @@ class LocalEngineRunner(
         // 5. Engine scripts from APK assets
         progress(89, "Extracting engine scripts…")
         extractEngines()
-        val dfSrc = File(alpineDir, "usr/local/bin/deep-filter")
-        val dfDst = File(enginesDir, "deep-filter")
-        if (dfSrc.exists() && !dfDst.exists()) { dfSrc.copyTo(dfDst, overwrite = true); dfDst.setExecutable(true) }
         progress(92, "Engine scripts ready")
 
         // 6. Reference audio — extract from APK assets
@@ -654,19 +671,14 @@ class LocalEngineRunner(
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
                 "-i", inputPath, "-o", outputPath,
-                "--iterations", "3",
+                "--iterations", "3", "--json",
             )
-            // S110: pass all 3 reference files like the server does
-            listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
-                val refFile = File(refAudioDir, rf)
-                if (refFile.exists() && refFile.length() > 10_000)
-                    cmd += listOf("--ref", "/reference_audio/$rf")
-            }
+            if (refMp3.exists()) cmd += listOf("--ref", "/reference_audio/ref_araf_1425h.mp3")
 
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages:/tilawa_numpy"  // S107
+                environment()["PYTHONPATH"] = "/tilawa_numpy"  // S106
                 environment()["TERM"] = "xterm"
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106

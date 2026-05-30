@@ -192,8 +192,6 @@ except ImportError:
 # CLI binary fallback — used when Python df package is not installed
 import shutil as _shutil
 _DF_CLI_CANDIDATES = [
-    '/usr/local/bin/deep-filter',
-    '/engines/deep-filter',
     '/home/claude/deep-filter',
     str(Path(__file__).parent / 'deep-filter'),
     'deep-filter',

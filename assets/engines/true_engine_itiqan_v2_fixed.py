@@ -1086,8 +1086,6 @@ def load_reference_model() -> ReferenceModel:
 
 # Deep-filter v3 binary candidates (same list as isteidad)
 _DF3_CLI_CANDIDATES = [
-    '/usr/local/bin/deep-filter',
-    '/engines/deep-filter',
     '/home/claude/deep-filter',
     str(Path(__file__).parent / 'deep-filter'),
     'deep-filter',
