@@ -230,6 +230,7 @@ class ApiService {
         req.files.add(await http.MultipartFile.fromPath('file', file.path));
         req.fields['engine'] = engine;
         final res = await req.send().timeout(const Duration(seconds: 60));
+        onProgress?.call(0.65, 'جار المعالجة...');
         final body = await res.stream
             .bytesToString()
             .timeout(const Duration(seconds: 30)); // FIX: was no timeout

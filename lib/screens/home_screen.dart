@@ -405,7 +405,7 @@ class _HomeScreenState extends State<HomeScreen>
 
         final srv = (st['progress'] ?? 0) / 100.0;
         final status = st['status'] as String? ?? '';
-        final isMerging = (status == 'uploading' || status == 'merging');
+        final isMerging = (status == 'merging');  // 'uploading' no longer freezes progress
         final display = isMerging
             ? _progress
             : (0.68 + srv * 0.32).clamp(_progress, 1.0); // S21: monotonic — never regress
