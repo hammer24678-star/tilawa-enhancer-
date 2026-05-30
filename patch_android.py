@@ -679,7 +679,7 @@ class LocalEngineRunner(
                 environment()["PYTHONPATH"] = "/tilawa_numpy"  // S106
                 environment()["TERM"] = "xterm"
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
-                val prootTmp = context.codeCacheDir.also { it.mkdirs() }
+                val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
             }.start()
