@@ -35,6 +35,11 @@ jobs:
       - name: Install Pillow for icon generation
         run: pip install Pillow --quiet
 
+      - name: Restore jniLibs (proot binaries)
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          git checkout HEAD -- android/app/src/main/jniLibs/
+
       - name: Patch android/ v11
         run: python3 patch_android.py
 
