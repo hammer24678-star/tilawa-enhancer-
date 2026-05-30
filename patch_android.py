@@ -602,7 +602,22 @@ class LocalEngineRunner(
         extractEngines()
         progress(92, "Engine scripts ready")
 
-        // 6. Reference audio — bundled in APK assets (extracted in setup above)
+        // 6. Reference audio — extract from APK assets
+        refAudioDir.mkdirs()
+        listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
+            val dest = File(refAudioDir, rf)
+            if (!dest.exists() || dest.length() < 10_000) {
+                try {
+                    context.assets.open("flutter_assets/assets/reference_audio/$rf")
+                        .use { it.copyTo(java.io.FileOutputStream(dest)) }
+                } catch (_: Exception) {
+                    try {
+                        context.assets.open("assets/reference_audio/$rf")
+                            .use { it.copyTo(java.io.FileOutputStream(dest)) }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
         File(dataDir, ".tilawa_setup_done").writeText("ok")
         progress(100, "Local engine ready!")
     }
