@@ -150,7 +150,6 @@ manifest.write_text(
 '        android:hardwareAccelerated="true"\n'
 '        android:networkSecurityConfig="@xml/network_security_config"\n'
 '        android:usesCleartextTraffic="true"\n'
-        // S107: PYTHONPATH handles package discovery
 '            <meta-data\n'
 '                android:name="io.flutter.embedding.android.NormalTheme"\n'
 '                android:resource="@style/NormalTheme"/>\n'
