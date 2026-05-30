@@ -556,23 +556,15 @@ class LocalEngineRunner(
             tmp2.delete()
         }
                 // S106: install numpy/scipy to fixed known path
-        // S106: add sitecustomize.py so Python always finds packages
-        val siteDir = File(alpineDir, "usr/lib/python3/")
-        siteDir.mkdirs()
+        // S107: write sitecustomize.py so Python auto-finds numpy
+        File(alpineDir, "usr/lib/python3/").mkdirs()
         File(alpineDir, "usr/lib/python3/sitecustomize.py").writeText(
-            "import sys\n" +
-            "for p in ['/usr/lib/python3.11/site-packages','/usr/lib/python3.12/site-packages',\n" +
-            "          '/usr/lib/python3/dist-packages']:  \n" +
-            "    if p not in sys.path: sys.path.insert(0, p)\n")
-        // S104: discover actual Python site-packages path at runtime
-        val pyPathResult = runProot(listOf("/usr/bin/python3", "-c",
-            "import sys; print('PYPATH:' + ':'.join(sys.path))"), timeoutMin=2)
-        val pyPath = pyPathResult.second.lines()
-            .firstOrNull { it.startsWith("PYPATH:") }
-            ?.removePrefix("PYPATH:") ?: ""
-        if (pyPath.isNotEmpty()) {
-            File(dataDir, "python_path.txt").writeText(pyPath)
-        }
+            "import sys
+for p in ['/usr/lib/python3.11/site-packages'," +
+            "'/usr/lib/python3.12/site-packages','/usr/lib/python3/dist-packages']:
+" +
+            "    if p not in sys.path: sys.path.insert(0, p)
+")
         progress(78, "Python + ffmpeg ready")
 
         // 4. DeepFilter — bundled in APK assets/alpine/
