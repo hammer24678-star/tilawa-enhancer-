@@ -5078,8 +5078,25 @@ def _build_ref_cache_if_needed():
 
 def main() -> int:
     if not NUMPY_OK or not SCIPY_OK:
-        print('pip install numpy scipy')
-        return 1
+        import subprocess, sys
+        print('Installing numpy scipy via apk...')
+        r = subprocess.run(['/sbin/apk', 'add', '--no-progress', 'py3-numpy', 'py3-scipy'],
+            capture_output=True, text=True)
+        print(r.stdout); print(r.stderr)
+        if r.returncode != 0:
+            r2 = subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', 'numpy', 'scipy'],
+                capture_output=True, text=True)
+            print(r2.stdout); print(r2.stderr)
+        # retry imports
+        try:
+            import importlib
+            importlib.invalidate_caches()
+            import numpy as np  # noqa
+            import scipy  # noqa
+            print('numpy/scipy installed successfully')
+        except ImportError:
+            print('Failed to install numpy/scipy')
+            return 1
 
     p = argparse.ArgumentParser(
         description='الإتقان Engine-2 v1.0 — Aetherion Perfection Engine — 1425H'
