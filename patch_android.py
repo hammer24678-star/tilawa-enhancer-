@@ -654,9 +654,14 @@ class LocalEngineRunner(
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
                 "-i", inputPath, "-o", outputPath,
-                "--iterations", "3", "--json",
+                "--iterations", "3",
             )
-            if (refMp3.exists()) cmd += listOf("--ref", "/reference_audio/ref_araf_1425h.mp3")
+            // S110: pass all 3 reference files like the server does
+            listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
+                val refFile = File(refAudioDir, rf)
+                if (refFile.exists() && refFile.length() > 10_000)
+                    cmd += listOf("--ref", "/reference_audio/$rf")
+            }
 
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
                 environment()["HOME"] = "/root"
