@@ -530,7 +530,10 @@ class LocalEngineRunner(
         progress(35, "Alpine ready")
 
         // 3. Python + ffmpeg — try bundled asset, else download from release  // S89-PYENV
-        if (!File(alpineDir, "usr/bin/python3").exists()) {
+        val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
+        if (!File(alpineDir, "usr/bin/python3").exists() || !numpyOk) {  // S115: re-extract if numpy missing
             val tmp2 = File(dataDir, "python-env.tar.gz")
             var pyOk = false
             // Try bundled asset first
