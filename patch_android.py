@@ -561,6 +561,15 @@ class LocalEngineRunner(
                 "pip3 install --quiet --no-cache-dir numpy scipy 2>&1 || " +
                 "pip install --quiet --no-cache-dir numpy scipy 2>&1"), timeoutMin=15)
         }
+        // S104: discover actual Python site-packages path at runtime
+        val pyPathResult = runProot(listOf("/usr/bin/python3", "-c",
+            "import sys; print('PYPATH:' + ':'.join(sys.path))"), timeoutMin=2)
+        val pyPath = pyPathResult.second.lines()
+            .firstOrNull { it.startsWith("PYPATH:") }
+            ?.removePrefix("PYPATH:") ?: ""
+        if (pyPath.isNotEmpty()) {
+            File(dataDir, "python_path.txt").writeText(pyPath)
+        }
         progress(78, "Python + ffmpeg ready")
 
         // 4. DeepFilter — bundled in APK assets/alpine/
