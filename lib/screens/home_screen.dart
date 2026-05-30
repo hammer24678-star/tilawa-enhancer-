@@ -1153,6 +1153,7 @@ class _HomeScreenState extends State<HomeScreen>
         });
         _scoreCtrl.forward(from: 0);
         _resultCtrl.forward(from: 0);
+        _reDownload();  // S110: auto-save to Downloads
         WidgetsBinding.instance.addPostFrameCallback((_) { // S92-SCROLL
           if (_scrollCtrl.hasClients) {
             _scrollCtrl.animateTo(0,
