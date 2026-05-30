@@ -556,10 +556,9 @@ class LocalEngineRunner(
         if (!File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists() &&
             !File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() &&
             !File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()) {
-            progress(79, "Installing numpy + scipy via pip…")
+            progress(79, "Installing numpy + scipy via apk…")
             runProot(listOf("/bin/sh", "-c",
-                "pip3 install --quiet --no-cache-dir numpy scipy 2>&1 || " +
-                "pip install --quiet --no-cache-dir numpy scipy 2>&1"), timeoutMin=15)
+                "apk add --no-progress py3-numpy py3-scipy 2>&1"), timeoutMin=10)
         }
         // S104: discover actual Python site-packages path at runtime
         val pyPathResult = runProot(listOf("/usr/bin/python3", "-c",
