@@ -469,6 +469,10 @@ class LocalEngineRunner(
         if (!prootBin.exists()) return false
         if (!File(alpineDir, "usr/bin/python3").exists()) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
+        val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
+            File(alpineDir, "tilawa_numpy/numpy").exists()
+        if (!numpyOk) return false  // S122: force re-setup if numpy missing
         val df = File(alpineDir, "usr/local/bin/deep-filter")
         if (!df.exists() || df.length() < 1_000_000L) return false
         if (enginesDir.list()?.isNotEmpty() != true) return false
