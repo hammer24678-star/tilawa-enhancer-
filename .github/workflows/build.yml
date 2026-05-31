@@ -12,6 +12,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Set up QEMU for ARM64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
 
       - name: Build asset bundles (Alpine + Python + DeepFilter)
         run: bash build_assets.sh
@@ -37,6 +42,25 @@ jobs:
 
       - name: Patch android/ v11
         run: python3 patch_android.py
+      - name: Build bundled Python env (ARM64 Alpine)
+        run: |
+          mkdir -p assets/alpine
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD/assets/alpine:/out" \
+            alpine:3.21 sh -c "
+              apk add --no-cache python3 py3-numpy py3-scipy ffmpeg 2>&1 | tail -3
+              PY=\$(python3 -c 'import sys; v=sys.version_info; print(f"python{v.major}.{v.minor}")')
+              tar czf /out/python-env.tar.gz \
+                /usr/bin/python3 /usr/bin/\$PY \
+                /usr/lib/\$PY \
+                /usr/bin/ffmpeg \
+                /usr/lib/libavcodec.so.* /usr/lib/libavformat.so.* \
+                /usr/lib/libavutil.so.* /usr/lib/libswresample.so.* \
+                /usr/lib/libopenblas.so.* /usr/lib/libgfortran.so.* \
+                2>/dev/null || true
+              echo python-env size: \$(ls -lh /out/python-env.tar.gz | awk '{print \$5}')
+            "
+
 
       - name: Verify INTERNET permission in manifest
         run: |

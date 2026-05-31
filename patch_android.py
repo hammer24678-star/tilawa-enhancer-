@@ -423,7 +423,7 @@ class LocalEngineRunner(
     companion object {
         const val CHANNEL = "com.tilawa.tilawa_enhancer/local_engine"
         private const val DF_VERSION   = "0.5.6"
-        private const val ALPINE_VER   = "3.18.9"
+        private const val ALPINE_VER   = "3.21.3"
         private const val PROOT_VER    = "5.3.0"
     }
 
@@ -522,7 +522,7 @@ class LocalEngineRunner(
             } catch (_: Exception) {}
             if (!alpineOk) {
                 progress(12, "Downloading Alpine Linux (~4MB)…")
-                download("https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/aarch64/alpine-minirootfs-3.18.9-aarch64.tar.gz", tmp, "Alpine rootfs", 12, 32)
+                download("https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz", tmp, "Alpine rootfs", 12, 32)
             }
             extractTarGz(tmp, alpineDir)
             tmp.delete()
@@ -733,7 +733,10 @@ class LocalEngineRunner(
             "-r", alpineDir.absolutePath,
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
                         "-w", "/",
-            "--kill-on-exit") + args
+            "--kill-on-exit") + args +
+            if (File(alpineDir, "etc/resolv.conf").exists())
+                listOf("-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf")
+            else emptyList()
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
