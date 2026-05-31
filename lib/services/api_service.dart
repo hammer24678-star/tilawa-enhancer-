@@ -44,6 +44,7 @@ class ApiService {
 
   // Adaptive chunk size — updated based on upload speed
   static int _chunkSize = 4 * 1024 * 1024; // S65: adaptive, starts at 4MB
+  static String _activeServer = '';  // S120: track which server owns current job
 
   // Pick best server: lowest score = latency * (1 + queue_depth)
   static Future<String> _bestServer() async {
@@ -202,6 +203,7 @@ class ApiService {
     final size = await file.length();
     await Future.wait(_servers.map(_refreshHealth));
     final server = await _bestServer();
+    _activeServer = server;  // S120
     onProgress?.call(0.01, 'اختيار الخادم الأمثل...');
     // S65: small files (<5MB) get priority direct upload
     if (size <= 5 * 1024 * 1024) {
@@ -333,7 +335,7 @@ class ApiService {
   // ── Poll status ────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getStatus(String jobId) async {
     final res = await http
-        .get(Uri.parse('${await _bestServer()}/status/$jobId'))
+        .get(Uri.parse('${_activeServer.isNotEmpty ? _activeServer : _servers.first}/status/\$jobId'))
         .timeout(const Duration(seconds: 10));
     // S22 BUG2: 404 = job gone (server restarted).
     // Without this check, Flutter parses the error JSON as a normal
@@ -355,7 +357,7 @@ class ApiService {
     File? tempFile;
     try {
       final req =
-          http.Request('GET', Uri.parse('${await _bestServer()}/download/$jobId'));
+          http.Request('GET', Uri.parse('${_activeServer.isNotEmpty ? _activeServer : _servers.first}/download/\$jobId'));
       final res =
           await client.send(req).timeout(const Duration(minutes: 15));
 
