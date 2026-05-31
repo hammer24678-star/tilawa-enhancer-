@@ -47,7 +47,7 @@ class ApiService {
 
   // Pick best server: lowest score = latency * (1 + queue_depth)
   static Future<String> _bestServer() async {
-    String best = await _bestServer(); double bestScore = double.infinity;
+    String best = _servers.first; double bestScore = double.infinity;
     for (final url in _servers) {
       final h = _health[url];
       if (h == null) { best = url; break; } // untested = try it
