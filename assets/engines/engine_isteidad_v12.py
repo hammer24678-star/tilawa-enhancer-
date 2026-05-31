@@ -11341,7 +11341,15 @@ def _build_ref_cache_if_needed():
 # ══════════════════════════════════════════════════════════════════════════════
 def main() -> int:
     if not NUMPY_OK or not SCIPY_OK:
-        print('pip install numpy scipy'); return 1
+        import subprocess, sys, importlib
+        subprocess.run(['/sbin/apk', 'add', '--no-progress', 'py3-numpy', 'py3-scipy'])
+        importlib.invalidate_caches()
+        try:
+            import numpy, scipy  # noqa
+            print('numpy/scipy installed — restarting...')
+            import os; os.execv(sys.executable, [sys.executable] + sys.argv)
+        except ImportError:
+            print('Failed to install numpy/scipy'); return 1
 
     p = argparse.ArgumentParser(description='Audio Enhancement Engine v10.7-الاسترداد-v5 — 1425H')
     p.add_argument('-i', '--input')
