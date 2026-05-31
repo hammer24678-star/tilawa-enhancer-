@@ -33,9 +33,20 @@ docker run --rm \
         echo 'Python: '$(python3 --version)
         echo 'ffmpeg: '$(which ffmpeg 2>/dev/null && ffmpeg -version 2>&1 | head -1 || echo 'checking inside tar...')
         tar -czf /out/python-env.tar.gz \
-            --exclude=./proc --exclude=./sys --exclude=./dev \
-            --exclude=./out \
-            -C / .
+            -C / \
+            ./usr/lib/python3.11 \
+            ./usr/lib/python3.12 \
+            ./usr/bin/python3 \
+            ./usr/bin/python3.11 \
+            ./usr/bin/ffmpeg \
+            ./usr/bin/ffprobe \
+            ./usr/lib/libpython3.11.so.1.0 2>/dev/null || \
+        tar -czf /out/python-env.tar.gz \
+            -C / \
+            ./usr/lib/python3.11 \
+            ./usr/bin/python3 \
+            ./usr/bin/ffmpeg \
+            ./usr/bin/ffprobe
         echo 'python-env.tar.gz done'
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
