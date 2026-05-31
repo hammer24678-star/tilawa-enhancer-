@@ -699,9 +699,11 @@ class LocalEngineRunner(
 
             val reader = BufferedReader(InputStreamReader(proc.inputStream))
             var lastLine = ""; var lastJson: String? = null; var line: String?
+            val allOutput = StringBuilder()
             while (reader.readLine().also { line = it } != null) {
                 val l = line!!.trim(); if (l.isEmpty()) continue
                 lastLine = l
+                allOutput.appendLine(l)
                 if (l.startsWith("{") && l.contains("score")) lastJson = l
                 ui { channel?.invokeMethod("engineProgress", mapOf("pct" to -1, "msg" to l)) }
             }
@@ -716,7 +718,8 @@ class LocalEngineRunner(
                 val extra = if (lastJson != null) mapOf("json" to lastJson) else emptyMap<String,Any>()
                 ui { channel?.invokeMethod("engineDone", mapOf("path" to outputPath) + extra) }
             } else {
-                ui { channel?.invokeMethod("engineError", mapOf("msg" to "Engine failed (rc=$rc): $lastLine")) }
+                val errDetail = allOutput.takeLast(400).trim().ifEmpty { lastLine }
+                ui { channel?.invokeMethod("engineError", mapOf("msg" to "Engine failed (rc=$rc):\n$errDetail")) }
             }
         } catch (e: Exception) {
             ui { channel?.invokeMethod("engineError", mapOf("msg" to (e.message ?: "Unknown error"))) }
