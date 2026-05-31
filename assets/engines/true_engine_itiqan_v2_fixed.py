@@ -5093,7 +5093,9 @@ def main() -> int:
             importlib.invalidate_caches()
             import numpy as np  # noqa
             import scipy  # noqa
-            print('numpy/scipy installed successfully')
+            print('numpy/scipy installed — restarting engine...')
+            import os
+            os.execv(sys.executable, [sys.executable] + sys.argv)
         except ImportError:
             print('Failed to install numpy/scipy')
             return 1
