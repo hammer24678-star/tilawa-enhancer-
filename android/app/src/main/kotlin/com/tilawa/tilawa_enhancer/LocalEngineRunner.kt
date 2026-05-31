@@ -130,29 +130,11 @@ class LocalEngineRunner(
 
         // 3. Python + ffmpeg — installed via apk add
         if (!File(alpineDir, "usr/bin/python3").exists()) {
-            // S111: use bundled python-env.tar.gz built in CI — no internet needed
-            progress(38, "Extracting Python environment…")
-            var pyOk = false
-            for (ap in listOf(
-                "flutter_assets/assets/alpine/python-env.tar.gz",
-                "flutter_assets/alpine/python-env.tar.gz"
-            )) {
-                try {
-                    val tmp = File(dataDir, "python-env.tar.gz")
-                    context.assets.open(ap)
-                        .use { src -> java.io.FileOutputStream(tmp).use { src.copyTo(it) } }
-                    extractTarGz(tmp, alpineDir)
-                    tmp.delete()
-                    pyOk = true
-                    break
-                } catch (_: Exception) {}
-            }
-            if (!pyOk) {
-                // Fallback: apk add (internet)
-                progress(40, "Downloading Python via apk…")
-                runProot(listOf("/sbin/apk", "add", "--no-progress",
-                    "python3", "py3-numpy", "py3-scipy", "ffmpeg"), timeoutMin=25)
-            }
+            progress(38, "Installing Python + ffmpeg via apk (4-8 min)…")
+            val (rc1, out1) = runProot(listOf("/sbin/apk", "update", "--no-progress"), timeoutMin=10)
+            if (rc1 != 0) throw IOException("apk update failed rc=$rc1: $out1")
+            val (rc2, out2) = runProot(listOf("/sbin/apk", "add", "--no-progress", "python3", "py3-numpy", "py3-scipy", "ffmpeg"), timeoutMin=25)
+            if (rc2 != 0) throw IOException("apk add failed rc=$rc2: $out2")
         }
         progress(78, "Python + ffmpeg ready")
 
@@ -295,7 +277,7 @@ class LocalEngineRunner(
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             environment()["TERM"] = "xterm"
             environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
-            val prootTmp = File(context.cacheDir, "proot-tmp").also { it.mkdirs() }
+            val prootTmp = context.codeCacheDir.also { it.mkdirs() }
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             environment()["PROOT_LOADER"] = prootLoader.absolutePath
         }.start()
