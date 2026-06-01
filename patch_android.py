@@ -729,7 +729,7 @@ class LocalEngineRunner(
                 ui { channel?.invokeMethod("engineDone", mapOf("path" to outputPath) + extra) }
             } else {
                 val errDetail = allOutput.takeLast(400).trim().ifEmpty { lastLine }
-                ui { channel?.invokeMethod("engineError", mapOf("msg" to "Engine failed (rc=$rc):\n$errDetail")) }
+                ui { channel?.invokeMethod("engineError", mapOf("msg" to "Engine failed (rc=$rc): $errDetail")) }
             }
         } catch (e: Exception) {
             ui { channel?.invokeMethod("engineError", mapOf("msg" to (e.message ?: "Unknown error"))) }
