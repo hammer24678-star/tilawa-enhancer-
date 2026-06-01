@@ -531,6 +531,16 @@ class LocalEngineRunner(
             for (d in listOf("proc","dev","sys")) File(alpineDir, d).mkdirs()
 
         }
+        // S124: detect Python version conflict — wipe if wrong version
+        val py312lib = File(alpineDir, "usr/lib/libpython3.12.so.1.0")
+        val py311lib = File(alpineDir, "usr/lib/python3.11")
+        if (py312lib.exists() && !py311lib.exists()) {
+            progress(11, "Fixing Python version conflict…")
+            alpineDir.deleteRecursively()
+            alpineDir.mkdirs()
+            context.getSharedPreferences("tilawa_local", 0)
+                .edit().putBoolean("setup_complete", false).apply()
+        }
         progress(35, "Alpine ready")
 
         // 3. Python + ffmpeg — try bundled asset, else download from release  // S89-PYENV
