@@ -654,7 +654,9 @@ class LocalEngineRunner(
                 "v7.0"  to "engine_v70.py",
             )[engineId] ?: "engine_tajalli_v1.py"
 
-            val outputPath = "${cacheDir.absolutePath}/tilawa_${engineId.replace('.','_')}_${System.currentTimeMillis()}.wav"
+            // v11.0 (tajalli) outputs WAV; v11.1/v11.2 output MP3
+            val outExt = if (engineId == "v11.0") "wav" else "mp3"
+            val outputPath = "${cacheDir.absolutePath}/tilawa_${engineId.replace('.','_')}_${System.currentTimeMillis()}.$outExt"
             refAudioDir.mkdirs()
             // S106: re-extract ref audio if missing (in case setup ran before S105)
             listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
@@ -685,7 +687,7 @@ class LocalEngineRunner(
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
                 "-i", inputPath, "-o", outputPath,
-                "--iterations", "3", "--json",
+                "--iterations", "3",
             )
             // S118: pass all 3 reference files
             listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
@@ -714,7 +716,7 @@ class LocalEngineRunner(
                 val l = line!!.trim(); if (l.isEmpty()) continue
                 lastLine = l
                 allOutput.appendLine(l)
-                if (l.startsWith("{") && l.contains("score")) lastJson = l
+                if (l.startsWith("{") && (l.contains("score") || l.contains("version"))) lastJson = l
                 ui { channel?.invokeMethod("engineProgress", mapOf("pct" to -1, "msg" to l)) }
             }
 
