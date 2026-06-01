@@ -11347,7 +11347,7 @@ def main() -> int:
         try:
             import numpy, scipy  # noqa
             print('numpy/scipy installed — restarting...')
-            import os; os.execv(sys.executable, [sys.executable] + sys.argv)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
         except ImportError:
             print('Failed to install numpy/scipy'); return 1
 
