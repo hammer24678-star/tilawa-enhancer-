@@ -670,9 +670,23 @@ class LocalEngineRunner(
                         } catch (_: Exception) {} }
                 }
             }
+            // S128: copy input to cacheDir — file_picker paths use /data/user/0/ symlinks
+            // that proot cannot resolve. cacheDir is always directly accessible.
+            val safeInput = File(cacheDir, "tilawa_input_${System.currentTimeMillis()}.${inputPath.substringAfterLast('.')}")
+            try {
+                File(inputPath).copyTo(safeInput, overwrite = true)
+            } catch (_: Exception) {
+                safeInput.delete()
+                safeInput.outputStream().use { out ->
+                    android.net.Uri.parse(inputPath).let { uri ->
+                        context.contentResolver.openInputStream(uri)?.use { it.copyTo(out) }
+                    }
+                }
+            }
+            val actualInput = if (safeInput.exists() && safeInput.length() > 0) safeInput.absolutePath else inputPath
             val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
-            val inParent  = File(inputPath).parent ?: cacheDir.absolutePath
-            File(inParent).mkdirs()  // S103: ensure dir exists before proot bind
+            val inParent  = File(actualInput).parent ?: cacheDir.absolutePath
+            File(inParent).mkdirs()
 
             val cmd = mutableListOf(
                 prootBin.absolutePath,
@@ -686,7 +700,7 @@ class LocalEngineRunner(
                 "-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}",
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
-                "-i", inputPath, "-o", outputPath,
+                "-i", actualInput, "-o", outputPath,
                 "--iterations", "3",
             )
             // S118: pass all 3 reference files
