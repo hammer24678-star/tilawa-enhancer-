@@ -685,7 +685,7 @@ class LocalEngineRunner(
             }
             val actualInput = if (safeInput.exists() && safeInput.length() > 0) safeInput.absolutePath else inputPath
             val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
-            val inParent  = File(actualInput).parent ?: cacheDir.absolutePath
+            val inParent  = cacheDir.absolutePath
             File(inParent).mkdirs()
 
             val cmd = mutableListOf(
@@ -712,7 +712,7 @@ class LocalEngineRunner(
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                environment()["PYTHONPATH"] = "/tilawa_numpy"  // S106
+                environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages"
                 environment()["TERM"] = "xterm"
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
