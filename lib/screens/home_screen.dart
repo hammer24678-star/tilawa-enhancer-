@@ -807,11 +807,11 @@ class _HomeScreenState extends State<HomeScreen>
         final ts    = DateTime.now().millisecondsSinceEpoch;
         final ext   = src.path.endsWith('.mp3') ? 'mp3' : 'wav';
         final fname = 'tilawa_${_engine.replaceAll('.', '_')}_$ts.$ext';
-        final dest  = File('/storage/emulated/0/Download/$fname');
-        await dest.parent.create(recursive: true);
-        await src.copy(dest.path);
+        const wakeChannel = MethodChannel('com.tilawa.tilawa_enhancer/wake');
+        await wakeChannel.invokeMethod<String>(
+          'saveToDownloads', {'path': src.path, 'filename': fname});
         if (!mounted) return;
-        setState(() { _output = dest; });
+        setState(() { _output = src; });
         final s = LangProvider.strings(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(

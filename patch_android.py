@@ -731,6 +731,10 @@ class LocalEngineRunner(
                 lastLine = l
                 allOutput.appendLine(l)
                 if (l.startsWith("{") && (l.contains("score") || l.contains("version"))) lastJson = l
+                if (lastJson == null && l.contains("/100")) {
+                    val sc = Regex("([0-9]+[.][0-9]+)/100").findAll(l).lastOrNull()?.groupValues?.getOrNull(1)
+                    if (sc != null) lastJson = "{\"score\": " + sc + ", \"lufs\": 0.0, \"rms\": 0.0, \"crest\": 0.0, \"lra\": 0.0}"
+                }
                 ui { channel?.invokeMethod("engineProgress", mapOf("pct" to -1, "msg" to l)) }
             }
 
