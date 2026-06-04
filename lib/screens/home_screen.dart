@@ -815,8 +815,8 @@ class _HomeScreenState extends State<HomeScreen>
         final s = LangProvider.strings(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-            s.ar ? '✅ تم الحفظ في Downloads\n📁 ${dest.path}'
-                 : '✅ Saved to Downloads\n📁 ${dest.path}',
+            s.ar ? '✅ تم الحفظ في Downloads\n📁 $fname'
+                 : '✅ Saved to Downloads\n📁 $fname',
             style: const TextStyle(fontSize: 12)),
           backgroundColor: const Color(0xFF0D2015),
           duration: const Duration(seconds: 8),
