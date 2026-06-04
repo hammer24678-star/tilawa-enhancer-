@@ -879,7 +879,7 @@ class LocalEngineRunner(
     private fun extractEngines() {
         enginesDir.mkdirs()
         listOf("engine_tajalli_v1.py","true_engine_itiqan_v2_fixed.py",
-               "engine_isteidad_v12.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
+               "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
                "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",
                "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
             val dest = File(enginesDir, name)
