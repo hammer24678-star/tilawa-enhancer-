@@ -55,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen>
   // S104: A/B comparison player
   final AudioPlayer _abPlayer  = AudioPlayer();
   bool _abListenersSet = false;
+  bool _abEverPlayed   = false; // S140: guard resume() on unloaded player
   bool   _abPlaying   = false;
   bool   _abIsB       = true;   // true=enhanced, false=original
   double _abPos       = 0.0;
@@ -290,6 +291,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _cancelProcessing() {
     _pollTimer?.cancel();
     HapticFeedback.mediumImpact();
+    if (_localMode) LocalEngineService.cancelEngine(); // S140: stop proot process
     setState(() {
       _busy = false; _progress = 0;
       _status = ''; _isMerging = false;
@@ -664,8 +666,9 @@ class _HomeScreenState extends State<HomeScreen>
     } else {
       final src = _abIsB ? _output : _file;
       if (src == null) return;
-      if (_abPos >= _abDur - 0.1) {
+      if (!_abEverPlayed || _abPos >= _abDur - 0.1) { // S140: play if never loaded
         await _abPlayer.play(DeviceFileSource(src.path));
+        _abEverPlayed = true;
       } else {
         await _abPlayer.resume();
       }
@@ -1170,10 +1173,11 @@ class _HomeScreenState extends State<HomeScreen>
           resultData['score'] = fallbackScore;
         }
         _wakeCh.invokeMethod('release').catchError((_) {});
+        final _outPath = ev['path'] as String? ?? ''; // S140: null-safe
         setState(() { // S92: ALL result state inside setState
           _busy = false; _progress = 0;
           _status = 'Local engine complete';
-          _output = File(ev['path'] as String? ?? '');
+          _output = _outPath.isNotEmpty ? File(_outPath) : null;
           _result = resultData;
         });
         _scoreCtrl.forward(from: 0);
@@ -1183,7 +1187,7 @@ class _HomeScreenState extends State<HomeScreen>
           await _reDownload();
           final sc = ((_result?['score'] as num?)?.toDouble() ?? 88.0);
           final fn = _file?.path.split('/').last ?? 'audio';
-          _fireCompletionNotif(fn, sc.toStringAsFixed(1));
+          _fireCompletionNotif(fn, sc); // S140: pass num, not String
         });
         WidgetsBinding.instance.addPostFrameCallback((_) { // S92-SCROLL
           if (_scrollCtrl.hasClients) {
@@ -1390,10 +1394,10 @@ class _HomeScreenState extends State<HomeScreen>
                 onTap: _busy ? null : () {
                   // S78: re-check before pushing SetupScreen
                   LocalEngineService.isSetupComplete().then((ready) {
-                    if (mounted) setState(() => _localReady = ready);
                     if (!mounted) return;
+                    setState(() => _localReady = ready); // S140: single setState
                     if (ready) {
-                      setState(() => _localReady = true);
+                      // already set above
                     } else {
                       Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => SetupScreen(
