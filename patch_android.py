@@ -743,7 +743,7 @@ class LocalEngineRunner(
                 else proc.exitValue()
             } catch (_: Exception) { -1 }
 
-            val outFile = File(outputPath)
+            var outFile = File(outputPath)
             // S137: if output missing at expected path, search cacheDir for recent file
             var resolvedOutput = outputPath
             if (rc == 0 && !File(outputPath).let { it.exists() && it.length() > 500 }) {
@@ -753,10 +753,10 @@ class LocalEngineRunner(
                     ?.maxByOrNull { it.lastModified() }
                 if (found != null) resolvedOutput = found.absolutePath
             }
-            val outFile = File(resolvedOutput)
+            outFile = File(resolvedOutput)
             if (outFile.exists() && outFile.length() > 500) {
                 val extra = if (lastJson != null) mapOf("json" to lastJson) else emptyMap<String,Any>()
-                ui { channel?.invokeMethod("engineDone", mapOf("path" to outputPath) + extra) }
+                ui { channel?.invokeMethod("engineDone", mapOf("path" to resolvedOutput) + extra) }
             } else {
                 val errDetail = allOutput.takeLast(400).trim().ifEmpty { lastLine }
                 ui { channel?.invokeMethod("engineError", mapOf("msg" to "Engine failed (rc=$rc): $errDetail")) }
