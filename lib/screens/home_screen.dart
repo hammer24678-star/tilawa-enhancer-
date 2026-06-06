@@ -644,6 +644,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
     await _abPlayer.stop();
     await _abPlayer.play(DeviceFileSource(src.path));
+    _abEverPlayed = true; // S140
     setState(() { _abPlaying = true; });
   }
 
