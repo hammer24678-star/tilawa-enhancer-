@@ -712,7 +712,7 @@ class LocalEngineRunner(
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages"
+                environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages:/tilawa_numpy" // S141: tilawa_numpy path
                 environment()["TERM"] = "xterm"
                 environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
                 val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106

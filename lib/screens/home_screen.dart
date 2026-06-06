@@ -836,8 +836,8 @@ class _HomeScreenState extends State<HomeScreen>
         final ts    = DateTime.now().millisecondsSinceEpoch;
         final ext   = src.path.endsWith('.mp3') ? 'mp3' : 'wav';
         final fname = 'tilawa_${_engine.replaceAll('.', '_')}_$ts.$ext';
-        const wakeChannel = MethodChannel('com.tilawa.tilawa_enhancer/wake');
-        await wakeChannel.invokeMethod<String>(
+        const mediaChannel = MethodChannel('com.tilawa.tilawa_enhancer/media'); // S141: was /wake
+        await mediaChannel.invokeMethod<String>(
           'saveToDownloads', {'path': src.path, 'filename': fname});
         if (!mounted) return;
         setState(() { _output = src; });
@@ -1137,6 +1137,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _processLocal() async {
     if (_file == null || _busy) return;
     HapticFeedback.mediumImpact();
+    _wakeCh.invokeMethod('acquire').catchError((_) {}); // S141: keep CPU alive during proot
     setState(() {
       _busy      = true;
       _progress  = 0.02;
@@ -2628,12 +2629,13 @@ class _HomeScreenState extends State<HomeScreen>
         : score >= 80 ? _tGold
         : const Color(0xFFF85149); // red for scores below 80
 
-    const engineNames = {
+    const engineNames = { // S141: added v11.x, removed dead v8.4/v8.9
+      'v11.0': 'التجلي — The Manifestation',
+      'v11.1': 'الإتقان — Perfection',
+      'v11.2': 'الاسترداد — Recovery',
       'v10.0': 'Aetherion Foundation',
       'v9.0': 'The Evolution',
-      'v8.9': 'Soft Tiers + LPC',
       'v8.5': 'Honest Ceiling',
-      'v8.4': 'Source Tier Intelligence',
       'v8.0': 'Calibrated Precision',
       'v7.0': 'Classic',
     };
@@ -2675,14 +2677,7 @@ class _HomeScreenState extends State<HomeScreen>
                   size: const Size(170, 170),
                   painter: _KhatamPainter(
                     t: _glowCtrl.value, color: scoreColor))),
-              // Burst particles on reveal
-              if (score >= 85) AnimatedBuilder(
-                animation: _resultCtrl,
-                builder: (_, __) => CustomPaint(
-                  size: const Size(170, 170),
-                  painter: _ScoreBurstPainter(
-                    progress: _resultCtrl.value,
-                    color: scoreColor))),
+              // S141: outer burst removed (was identical duplicate of inner)
               Stack(alignment: Alignment.center, children: [
               // Burst particles on reveal
               if (score >= 85) AnimatedBuilder(
