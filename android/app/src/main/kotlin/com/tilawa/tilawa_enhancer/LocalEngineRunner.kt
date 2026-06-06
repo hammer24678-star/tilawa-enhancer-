@@ -252,7 +252,7 @@ class LocalEngineRunner(
                 else proc.exitValue()
             } catch (_: Exception) { -1 }
 
-            val outFile = File(outputPath)
+            var outFile = File(outputPath)
             if (rc == 0 && outFile.exists() && outFile.length() > 500) {
                 val extra = if (lastJson != null) mapOf("json" to lastJson) else emptyMap<String,Any>()
                 ui { channel?.invokeMethod("engineDone", mapOf("path" to outputPath) + extra) }
