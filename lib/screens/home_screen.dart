@@ -625,9 +625,21 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Manual re-download button ──────────────────────────────────────────────
   // S104: A/B comparison ─────────────────────────────────────────────────────
   Future<void> _abToggleTrack() async {
-    setState(() { _abIsB = !_abIsB; _abPos = 0; });
+    setState(() { _abIsB = !_abIsB; _abPos = 0; _abDur = 1.0; }); // S138: reset dur
     final src = _abIsB ? _output : _file;
     if (src == null) return;
+    if (!_abListenersSet) { // S138: set listeners before first play
+      _abListenersSet = true;
+      _abPlayer.onDurationChanged.listen((d) {
+        if (mounted) setState(() { _abDur = d.inMilliseconds.toDouble().clamp(1, 1e9); });
+      });
+      _abPlayer.onPositionChanged.listen((p) {
+        if (mounted) setState(() { _abPos = p.inMilliseconds.toDouble(); });
+      });
+      _abPlayer.onPlayerComplete.listen((_) {
+        if (mounted) setState(() { _abPlaying = false; _abPos = 0; });
+      });
+    }
     await _abPlayer.stop();
     await _abPlayer.play(DeviceFileSource(src.path));
     setState(() { _abPlaying = true; });
@@ -878,7 +890,7 @@ class _HomeScreenState extends State<HomeScreen>
       ));
     } else {
       final msg = (error == 'JOB_EXPIRED')
-          ? (s.ar ? s.jobExpired : s.jobExpired)
+          ? s.jobExpired
           : (s.ar ? '❌ فشل التحميل\n$error' : '❌ Download failed\n$error');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg, style: const TextStyle(fontSize: 12)),
@@ -892,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openInPlayer() async {
     if (_output == null) return;
     try {
-      final uri = Uri.parse(_output!.path);
+      final uri = Uri.file(_output!.path); // S138: Uri.file for local paths
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
