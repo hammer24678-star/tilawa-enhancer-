@@ -230,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen>
         _jobId  = saved['job_id'];
         _engine = saved['engine'] ?? _engine;
         _busy   = true;
-        _status = 'استئناف المعالجة...';
+        _status = ''; // S147: empty → build() shows bilingual s.processing
         _progress = 0.35;
         _processStart = DateTime.now();
       });
@@ -260,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Server check ───────────────────────────────────────────────────────────
   Future<void> _checkServer() async {
+    if (_localMode) return; // S147: skip server poll when fully offline
     final ms = await ApiService.checkServer();
     if (!mounted) return;
     setState(() { _serverUp = ms != null; _latencyMs = ms; });
@@ -1120,7 +1121,8 @@ class _HomeScreenState extends State<HomeScreen>
                   ])),
             ),
             SliverToBoxAdapter(child: _header(s)),
-            SliverToBoxAdapter(child: _serverBanner(s)),
+            if (!_localMode) // S147: hide server banner in local mode
+              SliverToBoxAdapter(child: _serverBanner(s)),
             SliverToBoxAdapter(child: _localModeToggle(s)), // S65
             SliverToBoxAdapter(child: _geoSep(s.ar ? 'اختر المحرك' : 'Engine')),
             SliverToBoxAdapter(child: _engineSelector(s)),
@@ -1413,7 +1415,9 @@ class _HomeScreenState extends State<HomeScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
             Text(
-              _localMode ? 'Local Engine (Offline)' : 'Server Mode (Online)',
+              _localMode
+                ? (s.ar ? 'المحرك المحلي (بدون إنترنت)' : 'Local Engine (Offline)')
+                : (s.ar ? 'وضع الخادم (متصل)' : 'Server Mode (Online)'),  // S147
               style: TextStyle(
                 color: _localMode ? gold : textB,
                 fontSize: 12, fontWeight: FontWeight.w700)),
@@ -1441,16 +1445,18 @@ class _HomeScreenState extends State<HomeScreen>
                     }
                   });
                 },
-                child: const Text('Tap to set up (one-time ~200MB)',
-                  style: TextStyle(
+                child: Text(s.ar
+                  ? 'اضغط للإعداد (مرة واحدة ~٢٠٠ ميغابايت)'
+                  : 'Tap to set up (one-time ~200MB)', // S147
+                  style: const TextStyle(
                     color: Color(0xFFF0D882), fontSize: 10,
                     decoration: TextDecoration.underline))),
             if (_localMode && _localReady)
-              const Text('Ready — processes fully offline',
-                style: TextStyle(color: teal, fontSize: 10)),
+              Text(s.ar ? 'جاهز — تشغيل بدون إنترنت' : 'Ready — processes fully offline', // S147
+                style: const TextStyle(color: teal, fontSize: 10)),
             if (!_localMode)
-              const Text('Switch for offline, private processing',
-                style: TextStyle(color: Color(0xFF3D5A65), fontSize: 10)),
+              Text(s.ar ? 'فعِّل للمعالجة خارج الإنترنت' : 'Switch for offline, private processing', // S147
+                style: const TextStyle(color: Color(0xFF3D5A65), fontSize: 10)),
           ])),
           GestureDetector( // S146: info button
             onTap: () => Navigator.push(context,
@@ -2122,7 +2128,7 @@ class _HomeScreenState extends State<HomeScreen>
               hasFile ? _file!.path.split('/').last // S46-PORTAL
                 : (s.ar ? 'أسقط تلاوتك في هذا المحراب'
                         : 'Drop your Quran audio into this sacred portal'),
-              textDirection: TextDirection.rtl,
+              textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr, // S147
               textAlign: TextAlign.center,
               maxLines: 2, overflow: TextOverflow.ellipsis,
               style: TextStyle(
