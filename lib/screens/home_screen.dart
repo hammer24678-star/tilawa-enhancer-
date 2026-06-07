@@ -52,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen>
   bool    _serverUp  = false;
   String? _jobId;
   File?   _output;
+  File?   _abOutputFile; // S144: cacheDir path for A/B — unaffected by _reDownload()
   // S104: A/B comparison player
   final AudioPlayer _abPlayer  = AudioPlayer();
   bool _abListenersSet = false;
@@ -303,7 +304,14 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── S28: Reset for new file ────────────────────────────────────────────────
   void _resetForNewFile() {
+    _abPlayer.stop(); // S144: stop audio when picking new file
     setState(() {
+      _abEverPlayed = false; // S144: reset A/B state for clean start
+      _abPlaying    = false;
+      _abPos        = 0.0;
+      _abDur        = 1.0;
+      _abIsB        = true;
+      _abOutputFile = null; // S144
       _file = null; _result = null; _output = null;
       _progress = 0; _status = '';
       _jobId = null; _busy = false;
@@ -629,7 +637,7 @@ class _HomeScreenState extends State<HomeScreen>
   // S104: A/B comparison ─────────────────────────────────────────────────────
   Future<void> _abToggleTrack() async {
     setState(() { _abIsB = !_abIsB; _abPos = 0; _abDur = 1.0; }); // S138: reset dur
-    final src = _abIsB ? _output : _file;
+    final src = _abIsB ? (_abOutputFile ?? _output) : _file; // S144: use cacheDir path — content:// fails DeviceFileSource
     if (src == null) return;
     if (!_abListenersSet) { // S138: set listeners before first play
       _abListenersSet = true;
@@ -666,7 +674,7 @@ class _HomeScreenState extends State<HomeScreen>
       await _abPlayer.pause();
       setState(() { _abPlaying = false; });
     } else {
-      final src = _abIsB ? _output : _file;
+      final src = _abIsB ? (_abOutputFile ?? _output) : _file; // S144: use cacheDir path — content:// fails DeviceFileSource
       if (src == null) return;
       if (!_abEverPlayed || _abPos <= 0.1 || _abPos >= _abDur - 0.1) { // S142: also replay when pos reset to 0
         await _abPlayer.play(DeviceFileSource(src.path));
@@ -1194,6 +1202,7 @@ class _HomeScreenState extends State<HomeScreen>
         }
         _wakeCh.invokeMethod('release').catchError((_) {});
         final _outPath = ev['path'] as String? ?? ''; // S140: null-safe
+        _abOutputFile = _outPath.isNotEmpty ? File(_outPath) : null; // S144: preserve cacheDir path for A/B
         setState(() { // S92: ALL result state inside setState
           _busy = false; _progress = 0;
           _status = 'Local engine complete';
