@@ -1159,16 +1159,7 @@ class _HomeScreenState extends State<HomeScreen>
   // ── LOCAL PROCESS (S65) — proot offline engine ────────────────────────────
   Future<void> _processLocal() async {
     if (_file == null || _busy) return;
-    if (!_selectedEngine.localOnly) { // S142: reject server-only engines in local mode
-      final s = LangProvider.strings(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(s.ar
-          ? 'هذا المحرك يعمل على الخادم فقط. اختر محركاً محلياً (v11.x)'
-          : 'This engine is server-only. Select a v11.x local engine.'),
-        backgroundColor: const Color(0xFF200D0D)));
-      return;
-    }
-    HapticFeedback.mediumImpact();
+    HapticFeedback.mediumImpact(); // S146: removed server-only guard — allow all engines in local mode
     _wakeCh.invokeMethod('acquire').catchError((_) {}); // S141: keep CPU alive during proot
     setState(() {
       _busy      = true;
