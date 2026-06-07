@@ -330,7 +330,14 @@ class _HomeScreenState extends State<HomeScreen>
     if (r?.files.single.path != null) {
       final f = File(r!.files.single.path!);
       final bytes = await f.length();
+      _abPlayer.stop(); // S145: stop audio when new file is picked
       setState(() {
+        _abEverPlayed = false; // S145: reset A/B state
+        _abPlaying    = false;
+        _abPos        = 0.0;
+        _abDur        = 1.0;
+        _abIsB        = true;
+        _abOutputFile = null; // S145
         _file = f;
         _output = null; _result = null;
         _status = ''; _progress = 0;
@@ -839,8 +846,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _reDownload() async {
     // S100: Local mode — copy cached output to Downloads
-    if (_localMode && _output != null) {
-      final src = _output!;
+    if (_localMode && _abOutputFile != null) { // S145: use cacheDir file — _output may be content:// after first save
+      final src = _abOutputFile!;
       try {
         final ts    = DateTime.now().millisecondsSinceEpoch;
         final ext   = src.path.endsWith('.mp3') ? 'mp3' : 'wav';
