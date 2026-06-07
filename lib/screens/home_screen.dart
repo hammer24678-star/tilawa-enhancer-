@@ -291,10 +291,8 @@ class _HomeScreenState extends State<HomeScreen>
   void _cancelProcessing() {
     _pollTimer?.cancel();
     HapticFeedback.mediumImpact();
-    if (_localMode) {
-      LocalEngineService.cancelEngine(); // S140: stop proot process
-      _wakeCh.invokeMethod('release').catchError((_) {}); // S142: release on local cancel
-    }
+    if (_localMode) LocalEngineService.cancelEngine(); // S140: stop proot process
+    _wakeCh.invokeMethod('release').catchError((_) {}); // S143: always release on any cancel
     setState(() {
       _busy = false; _progress = 0;
       _status = ''; _isMerging = false;
@@ -840,10 +838,15 @@ class _HomeScreenState extends State<HomeScreen>
         final ext   = src.path.endsWith('.mp3') ? 'mp3' : 'wav';
         final fname = 'tilawa_${_engine.replaceAll('.', '_')}_$ts.$ext';
         const mediaChannel = MethodChannel('com.tilawa.tilawa_enhancer/media'); // S141: was /wake
-        await mediaChannel.invokeMethod<String>(
+        final contentUri = await mediaChannel.invokeMethod<String>(
           'saveToDownloads', {'path': src.path, 'filename': fname});
         if (!mounted) return;
-        setState(() { _output = src; });
+        // S143: update _output to the Downloads copy so Open/Share use the permanent file
+        if (contentUri != null && contentUri.startsWith('content://')) {
+          setState(() { _output = File(contentUri); });
+        } else {
+          setState(() { _output = src; }); // fallback: API <29 returns file path
+        }
         final s = LangProvider.strings(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
@@ -911,7 +914,9 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openInPlayer() async {
     if (_output == null) return;
     try {
-      final uri = Uri.file(_output!.path); // S138: Uri.file for local paths
+      final uri = _output!.path.startsWith('content://')
+          ? Uri.parse(_output!.path)   // S143: content:// from MediaStore
+          : Uri.file(_output!.path);   // local cacheDir path
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (mounted) {
@@ -2822,9 +2827,9 @@ class _HomeScreenState extends State<HomeScreen>
                 icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
                 label: Text(s.openInPlayer,
                   style: const TextStyle(fontSize: 12)))),
-            if (hasContentUri || (_localMode && _output != null))
-              const SizedBox(width: 8), // S142: spacer shown when both buttons present
-            if (hasContentUri || (_localMode && _output != null)) Expanded( // S142
+            if (hasContentUri)
+              const SizedBox(width: 8), // S143: spacer only when Share shows
+            if (hasContentUri) Expanded( // S143: share requires content:// URI — local paths crash API24+
               child: OutlinedButton.icon(
                 onPressed: _shareFile,
                 style: OutlinedButton.styleFrom(
