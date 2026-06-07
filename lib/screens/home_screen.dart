@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert' show jsonDecode; // S65
 import '../services/local_engine_service.dart'; // S65
 import 'setup_screen.dart'; // S65
+import 'local_mode_info_screen.dart'; // S146
 
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
@@ -1451,6 +1452,18 @@ class _HomeScreenState extends State<HomeScreen>
               const Text('Switch for offline, private processing',
                 style: TextStyle(color: Color(0xFF3D5A65), fontSize: 10)),
           ])),
+          GestureDetector( // S146: info button
+            onTap: () => Navigator.push(context,
+              PageRouteBuilder(
+                pageBuilder: (_, __, ___) => const LocalModeInfoScreen(),
+                transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
+                transitionDuration: const Duration(milliseconds: 250))),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Icon(Icons.info_outline_rounded,
+                color: const Color(0xFFC8A048).withValues(alpha: 0.65),
+                size: 16))),
           Switch(
             value: _localMode,
             onChanged: _busy ? null : (v) {
