@@ -94,7 +94,7 @@ wrapper.write_text(
     "zipStorePath=wrapper/dists\n"
     "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip\n"
 )
-print("  gradle-wrapper.properties OK (Gradle 8.3)")
+print("  gradle-wrapper.properties OK (Gradle 8.11.1)")  # S142: was 8.3
 
 # ── STEP 4: network_security_config.xml ──────────────────────────────────────
 res_xml = APP / "src" / "main" / "res" / "xml"
@@ -546,7 +546,8 @@ class LocalEngineRunner(
         // 3. Python + ffmpeg — try bundled asset, else download from release  // S89-PYENV
         val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
             File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
+            File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists() ||
+            File(alpineDir, "tilawa_numpy/numpy").exists()  // S142: match isSetupComplete()
         if (!File(alpineDir, "usr/bin/python3").exists() || !numpyOk) {  // S115: re-extract if numpy missing
             val tmp2 = File(dataDir, "python-env.tar.gz")
             var pyOk = false

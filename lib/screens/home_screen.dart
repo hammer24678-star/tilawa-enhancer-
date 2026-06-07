@@ -291,7 +291,10 @@ class _HomeScreenState extends State<HomeScreen>
   void _cancelProcessing() {
     _pollTimer?.cancel();
     HapticFeedback.mediumImpact();
-    if (_localMode) LocalEngineService.cancelEngine(); // S140: stop proot process
+    if (_localMode) {
+      LocalEngineService.cancelEngine(); // S140: stop proot process
+      _wakeCh.invokeMethod('release').catchError((_) {}); // S142: release on local cancel
+    }
     setState(() {
       _busy = false; _progress = 0;
       _status = ''; _isMerging = false;
@@ -667,7 +670,7 @@ class _HomeScreenState extends State<HomeScreen>
     } else {
       final src = _abIsB ? _output : _file;
       if (src == null) return;
-      if (!_abEverPlayed || _abPos >= _abDur - 0.1) { // S140: play if never loaded
+      if (!_abEverPlayed || _abPos <= 0.1 || _abPos >= _abDur - 0.1) { // S142: also replay when pos reset to 0
         await _abPlayer.play(DeviceFileSource(src.path));
         _abEverPlayed = true;
       } else {
@@ -1136,6 +1139,15 @@ class _HomeScreenState extends State<HomeScreen>
   // ── LOCAL PROCESS (S65) — proot offline engine ────────────────────────────
   Future<void> _processLocal() async {
     if (_file == null || _busy) return;
+    if (!_selectedEngine.localOnly) { // S142: reject server-only engines in local mode
+      final s = LangProvider.strings(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(s.ar
+          ? 'هذا المحرك يعمل على الخادم فقط. اختر محركاً محلياً (v11.x)'
+          : 'This engine is server-only. Select a v11.x local engine.'),
+        backgroundColor: const Color(0xFF200D0D)));
+      return;
+    }
     HapticFeedback.mediumImpact();
     _wakeCh.invokeMethod('acquire').catchError((_) {}); // S141: keep CPU alive during proot
     setState(() {
@@ -1152,6 +1164,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (!mounted) return;
 
       if (ev['error'] == true) {
+        _wakeCh.invokeMethod('release').catchError((_) {}); // S142: release on error
         setState(() {
           _busy     = false;
           _status   = ev['msg'] as String? ?? 'Local engine error';
@@ -2794,10 +2807,10 @@ class _HomeScreenState extends State<HomeScreen>
           )),
 
         // S30-R3: Open + Share in one row
-        if (hasContentUri || (_output?.path.startsWith('content://') ?? false)) ...[
+        if (hasContentUri || (_localMode && _output != null)) ...[ // S142: include local file:// outputs
           const SizedBox(height: 8),
           Row(children: [
-            if (hasContentUri) Expanded(
+            if (hasContentUri || (_localMode && _output != null)) Expanded( // S142
               child: OutlinedButton.icon(
                 onPressed: _openInPlayer,
                 style: OutlinedButton.styleFrom(
@@ -2809,9 +2822,9 @@ class _HomeScreenState extends State<HomeScreen>
                 icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
                 label: Text(s.openInPlayer,
                   style: const TextStyle(fontSize: 12)))),
-            if (hasContentUri && (_output?.path.startsWith('content://') ?? false))
-              const SizedBox(width: 8),
-            if (_output?.path.startsWith('content://') ?? false) Expanded(
+            if (hasContentUri || (_localMode && _output != null))
+              const SizedBox(width: 8), // S142: spacer shown when both buttons present
+            if (hasContentUri || (_localMode && _output != null)) Expanded( // S142
               child: OutlinedButton.icon(
                 onPressed: _shareFile,
                 style: OutlinedButton.styleFrom(
@@ -3245,14 +3258,14 @@ class _StarsPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0);
-    for (final s in stars) {
+    for (int idx = 0; idx < stars.length; idx++) { // S142: O(n) not O(n²)
+      final s = stars[idx];
       final a = t * 6.2832 * s.speed + s.phase;
       final x = s.x * size.width  + sin(a)        * size.width  * 0.016;
       final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
       final alpha = sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5;
       final op = 0.22 + 0.78 * alpha;
       final sz = s.size * (0.55 + 0.45 * alpha);
-      final idx = stars.indexOf(s);
       final sc = idx % 5 == 0 ? _teal
           : idx % 3 == 0 ? const Color(0xFFF0E8C8)
           : _gold;
