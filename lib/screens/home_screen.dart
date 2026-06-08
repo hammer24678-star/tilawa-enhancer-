@@ -1229,9 +1229,13 @@ class _HomeScreenState extends State<HomeScreen>
         return;
       }
 
-      // Progress update
+      // S-PROGRESS: advance bar from engine phase pct; never regress; cap at 98%
+      final pct = ev['pct'] as int? ?? -1;
       final msg = ev['msg'] as String? ?? '';
-      if (msg.isNotEmpty) setState(() { _localMsg = msg; _status = msg; });
+      setState(() {
+        if (pct > 0) _progress = (pct / 100.0).clamp(_progress, 0.98);
+        if (msg.isNotEmpty) { _localMsg = msg; _status = msg; }
+      });
     }
   }
 

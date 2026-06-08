@@ -1,4 +1,5 @@
-"""patch_android.py v11 — S19
+
+"""patch_android.py v12 — S19
 Changes:
   S19-ICON : Resizes assets/images/logo.png to all 5 mipmap densities using PIL.
              Requires: pip install Pillow (add to build.yml before this step).
@@ -395,7 +396,7 @@ if dead.exists():
     print("\n  Deleted lib/l10n/strings.dart (dead duplicate S class)")
 
 print()
-print("patch_android.py v11: DONE")
+print("patch_android.py v12: DONE (DF3-ARCH fix + local engine progress)")
 
 
 
@@ -472,9 +473,20 @@ class LocalEngineRunner(
         val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
             File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
             File(alpineDir, "tilawa_numpy/numpy").exists()
-        if (!numpyOk) return false  // S122: force re-setup if numpy missing
+        val scipyOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists() ||
+            File(alpineDir, "tilawa_numpy/scipy").exists()
+        if (!numpyOk || !scipyOk) return false  // S148: scipy required by v11.2
         val df = File(alpineDir, "usr/local/bin/deep-filter")
         if (!df.exists() || df.length() < 1_000_000L) return false
+        // S-DF3ARCH: reject if binary is not aarch64 — x86_64 runs setup but
+        // silently fails inside proot on phone → engine prints [A5] and skips DF3.
+        // ELF e_machine bytes 18-19: aarch64=0xB7,0x00  x86_64=0x3E,0x00
+        val dfOkArch = try {
+            val h = ByteArray(20); FileInputStream(df).use { it.read(h) }
+            h[18] == 0xB7.toByte() && h[19] == 0x00.toByte()
+        } catch (_: Exception) { false }
+        if (!dfOkArch) return false
         if (enginesDir.list()?.isNotEmpty() != true) return false
         return true
     }
@@ -572,7 +584,7 @@ class LocalEngineRunner(
         }
                 // S106: install numpy/scipy to fixed known path
         val numpyTarget = File(alpineDir, "tilawa_numpy")
-        if (!File(numpyTarget, "numpy").exists()) {
+        if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) { // S148
             progress(79, "Installing numpy + scipy (one-time ~2 min)…")
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
@@ -612,7 +624,24 @@ class LocalEngineRunner(
                 }
             }
         }
-        progress(88, "DeepFilter ready")
+        // S-DF3ARCH: verify/repair — if bundled asset was x86_64, replace with aarch64
+        val dfHdrBuf = ByteArray(20)
+        val dfIsAarch64 = try {
+            FileInputStream(dfBin).use { it.read(dfHdrBuf) }
+            dfHdrBuf[18] == 0xB7.toByte() && dfHdrBuf[19] == 0x00.toByte()
+        } catch (_: Exception) { false }
+        if (!dfIsAarch64) {
+            dfBin.delete()
+            progress(80, "DF3: wrong arch detected — downloading aarch64…")
+            try {
+                val dfUrl = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0_5_6-aarch64-unknown-linux-musl"
+                download(dfUrl, dfBin, "DeepFilter aarch64", 80, 88)
+                dfBin.setExecutable(true)
+            } catch (e: Exception) {
+                throw IOException("DF3 aarch64 download failed: ${e.message}")
+            }
+        }
+        progress(88, "DeepFilter ready (aarch64 ✓)")
 
         // 5. Engine scripts from APK assets
         progress(89, "Extracting engine scripts…")
@@ -736,7 +765,28 @@ class LocalEngineRunner(
                     val sc = Regex("([0-9]+[.][0-9]+)/100").findAll(l).lastOrNull()?.groupValues?.getOrNull(1)
                     if (sc != null) lastJson = "{\\"score\\": $sc, \\"lufs\\": 0.0, \\"rms\\": 0.0, \\"crest\\": 0.0, \\"lra\\": 0.0}"
                 }
-                ui { channel?.invokeMethod("engineProgress", mapOf("pct" to -1, "msg" to l)) }
+                // S-PROGRESS: map engine phase-tag prefix to progress pct
+                // Phases A→L correspond to the DSP pipeline stages in الإتقان/الاسترداد.
+                val linePct = when {
+                    l.startsWith("[A1]") || l.startsWith("[A2]") || l.startsWith("[A3]") -> 5
+                    l.startsWith("[A4]") || l.startsWith("[A5]") || l.startsWith("[A6]") -> 8
+                    l.startsWith("[A7]") || l.startsWith("[A8]") || l.startsWith("[A9]") -> 12
+                    l.startsWith("[B")  -> 16
+                    l.startsWith("[C")  -> 22
+                    l.startsWith("[D")  -> 30
+                    l.startsWith("[E")  -> 38
+                    l.startsWith("[F]") && l.contains("detected") -> 22   // phrase count msg
+                    l.startsWith("[F")  -> 46
+                    l.startsWith("[G")  -> 58
+                    l.startsWith("[H")  -> 68
+                    l.startsWith("[I")  -> 76
+                    l.startsWith("[J")  -> 84
+                    l.startsWith("[K")  -> 90
+                    l.startsWith("[L")  -> 94
+                    l.contains("score") && l.contains("/100") -> 96
+                    else -> -1
+                }
+                ui { channel?.invokeMethod("engineProgress", mapOf("pct" to linePct, "msg" to l)) }
             }
 
             val rc = try {
