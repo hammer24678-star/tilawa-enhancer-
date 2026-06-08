@@ -11,6 +11,7 @@ class ApiService {
   static List<String> _servers = [
     'https://carm5333-tilawa-server.hf.space',
     'https://carm5333-background.hf.space',
+    'https://carm5333-background2.hf.space',  // S150
   ];
   static bool _serversLoaded = false;
 
