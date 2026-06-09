@@ -336,7 +336,7 @@ class ApiService {
   // ── Poll status ────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> getStatus(String jobId) async {
     final res = await http
-        .get(Uri.parse('${_activeServer.isNotEmpty ? _activeServer : _servers.first}/status/\$jobId'))
+        .get(Uri.parse('${_activeServer.isNotEmpty ? _activeServer : _servers.first}/status/$jobId'))
         .timeout(const Duration(seconds: 10));
     // S22 BUG2: 404 = job gone (server restarted).
     // Without this check, Flutter parses the error JSON as a normal
@@ -358,7 +358,7 @@ class ApiService {
     File? tempFile;
     try {
       final req =
-          http.Request('GET', Uri.parse('${_activeServer.isNotEmpty ? _activeServer : _servers.first}/download/\$jobId'));
+          http.Request('GET', Uri.parse('${_activeServer.isNotEmpty ? _activeServer : _servers.first}/download/$jobId'));
       final res =
           await client.send(req).timeout(const Duration(minutes: 15));
 
