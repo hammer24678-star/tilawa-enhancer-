@@ -11,6 +11,7 @@ import 'dart:math' show pi, sin, cos, Random; // S29+S30
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // S148
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
@@ -213,6 +214,7 @@ class _HomeScreenState extends State<HomeScreen>
         vsync: this, duration: const Duration(seconds: 6))
       ..repeat();
     _checkServer();
+    SharedPreferences.getInstance().then((p){if(mounted)setState(()=>_localMode=p.getBool("local_mode")??false);});
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
     LocalEngineService.isSetupComplete() // S65
@@ -507,6 +509,7 @@ class _HomeScreenState extends State<HomeScreen>
         final elapsed = DateTime.now().difference(_processStart!);
         if (elapsed.inMinutes >= 25) {
           _pollTimer?.cancel();
+          _wakeCh.invokeMethod('release').catchError((_) {}); // S148
           final s = LangProvider.strings(context);
           setState(() {
             _busy = false; _isMerging = false;
@@ -545,7 +548,8 @@ class _HomeScreenState extends State<HomeScreen>
     // S63: fallback auto-retry — only retry if score == 75.0 exactly
     // (ffmpeg fallback always returns hardcoded score=75).
     // Real engines can score anywhere from 55-100; never discard them.
-    if (score == 75.0 && file != null && _fallbackRetries < 2) {
+    final _el148=_processStart!=null?DateTime.now().difference(_processStart!).inSeconds:999;
+    if (score == 75.0 && file != null && _fallbackRetries < 2 && _el148 < 8) {
       _fallbackRetries++;
       final retryNum = _fallbackRetries;
       if (mounted) {
@@ -1478,6 +1482,7 @@ class _HomeScreenState extends State<HomeScreen>
             value: _localMode,
             onChanged: _busy ? null : (v) {
               setState(() => _localMode = v);
+              SharedPreferences.getInstance().then((p)=>p.setBool("local_mode",v)); // S148
               // S93: always re-check on toggle ON
               if (v) {
                 LocalEngineService.isSetupComplete().then((ready) {
