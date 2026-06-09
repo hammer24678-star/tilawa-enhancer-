@@ -439,7 +439,7 @@ class _HomeScreenState extends State<HomeScreen>
           _pollTimer?.cancel();
           _wakeCh.invokeMethod('release').catchError((_) {});
           final errMsg = st['error'] as String? ?? '';
-          if (errMsg == 'JOB_EXPIRED' && _fallbackRetries < 2) {
+          if (errMsg == 'JOB_EXPIRED' && _fallbackRetries < 5) {
             _fallbackRetries++;
             final s = LangProvider.strings(context);
             setState(() { _progress = 0.02; _isMerging = false; _status = s.uploading; });
@@ -561,10 +561,10 @@ class _HomeScreenState extends State<HomeScreen>
               : '⏳ Server was warming up — retrying automatically ($retryNum/2)…',
             style: const TextStyle(fontSize: 12)),
           backgroundColor: const Color(0xFF1A1200),
-          duration: const Duration(seconds: 38)));
+          duration: const Duration(seconds: 10)));
         // Wait 35 s for the Space to finish loading reference audio,
         // then reprocess the same file.
-        await Future.delayed(const Duration(seconds: 35));
+        await Future.delayed(const Duration(seconds: 5)); // S149: faster retry
         if (mounted) _process(userInitiated: false);
       }
       return; // don't show the fallback result
