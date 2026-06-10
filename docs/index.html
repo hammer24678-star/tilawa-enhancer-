@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>محسِّن التلاوة — Tilawa Enhancer</title>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-deep:    #020D17;
+    --bg-surface: #0C1E28;
+    --bg-card:    #0F2420;
+    --gold:       #D4AF37;
+    --gold-light: #F0CF60;
+    --gold-muted: #3A2B08;
+    --teal:       #1DB898;
+    --teal-light: #2E8FA8;
+    --text-a:     #E2CFA0;
+    --text-b:     #8AACBA;
+    --text-c:     #3D5A65;
+    --ok:         #2ABF6E;
+    --border:     rgba(29,184,152,0.15);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text-a);
+    font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  /* ── PARTICLES CANVAS ───────────────────────────────── */
+  #particles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── LAYOUT ─────────────────────────────────────────── */
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ── NAV ─────────────────────────────────────────────── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(2,13,23,0.82);
+    backdrop-filter: blur(18px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+  }
+  .nav-logo-ring {
+    width: 36px; height: 36px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .nav-logo-ring svg {
+    position: absolute; inset: 0;
+    animation: spin1 8s linear infinite;
+  }
+  .nav-logo-ring svg:nth-child(2) { animation: spin2 5s linear infinite; }
+  .nav-logo-ring svg:nth-child(3) { animation: none; }
+  .nav-title { font-family: 'Amiri', serif; font-size: 18px; color: var(--gold); font-weight: 700; }
+  .nav-sub   { font-size: 10px; color: var(--text-b); letter-spacing: 1.5px; text-transform: uppercase; font-family: 'Inter', sans-serif; }
+
+  nav ul { list-style: none; display: flex; gap: 28px; }
+  nav a  { color: var(--text-b); text-decoration: none; font-size: 13px; font-weight: 500; transition: color .2s; }
+  nav a:hover { color: var(--teal); }
+
+  @keyframes spin1  { to { transform: rotate(360deg); } }
+  @keyframes spin2  { to { transform: rotate(-360deg); } }
+  @keyframes pulse  {
+    0%,100% { opacity: .55; transform: scale(1); }
+    50%      { opacity: 1;   transform: scale(1.08); }
+  }
+
+  /* ── HERO ────────────────────────────────────────────── */
+  #hero {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 120px 24px 80px;
+    text-align: center;
+    position: relative;
+  }
+
+  .hero-inner { max-width: 700px; margin: 0 auto; }
+
+  /* Orbital logo */
+  .orbital {
+    width: 160px; height: 160px;
+    position: relative;
+    margin: 0 auto 40px;
+    flex-shrink: 0;
+  }
+  .orbital-ring {
+    position: absolute;
+    top: 50%; left: 50%;
+    border-radius: 50%;
+    border: 1.5px solid transparent;
+    transform-origin: center;
+    animation: spin1 18s linear infinite;
+  }
+  .ring1 {
+    width: 160px; height: 160px;
+    margin: -80px 0 0 -80px;
+    border-color: rgba(212,175,55,.18);
+    box-shadow: 0 0 22px rgba(212,175,55,.08);
+    animation-duration: 18s;
+  }
+  .ring2 {
+    width: 132px; height: 132px;
+    margin: -66px 0 0 -66px;
+    border-color: rgba(29,184,152,.30);
+    animation-duration: 11s;
+    animation-direction: reverse;
+  }
+  .ring3 {
+    width: 108px; height: 108px;
+    margin: -54px 0 0 -54px;
+    border-color: rgba(212,175,55,.38);
+    box-shadow: 0 0 16px rgba(212,175,55,.14);
+    animation-duration: 7s;
+  }
+  .orbital-core {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 78px; height: 78px;
+    margin: -39px 0 0 -39px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 38%, #1a3d2e, #0a1f18);
+    border: 2px solid rgba(212,175,55,.35);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow:
+      0 0 32px rgba(212,175,55,.15),
+      0 0 64px rgba(29,184,152,.08);
+    animation: pulse 3s ease-in-out infinite;
+  }
+  .orbital-core svg { width: 40px; height: 40px; }
+
+  .hero-ar {
+    font-family: 'Amiri', serif;
+    font-size: clamp(36px, 7vw, 58px);
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1.15;
+    text-shadow: 0 0 40px rgba(212,175,55,.25);
+    margin-bottom: 8px;
+  }
+  .hero-en {
+    font-size: clamp(14px, 2.5vw, 17px);
+    color: var(--text-b);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    font-weight: 500;
+  }
+  .hero-desc {
+    font-size: clamp(14px, 2.2vw, 16px);
+    color: var(--text-b);
+    line-height: 1.75;
+    max-width: 560px;
+    margin: 0 auto 40px;
+  }
+  .hero-badges {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 44px;
+  }
+  .badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .badge-gold { background: rgba(212,175,55,.12); border: 1px solid rgba(212,175,55,.35); color: var(--gold); }
+  .badge-teal { background: rgba(29,184,152,.10); border: 1px solid rgba(29,184,152,.30); color: var(--teal); }
+  .badge-dim  { background: rgba(138,172,186,.07); border: 1px solid rgba(138,172,186,.20); color: var(--text-b); }
+
+  .cta-row {
+    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+  }
+  .btn-primary {
+    padding: 13px 32px;
+    background: linear-gradient(135deg, var(--gold), #b8901f);
+    color: #060a06;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: transform .18s, box-shadow .18s;
+    box-shadow: 0 4px 20px rgba(212,175,55,.25);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(212,175,55,.35); }
+  .btn-secondary {
+    padding: 13px 32px;
+    background: rgba(29,184,152,.10);
+    color: var(--teal);
+    border: 1px solid rgba(29,184,152,.35);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: background .18s, transform .18s;
+  }
+  .btn-secondary:hover { background: rgba(29,184,152,.18); transform: translateY(-2px); }
+
+  /* ── SECTION COMMON ──────────────────────────────────── */
+  section {
+    padding: 100px 0;
+    position: relative;
+    z-index: 1;
+  }
+  .section-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 14px;
+  }
+  .section-title-ar {
+    font-family: 'Amiri', serif;
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 8px;
+  }
+  .section-title-en {
+    font-size: clamp(22px, 3.5vw, 32px);
+    font-weight: 700;
+    color: var(--text-a);
+    margin-bottom: 16px;
+  }
+  .section-sub {
+    font-size: 15px;
+    color: var(--text-b);
+    line-height: 1.7;
+    max-width: 580px;
+  }
+  .section-header { margin-bottom: 60px; }
+
+  /* ── DIVIDER ─────────────────────────────────────────── */
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--teal), transparent);
+    opacity: .2;
+    margin: 0;
+  }
+
+  /* ── ENGINES ─────────────────────────────────────────── */
+  #engines { background: rgba(12,30,40,.4); }
+
+  .engines-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+  }
+  .engine-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 32px 28px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .25s, transform .25s;
+  }
+  .engine-card:hover {
+    border-color: rgba(212,175,55,.35);
+    transform: translateY(-4px);
+  }
+  .engine-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0;
+    transition: opacity .25s;
+  }
+  .engine-card:hover::before { opacity: 1; }
+
+  .engine-id {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-c);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .engine-name-ar {
+    font-family: 'Amiri', serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 2px;
+  }
+  .engine-name-en {
+    font-size: 13px;
+    color: var(--text-b);
+    letter-spacing: .5px;
+    margin-bottom: 20px;
+  }
+  .engine-desc {
+    font-size: 13.5px;
+    color: var(--text-b);
+    line-height: 1.65;
+    margin-bottom: 22px;
+  }
+  .engine-tags {
+    display: flex; flex-wrap: wrap; gap: 7px;
+  }
+  .engine-tag {
+    padding: 4px 11px;
+    background: rgba(29,184,152,.07);
+    border: 1px solid rgba(29,184,152,.18);
+    border-radius: 20px;
+    font-size: 10px;
+    color: var(--teal);
+    font-weight: 600;
+  }
+  .engine-score {
+    position: absolute;
+    top: 28px; left: 28px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ok);
+    background: rgba(42,191,110,.08);
+    border: 1px solid rgba(42,191,110,.2);
+    padding: 3px 9px;
+    border-radius: 8px;
+  }
+
+  /* ── FEATURES ────────────────────────────────────────── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+  }
+  .feature-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 24px;
+    transition: border-color .2s, transform .2s;
+  }
+  .feature-card:hover {
+    border-color: rgba(29,184,152,.3);
+    transform: translateY(-3px);
+  }
+  .feature-icon {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    background: rgba(29,184,152,.10);
+    border: 1px solid rgba(29,184,152,.22);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  .feature-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-a);
+    margin-bottom: 8px;
+  }
+  .feature-title-ar {
+    font-family: 'Amiri', serif;
+    font-size: 14px;
+    color: var(--gold);
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .feature-desc {
+    font-size: 13px;
+    color: var(--text-b);
+    line-height: 1.6;
+  }
+
+  /* ── MODES ───────────────────────────────────────────── */
+  #modes { background: rgba(15,36,32,.3); }
+  .modes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+  @media (max-width: 640px) { .modes-grid { grid-template-columns: 1fr; } }
+
+  .mode-card {
+    border-radius: 20px;
+    padding: 40px 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .mode-card-server {
+    background: linear-gradient(140deg, #0c1e28, #081620);
+    border: 1px solid rgba(29,184,152,.25);
+  }
+  .mode-card-local {
+    background: linear-gradient(140deg, #0f2420, #081610);
+    border: 1px solid rgba(212,175,55,.25);
+  }
+  .mode-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 20px;
+  }
+  .mode-icon-server { background: rgba(29,184,152,.12); border: 1px solid rgba(29,184,152,.28); }
+  .mode-icon-local  { background: rgba(212,175,55,.10); border: 1px solid rgba(212,175,55,.28); }
+  .mode-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-a);
+    margin-bottom: 6px;
+  }
+  .mode-title-ar {
+    font-family: 'Amiri', serif;
+    font-size: 16px;
+    margin-bottom: 16px;
+  }
+  .mode-title-ar.server { color: var(--teal); }
+  .mode-title-ar.local  { color: var(--gold); }
+  .mode-desc {
+    font-size: 14px;
+    color: var(--text-b);
+    line-height: 1.7;
+    margin-bottom: 22px;
+  }
+  .mode-points { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+  .mode-points li {
+    font-size: 13px;
+    color: var(--text-b);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .dot-teal { width: 5px; height: 5px; border-radius: 50%; background: var(--teal); flex-shrink: 0; }
+  .dot-gold  { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); flex-shrink: 0; }
+
+  /* ── STATS STRIP ─────────────────────────────────────── */
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin: 80px 0;
+  }
+  @media (max-width: 640px) { .stats-strip { grid-template-columns: repeat(2,1fr); } }
+  .stat-item {
+    background: var(--bg-surface);
+    padding: 28px 20px;
+    text-align: center;
+  }
+  .stat-num {
+    font-size: 34px;
+    font-weight: 700;
+    color: var(--gold-light);
+    line-height: 1;
+    margin-bottom: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-b);
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  /* ── PIPELINE ────────────────────────────────────────── */
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .pipeline-step {
+    flex: 1;
+    min-width: 140px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+    position: relative;
+  }
+  .pipeline-step:not(:last-child)::after {
+    content: '→';
+    position: absolute;
+    right: -16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--teal);
+    font-size: 16px;
+    z-index: 2;
+  }
+  .pipeline-step:not(:last-child) { margin-right: 24px; }
+  .pipeline-step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(29,184,152,.12);
+    border: 1px solid rgba(29,184,152,.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--teal);
+    margin: 0 auto 10px;
+  }
+  .pipeline-step-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-a);
+    margin-bottom: 4px;
+  }
+  .pipeline-step-desc {
+    font-size: 11px;
+    color: var(--text-c);
+  }
+
+  /* ── DOWNLOAD / CTA ──────────────────────────────────── */
+  #download {
+    padding: 120px 0;
+    text-align: center;
+  }
+  .cta-box {
+    background: linear-gradient(140deg, #0f2420 0%, #0c1e28 100%);
+    border: 1px solid rgba(212,175,55,.22);
+    border-radius: 24px;
+    padding: 72px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cta-box::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: 20%; right: 20%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    border-radius: 2px;
+  }
+  .cta-glow {
+    position: absolute;
+    top: 0; left: 50%; transform: translateX(-50%);
+    width: 400px; height: 300px;
+    background: radial-gradient(ellipse at top, rgba(212,175,55,.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cta-ar {
+    font-family: 'Amiri', serif;
+    font-size: 32px;
+    color: var(--gold);
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .cta-en {
+    font-size: 22px;
+    color: var(--text-a);
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+  .cta-sub {
+    font-size: 14px;
+    color: var(--text-b);
+    margin-bottom: 40px;
+    max-width: 440px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.65;
+  }
+
+  /* ── FOOTER ──────────────────────────────────────────── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+    z-index: 1;
+    position: relative;
+  }
+  .footer-ar {
+    font-family: 'Amiri', serif;
+    font-size: 13px;
+    color: var(--gold);
+    margin-bottom: 6px;
+  }
+  .footer-en {
+    font-size: 12px;
+    color: var(--text-c);
+    letter-spacing: .5px;
+  }
+
+  /* ── SCROLL REVEAL ───────────────────────────────────── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity .65s ease, transform .65s ease;
+  }
+  .reveal.visible {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* ── RESPONSIVE ──────────────────────────────────────── */
+  @media (max-width: 768px) {
+    nav ul { display: none; }
+    .cta-box { padding: 48px 28px; }
+    .engines-grid { grid-template-columns: 1fr; }
+    .stats-strip { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#hero">
+    <div class="nav-logo-ring">
+      <svg viewBox="0 0 36 36" fill="none">
+        <circle cx="18" cy="18" r="16" stroke="rgba(212,175,55,.35)" stroke-width="1"/>
+      </svg>
+      <svg viewBox="0 0 36 36" fill="none">
+        <circle cx="18" cy="18" r="12" stroke="rgba(29,184,152,.45)" stroke-width="1"/>
+      </svg>
+      <svg viewBox="0 0 36 36" fill="none">
+        <circle cx="18" cy="18" r="7" fill="rgba(15,36,32,.9)" stroke="rgba(212,175,55,.5)" stroke-width="1.2"/>
+        <path d="M18 13 L19.5 16.5 L23 17 L20.5 19.5 L21 23 L18 21.5 L15 23 L15.5 19.5 L13 17 L16.5 16.5 Z"
+              fill="rgba(212,175,55,.7)" stroke="none"/>
+      </svg>
+    </div>
+    <div>
+      <div class="nav-title">محسِّن التلاوة</div>
+      <div class="nav-sub">Tilawa Enhancer</div>
+    </div>
+  </a>
+  <ul dir="ltr">
+    <li><a href="#engines">Engines</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#modes">Modes</a></li>
+    <li><a href="#download">Download</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-inner">
+    <div class="orbital">
+      <div class="orbital-ring ring1"></div>
+      <div class="orbital-ring ring2"></div>
+      <div class="orbital-ring ring3"></div>
+      <div class="orbital-core">
+        <svg viewBox="0 0 40 40" fill="none">
+          <!-- Open Quran book -->
+          <path d="M20 8 Q14 10 10 14 L10 32 Q14 28 20 27 Q26 28 30 32 L30 14 Q26 10 20 8Z"
+                fill="rgba(212,175,55,.15)" stroke="rgba(212,175,55,.6)" stroke-width="1.2"/>
+          <line x1="20" y1="8" x2="20" y2="27" stroke="rgba(212,175,55,.5)" stroke-width="1"/>
+          <line x1="12" y1="16" x2="19" y2="16" stroke="rgba(212,175,55,.35)" stroke-width=".7"/>
+          <line x1="12" y1="19" x2="19" y2="19" stroke="rgba(212,175,55,.25)" stroke-width=".7"/>
+          <line x1="12" y1="22" x2="19" y2="22" stroke="rgba(212,175,55,.25)" stroke-width=".7"/>
+          <line x1="21" y1="16" x2="28" y2="16" stroke="rgba(212,175,55,.35)" stroke-width=".7"/>
+          <line x1="21" y1="19" x2="28" y2="19" stroke="rgba(212,175,55,.25)" stroke-width=".7"/>
+          <line x1="21" y1="22" x2="28" y2="22" stroke="rgba(212,175,55,.25)" stroke-width=".7"/>
+          <!-- Audio waveform below -->
+          <path d="M8 36 Q11 33 14 36 Q17 39 20 36 Q23 33 26 36 Q29 39 32 36"
+                stroke="rgba(29,184,152,.65)" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <h1 class="hero-ar">محسِّن التلاوة</h1>
+    <p class="hero-en">Tilawa Enhancer</p>
+
+    <p class="hero-desc">
+      برنامج متقدم لتحسين جودة تسجيلات تلاوة القرآن الكريم — يعتمد على محركات معالجة صوتية
+      دقيقة تُعيد التلاوة إلى نقائها الأصيل.
+      <br><br>
+      Advanced Quran recitation audio processing — precision DSP engines that restore recordings to their authentic clarity.
+    </p>
+
+    <div class="hero-badges">
+      <span class="badge badge-gold">محركات DSP متقدمة</span>
+      <span class="badge badge-teal">Advanced DSP Engines</span>
+      <span class="badge badge-dim">صدقة جارية</span>
+      <span class="badge badge-dim">Offline Ready</span>
+    </div>
+
+    <div class="cta-row">
+      <a class="btn-primary" href="#download">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+        </svg>
+        تحميل التطبيق
+      </a>
+      <a class="btn-secondary" href="#engines">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        Explore Engines
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- STATS STRIP -->
+<div class="wrap">
+  <div class="stats-strip reveal">
+    <div class="stat-item">
+      <div class="stat-num">3</div>
+      <div class="stat-label">Sacred Engines</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">99.5</div>
+      <div class="stat-label">Peak Score / 100</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">3</div>
+      <div class="stat-label">Cloud Servers</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">100%</div>
+      <div class="stat-label">Offline Mode</div>
+    </div>
+  </div>
+</div>
+
+<!-- ENGINES -->
+<section id="engines">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <div class="section-eyebrow">Processing Core</div>
+      <div class="section-title-ar">المحركات المقدسة</div>
+      <div class="section-title-en">The Sacred Engines</div>
+      <p class="section-sub">
+        ثلاثة محركات متخصصة — كل منها مُصمَّم لنوع محدد من التسجيلات.
+        يختار محرك التجلي المسار الأمثل تلقائياً بناءً على تحليل المصدر.
+      </p>
+    </div>
+
+    <div class="engines-grid">
+
+      <!-- v11.0 -->
+      <div class="engine-card reveal" style="transition-delay:.05s">
+        <div class="engine-score">v11.0 · 99.5 / 100</div>
+        <div style="height:24px"></div>
+        <div class="engine-id">التوجيه التلقائي — Auto-Router</div>
+        <div class="engine-name-ar">التجلي</div>
+        <div class="engine-name-en">The Manifestation</div>
+        <div class="engine-desc">
+          يحلل المصدر ويختار المسار الأمثل تلقائياً: الإتقان للتسجيلات النظيفة، الاسترداد للتالفة.
+          يُجسِّد الدقة الكاملة في القرار الصوتي.
+        </div>
+        <div class="engine-tags">
+          <span class="engine-tag">Auto-Analysis</span>
+          <span class="engine-tag">Tier Router</span>
+          <span class="engine-tag">DF3 NR</span>
+          <span class="engine-tag">النقاء</span>
+          <span class="engine-tag">البيان</span>
+          <span class="engine-tag">النور</span>
+        </div>
+      </div>
+
+      <!-- v11.1 -->
+      <div class="engine-card reveal" style="transition-delay:.12s">
+        <div class="engine-score">v11.1 · 99.0 / 100</div>
+        <div style="height:24px"></div>
+        <div class="engine-id">المسار النظيف — Pristine Path</div>
+        <div class="engine-name-ar">الإتقان</div>
+        <div class="engine-name-en">Perfection</div>
+        <div class="engine-desc">
+          مُخصَّص للتسجيلات النظيفة والمضغوطة. تخفيض ضوضاء ثنائي،
+          تحسين طيفي دقيق، معايرة LUFS+LRA مشتركة بالمُحسِّن L-BFGS-B.
+        </div>
+        <div class="engine-tags">
+          <span class="engine-tag">Pristine Path</span>
+          <span class="engine-tag">DF3 NR</span>
+          <span class="engine-tag">L-BFGS-B EQ</span>
+          <span class="engine-tag">Joint Opt</span>
+          <span class="engine-tag">LUFS Ceil</span>
+          <span class="engine-tag">LRA Tune</span>
+        </div>
+      </div>
+
+      <!-- v11.2 -->
+      <div class="engine-card reveal" style="transition-delay:.19s">
+        <div class="engine-score">v11.2 · 98.0 / 100</div>
+        <div style="height:24px"></div>
+        <div class="engine-id">مسار الاسترداد — Recovery Path</div>
+        <div class="engine-name-ar">الاسترداد</div>
+        <div class="engine-name-en">Recovery</div>
+        <div class="engine-desc">
+          مُخصَّص للتسجيلات التالفة. إزالة ضوضاء مكثفة بـ DF3 المُحسَّن، إزالة القطع،
+          إلغاء الصدى، وإعادة بناء الطيف الصوتي الكامل.
+        </div>
+        <div class="engine-tags">
+          <span class="engine-tag">Damaged Path</span>
+          <span class="engine-tag">DF3 Heavy NR</span>
+          <span class="engine-tag">Declip</span>
+          <span class="engine-tag">Dereverberate</span>
+          <span class="engine-tag">Reconstruct</span>
+          <span class="engine-tag">إحياء</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Pipeline -->
+    <div style="margin-top:56px" class="reveal">
+      <div class="section-eyebrow" style="margin-bottom:22px">Processing Pipeline</div>
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="pipeline-step-num">1</div>
+          <div class="pipeline-step-title">Source Analysis</div>
+          <div class="pipeline-step-desc">Spectral · Tier · LUFS</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-step-num">2</div>
+          <div class="pipeline-step-title">Noise Reduction</div>
+          <div class="pipeline-step-desc">DF3 · Hum · Broadband</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-step-num">3</div>
+          <div class="pipeline-step-title">Spectral EQ</div>
+          <div class="pipeline-step-desc">L-BFGS-B Optimizer</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-step-num">4</div>
+          <div class="pipeline-step-title">LUFS + LRA</div>
+          <div class="pipeline-step-desc">Joint Calibration</div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-step-num">5</div>
+          <div class="pipeline-step-title">Score Report</div>
+          <div class="pipeline-step-desc">X / 100 · Detailed</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <div class="section-eyebrow">App Features</div>
+      <div class="section-title-ar">مميزات التطبيق</div>
+      <div class="section-title-en">Everything You Need</div>
+    </div>
+
+    <div class="features-grid">
+
+      <div class="feature-card reveal" style="transition-delay:.0s">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1DB898" stroke-width="2">
+            <path d="M9 19V6l12-3v13M9 19c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm12-3c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/>
+          </svg>
+        </div>
+        <div class="feature-title-ar">مقارنة قبل / بعد</div>
+        <div class="feature-title">A/B Comparison Player</div>
+        <div class="feature-desc">اسمع الفرق مباشرةً — شغِّل الأصل والمُحسَّن في آنٍ واحد وانتقل بين النسختين فوراً.</div>
+      </div>
+
+      <div class="feature-card reveal" style="transition-delay:.06s">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1DB898" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="3"/>
+            <path d="M3 9h18M9 21V9"/>
+          </svg>
+        </div>
+        <div class="feature-title-ar">تقرير التحسين التفصيلي</div>
+        <div class="feature-title">Enhancement Report Card</div>
+        <div class="feature-desc">تقرير كامل بالدرجة والـ LUFS والـ LRA وقيم Crest — عربي وإنجليزي.</div>
+      </div>
+
+      <div class="feature-card reveal" style="transition-delay:.12s">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1DB898" stroke-width="2">
+            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <div class="feature-title-ar">معالجة متوازية</div>
+        <div class="feature-title">Multi-Server Queue</div>
+        <div class="feature-desc">3 خوادم نشطة تعمل بالتوازي — قوائم انتظار ذكية تضمن استمرار المعالجة دون انقطاع.</div>
+      </div>
+
+      <div class="feature-card reveal" style="transition-delay:.18s">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1DB898" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </div>
+        <div class="feature-title-ar">حفظ في Downloads</div>
+        <div class="feature-title">Auto-Save to Downloads</div>
+        <div class="feature-desc">يُحفَظ الملف المُحسَّن تلقائياً في مجلد التنزيلات مع تسمية دقيقة تشمل اسم المحرك.</div>
+      </div>
+
+      <div class="feature-card reveal" style="transition-delay:.24s">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+        </div>
+        <div class="feature-title-ar">رفع مجزَّأ للملفات الكبيرة</div>
+        <div class="feature-title">Chunked Upload</div>
+        <div class="feature-desc">ملفات حتى 200 ميغابايت — يُرسَل الملف مجزَّأً بـ 4MB لكل جزء مع استئناف تلقائي عند الانقطاع.</div>
+      </div>
+
+      <div class="feature-card reveal" style="transition-delay:.30s">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </div>
+        <div class="feature-title-ar">إشعارات الإتمام</div>
+        <div class="feature-title">Completion Notifications</div>
+        <div class="feature-desc">يُخطرك التطبيق فور انتهاء المعالجة حتى لو كان في الخلفية — مع الدرجة في الإشعار.</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- MODES -->
+<section id="modes">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <div class="section-eyebrow">Operation Modes</div>
+      <div class="section-title-ar">وضعان للعمل</div>
+      <div class="section-title-en">Server Mode · Local Mode</div>
+      <p class="section-sub">اختر بين المعالجة السحابية السريعة أو الوضع المحلي الكامل الذي يعمل دون إنترنت.</p>
+    </div>
+
+    <div class="modes-grid reveal">
+      <div class="mode-card mode-card-server">
+        <div class="mode-icon mode-icon-server">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1DB898" stroke-width="1.8">
+            <rect x="2" y="3" width="20" height="4" rx="1"/>
+            <rect x="2" y="10" width="20" height="4" rx="1"/>
+            <rect x="2" y="17" width="20" height="4" rx="1"/>
+            <circle cx="19" cy="5" r="1" fill="#1DB898"/>
+            <circle cx="19" cy="12" r="1" fill="#1DB898"/>
+          </svg>
+        </div>
+        <div class="mode-title">Server Mode</div>
+        <div class="mode-title-ar server">وضع الخادم</div>
+        <div class="mode-desc">
+          المعالجة تتم على خوادم HuggingFace المخصصة — قوة حوسبية كاملة بدون استنزاف بطارية هاتفك.
+        </div>
+        <ul class="mode-points">
+          <li><span class="dot-teal"></span>3 خوادم متوازية — قدرة عالية</li>
+          <li><span class="dot-teal"></span>رفع مجزَّأ للملفات الكبيرة</li>
+          <li><span class="dot-teal"></span>استئناف تلقائي عند انقطاع الخادم</li>
+          <li><span class="dot-teal"></span>تتبع حالة المعالجة في الوقت الفعلي</li>
+        </ul>
+      </div>
+
+      <div class="mode-card mode-card-local">
+        <div class="mode-icon mode-icon-local">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" stroke-width="1.8">
+            <rect x="5" y="2" width="14" height="20" rx="2"/>
+            <circle cx="12" cy="18" r="1" fill="#D4AF37"/>
+            <line x1="9" y1="6" x2="15" y2="6" stroke="#D4AF37" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="mode-title">Local Mode</div>
+        <div class="mode-title-ar local">الوضع المحلي</div>
+        <div class="mode-desc">
+          تشغيل المحركات مباشرة على هاتفك بالـ proot — خصوصية كاملة وعمل بلا إنترنت بعد إعداد أوّلي واحد.
+        </div>
+        <ul class="mode-points">
+          <li><span class="dot-gold"></span>Alpine Linux + Python على هاتفك</li>
+          <li><span class="dot-gold"></span>DeepFilterNet 3 aarch64 مدمج</li>
+          <li><span class="dot-gold"></span>تحميل واحد فقط ~200 ميغابايت</li>
+          <li><span class="dot-gold"></span>خصوصية تامة — الصوت لا يغادر هاتفك</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- DOWNLOAD CTA -->
+<section id="download">
+  <div class="wrap">
+    <div class="cta-box reveal">
+      <div class="cta-glow"></div>
+      <div class="cta-ar">حمِّل التطبيق الآن</div>
+      <div class="cta-en">Download Tilawa Enhancer</div>
+      <p class="cta-sub">
+        تطبيق مجاني — صدقة جارية لخدمة كتاب الله.<br>
+        Free — an ongoing charity for the service of the Holy Quran.
+      </p>
+      <div class="cta-row">
+        <a class="btn-primary" href="#">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3.18 23.76c.26.14.57.15.83.01L19.65 12 4.01.23a.96.96 0 0 0-.83.01C2.9.4 2.67.7 2.67 1.04v21.92c0 .34.23.64.51.8z"/>
+          </svg>
+          Google Play
+        </a>
+        <a class="btn-secondary" href="#">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Direct APK
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="footer-ar">محسِّن التلاوة — صدقة جارية لخدمة القرآن الكريم</div>
+    <div class="footer-en" style="margin-top:4px">Tilawa Enhancer · Advanced DSP Engines for Quran Recitation</div>
+  </div>
+</footer>
+
+<script>
+// ── PARTICLES ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('particles');
+const ctx    = canvas.getContext('2d');
+let W, H, stars = [];
+
+const COLORS = [
+  'rgba(212,175,55,',
+  'rgba(29,184,152,',
+  'rgba(138,172,186,',
+  'rgba(240,207,96,',
+];
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+class Star {
+  constructor() { this.reset(true); }
+  reset(initial = false) {
+    this.x    = Math.random() * W;
+    this.y    = initial ? Math.random() * H : H + 8;
+    this.r    = .5 + Math.random() * 2;
+    this.vy   = -.25 - Math.random() * .7;
+    this.vx   = (Math.random() - .5) * .18;
+    this.life = 0;
+    this.maxLife = 120 + Math.random() * 200;
+    this.col  = COLORS[Math.floor(Math.random() * COLORS.length)];
+    this.type = Math.random() < .25 ? 'diamond' : 'dot';
+  }
+  draw() {
+    const alpha = Math.min(1, Math.min(this.life / 30, (this.maxLife - this.life) / 40)) * .55;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = this.col + alpha + ')';
+    if (this.type === 'diamond') {
+      const s = this.r * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y - s);
+      ctx.lineTo(this.x + s, this.y);
+      ctx.lineTo(this.x, this.y + s);
+      ctx.lineTo(this.x - s, this.y);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy; this.life++;
+    if (this.life > this.maxLife || this.y < -10) this.reset();
+  }
+}
+
+for (let i = 0; i < 55; i++) stars.push(new Star());
+
+function loop() {
+  ctx.clearRect(0, 0, W, H);
+  stars.forEach(s => { s.update(); s.draw(); });
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(loop);
+}
+loop();
+
+// ── SCROLL REVEAL ───────────────────────────────────────────────────────
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: .12 });
+
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+</script>
+</body>
+</html>
