@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
-  file_picker: 10.1.0     # S152: pin — 10.2+ breaks AGP library subprojects
+  file_picker: 10.1.0     # S153: pin — 10.2+ breaks AGP subprojects
   url_launcher: ^6.2.5
   path_provider: ^2.1.2
   audioplayers: ^6.1.0
