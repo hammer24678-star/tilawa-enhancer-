@@ -125,9 +125,9 @@ class _HomeScreenState extends State<HomeScreen>
     _EngineData(
       'v11.1', 'الإتقان', 'Perfection', 99.0,
       '', 'gold',
-      ['Pristine Path', 'DF3 NR', 'L-BFGS-B EQ', 'Joint Opt', 'LUFS Ceil', 'LRA Tune'],
-      'مسار التسجيلات النظيفة والمضغوطة. تخفيض ضوضاء ثنائي — تحسين طيفي — معايرة LUFS+LRA مشتركة.',
-      'Path for clean and compressed recordings. Two-stage NR, spectral EQ, joint LUFS+LRA calibration.',
+      ['Pristine+Noisy', 'صدي التمييز', '5-Seg Traj', 'L-BFGS-B EQ', 'Onset Guard', 'Joint Opt'],  // S154,
+      'مسار التسجيلات النظيفة والمضغوطة والمشوبة بالضجيج. تخفيض ضوضاء انتقائي — تحسين طيفي بـ48 نطاقاً — صدي التمييز — مسار طيفي خماسي — حماية بداية الحروف العربية.',
+      'Path for clean, compressed, and lightly noisy recordings. Selective NR, 48-band L-BFGS-B EQ, صدي التمييز harmonic enhancement, 5-segment spectral trajectory, Arabic onset protection.',
       imgAsset: 'assets/images/engines/itiqan.jpg', localOnly: true),
     _EngineData(
       'v11.2', 'الاسترداد', 'Recovery', 98.0,

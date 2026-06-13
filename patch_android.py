@@ -675,7 +675,7 @@ class LocalEngineRunner(
         try {
             val script = mapOf(
                 "v11.0" to "engine_safaa_v3_fixed.py", // S149
-                "v11.1" to "true_engine_itiqan_v2_fixed.py",
+                "v11.1" to "engine_itiqan_v6_official.py"  // S154,
                 "v11.2" to "engine_isteidad_v21.py",
                 "v10.0" to "engine_v100.py",
                 "v9.0"  to "engine_v90.py",
@@ -783,6 +783,22 @@ class LocalEngineRunner(
                     l.startsWith("[J")  -> 84
                     l.startsWith("[K")  -> 90
                     l.startsWith("[L")  -> 94
+    // S154: itiqan v6 emits ── phase_X ── tags; map to progress pct
+                    l.contains("── phase_A5") || l.contains("── phase_A5_adaptive") -> 8
+                    l.contains("── phase_A") -> 5
+                    l.contains("── phase_B") -> 16
+                    l.contains("── phase_C") -> 22
+                    l.contains("── phase_D5") -> 34
+                    l.contains("── phase_D") -> 30
+                    l.contains("── phase_E") -> 38
+                    l.contains("── phase_F") -> 46
+                    l.contains("── phase_G5_sadaa") -> 62
+                    l.contains("── phase_G5_crest") -> 65
+                    l.contains("── phase_G6") -> 70
+                    l.contains("── phase_G") -> 58
+                    l.contains("── phase_H") -> 76
+                    l.contains("── phase_I") -> 84
+                    l.contains("── phase_J") -> 90
                     l.contains("score") && l.contains("/100") -> 96
                     else -> -1
                 }
