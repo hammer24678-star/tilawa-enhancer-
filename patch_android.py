@@ -78,7 +78,7 @@ pluginManagement {
 }
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-    id "com.android.application" version "8.3.2" apply false  # S152: matches Flutter 3.24.3
+    id "com.android.application" version "8.3.2" apply false  // S152: matches Flutter 3.24.3
     id "org.jetbrains.kotlin.android" version "2.1.0" apply false
 }
 include ":app"
@@ -473,10 +473,7 @@ class LocalEngineRunner(
         val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
             File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
             File(alpineDir, "tilawa_numpy/numpy").exists()
-        val scipyOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists() ||
-            File(alpineDir, "tilawa_numpy/scipy").exists()
-        if (!numpyOk || !scipyOk) return false  // S148: scipy required by v11.2
+        if (!numpyOk) return false  // S122: force re-setup if numpy missing
         val df = File(alpineDir, "usr/local/bin/deep-filter")
         if (!df.exists() || df.length() < 1_000_000L) return false
         // S-DF3ARCH: reject if binary is not aarch64 — x86_64 runs setup but
@@ -584,7 +581,7 @@ class LocalEngineRunner(
         }
                 // S106: install numpy/scipy to fixed known path
         val numpyTarget = File(alpineDir, "tilawa_numpy")
-        if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) { // S148
+        if (!File(numpyTarget, "numpy").exists()) {
             progress(79, "Installing numpy + scipy (one-time ~2 min)…")
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
@@ -674,7 +671,7 @@ class LocalEngineRunner(
         withContext(Dispatchers.IO) {
         try {
             val script = mapOf(
-                "v11.0" to "engine_safaa_v3_fixed.py", // S149
+                "v11.0" to "engine_tajalli_v1.py",
                 "v11.1" to "true_engine_itiqan_v2_fixed.py",
                 "v11.2" to "engine_isteidad_v21.py",
                 "v10.0" to "engine_v100.py",
@@ -682,9 +679,9 @@ class LocalEngineRunner(
                 "v8.5"  to "engine_v85.py",
                 "v8.0"  to "engine_v80.py",
                 "v7.0"  to "engine_v70.py",
-            )[engineId] ?: "engine_safaa_v3_fixed.py" // S149
+            )[engineId] ?: "engine_tajalli_v1.py"
 
-            // v11.0 (safaa) outputs WAV; v11.1/v11.2 output MP3 // S149
+            // v11.0 (tajalli) outputs WAV; v11.1/v11.2 output MP3
             val outExt = if (engineId == "v11.0") "wav" else "mp3"
             val outputPath = "${cacheDir.absolutePath}/tilawa_${engineId.replace('.','_')}_${System.currentTimeMillis()}.$outExt"
             refAudioDir.mkdirs()
@@ -939,7 +936,7 @@ class LocalEngineRunner(
 
     private fun extractEngines() {
         enginesDir.mkdirs()
-        listOf("engine_safaa_v3_fixed.py","true_engine_itiqan_v2_fixed.py", // S149
+        listOf("engine_tajalli_v1.py","true_engine_itiqan_v2_fixed.py",
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
                "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",
                "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
