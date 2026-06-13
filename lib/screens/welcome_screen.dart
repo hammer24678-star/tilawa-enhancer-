@@ -197,7 +197,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               const SizedBox(width: 12),
               const Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('التجلي · الإتقان · الاسترداد',
+                Text('الصفاء · الإتقان · الاسترداد',
                   style: TextStyle(color: Color(0xFFD4AF37),
                     fontSize: 13, fontWeight: FontWeight.bold)),
                 SizedBox(height: 3),
