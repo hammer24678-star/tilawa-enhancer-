@@ -28,7 +28,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.3'  # S151: last verified stable
+          flutter-version: '3.38.0'
           channel: 'stable'
 
       - name: Flutter pub get
