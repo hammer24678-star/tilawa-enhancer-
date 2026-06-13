@@ -116,12 +116,12 @@ class _HomeScreenState extends State<HomeScreen>
   static const _engines = [
     // ── S47: Three Sacred Engines ──────────────────────────────────
     _EngineData(
-      'v11.0', 'التجلي', 'The Manifestation', 99.5,
+      'v11.0', 'الصفاء', 'Purity', 99.5,
       'NEW', 'gold',
-      ['Tier Router', 'Auto-Path', 'DF3 NR', 'النقاء', 'البيان', 'النور'],
-      'يُحلِّل المصدر تلقائياً ويختار المسار الأمثل: الإتقان للتسجيلات النظيفة، الاسترداد للتالفة.',
-      'Auto-analyses the source and routes to the optimal path: الإتقان for clean, الاسترداد for damaged.',
-      imgAsset: 'assets/images/engines/tajalli.jpg', localOnly: true),
+      ['دي-ريفِرب', 'WPE', 'DF3 NR', 'JALAA', 'Tail-NR', 'Arabic Guard'],
+      'محرك إزالة الصدى الصوتي — يُزيل الصدى الصوتي مع الحفاظ على أحكام التجويد كاملةً.',
+      'Dereverberation engine — removes mosque echo while preserving all Tajweed phonology.',
+      imgAsset: 'assets/images/engines/safaa.jpg', localOnly: true), // S149
     _EngineData(
       'v11.1', 'الإتقان', 'Perfection', 99.0,
       '', 'gold',
@@ -1659,7 +1659,7 @@ class _HomeScreenState extends State<HomeScreen>
   // S54: per-engine identity color drives bg tint and glow
   Color get _engineColor {
     switch (_engine) {
-      case 'v11.0': return const Color(0xFFD4AF37); // tajalli gold
+      case 'v11.0': return const Color(0xFFD4AF37); // safaa gold // S149
       case 'v11.1': return const Color(0xFF1DB898); // itiqan teal
       case 'v11.2': return const Color(0xFFE8A030); // isteidad amber
       case 'v10.0': return const Color(0xFFB8860B); // Aetherion dark gold
@@ -2683,7 +2683,7 @@ class _HomeScreenState extends State<HomeScreen>
         : const Color(0xFFF85149); // red for scores below 80
 
     const engineNames = { // S141: added v11.x, removed dead v8.4/v8.9
-      'v11.0': 'التجلي — The Manifestation',
+      'v11.0': 'الصفاء — Purity', // S149
       'v11.1': 'الإتقان — Perfection',
       'v11.2': 'الاسترداد — Recovery',
       'v10.0': 'Aetherion Foundation',
