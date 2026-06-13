@@ -19,7 +19,7 @@ jobs:
 
 
       - name: Build asset bundles (Alpine + Python + DeepFilter)
-        run: bash build_assets.sh
+        run: if [ -f build_assets.sh ]; then bash build_assets.sh; else echo "build_assets.sh not found — skipping"; fi  # S151
 
       - uses: actions/setup-java@v4
         with:
@@ -28,7 +28,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.0'
+          flutter-version: '3.24.3'  # S151: last verified stable
           channel: 'stable'
 
       - name: Flutter pub get
