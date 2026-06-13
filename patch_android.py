@@ -675,7 +675,7 @@ class LocalEngineRunner(
         try {
             val script = mapOf(
                 "v11.0" to "engine_safaa_v3_fixed.py", // S149
-                "v11.1" to "engine_itiqan_v6_official.py"  // S154,
+                "v11.1" to "engine_itiqan_v6_official.py",
                 "v11.2" to "engine_isteidad_v21.py",
                 "v10.0" to "engine_v100.py",
                 "v9.0"  to "engine_v90.py",
