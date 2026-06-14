@@ -17,6 +17,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
+import 'audio_editor_screen.dart'; // S152
+import 'screens/audio_editor_screen.dart'; // S152
 import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
 
@@ -1154,6 +1156,7 @@ class _HomeScreenState extends State<HomeScreen>
             if (_result != null)
                 SliverToBoxAdapter(child: _abCard(s)),
             SliverToBoxAdapter(child: _bottomRow(s)),
+            SliverToBoxAdapter(child: _audioEditorCard(s)),  // S152
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ]),
@@ -3145,6 +3148,42 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(width: 8),
             Text(s.history, style: const TextStyle(
               color: Color(0xFF8B949E), fontSize: 13)),
+          ]),
+        ),
+      ),
+    ),
+  );
+
+
+  // ── AUDIO EDITOR CARD ───────────────────────────────────────────────── S152
+  Widget _audioEditorCard(S s) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+    child: Material(
+      color: _bgCard,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const AudioEditorScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 220),
+          )),
+        splashColor: _teal.withValues(alpha: 0.12),
+        highlightColor: _teal.withValues(alpha: 0.06),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: _teal.withValues(alpha: 0.25))),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.equalizer_rounded, color: _teal, size: 18),
+            const SizedBox(width: 8),
+            const Text('محرر الصوت',
+                style: TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
+            const Spacer(),
+            const Icon(Icons.chevron_left_rounded,
+                color: Color(0xFF484F58), size: 18),
           ]),
         ),
       ),
