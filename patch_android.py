@@ -23,7 +23,7 @@ plugins {
 android {
     namespace "com.tilawa.tilawa_enhancer"
     compileSdk 36
-    ndkVersion "25.1.8937393"  // S154-B12
+    ndkVersion "28.2.13676358"  # S159: highest required by plugins (jni)  // S154-B12
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

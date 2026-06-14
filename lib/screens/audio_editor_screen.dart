@@ -466,7 +466,7 @@ class _EqBandRow extends StatelessWidget {
           child: SliderTheme(
             data: SliderThemeData(
               trackHeight: 3,
-              thumbRadius: 7,
+              thumbSize: WidgetStateProperty.all(const Size(14, 14)),  // S159
               thumbColor: color,
               activeTrackColor: color.withValues(alpha: 0.7),
               inactiveTrackColor: _border,
@@ -532,7 +532,7 @@ class _KnobRow extends StatelessWidget {
         SliderTheme(
           data: SliderThemeData(
             trackHeight: 4,
-            thumbRadius: 8,
+            thumbSize: WidgetStateProperty.all(const Size(16, 16)),  // S159
             thumbColor: active ? _teal : _textDim,
             activeTrackColor: _teal.withValues(alpha: 0.75),
             inactiveTrackColor: _border,
