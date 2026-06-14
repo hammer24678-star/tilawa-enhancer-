@@ -49,7 +49,7 @@ jobs:
             -v "$PWD/assets/alpine:/out" \
             alpine:3.21 sh -c "
               apk add --no-cache python3 py3-numpy py3-scipy ffmpeg 2>&1 | tail -3
-              PY=\$(python3 -c 'import sys; v=sys.version_info; print("python%d.%d" % (v.major, v.minor))')
+              PY=\$(python3 -c 'import sys; v=sys.version_info; print(\"python%d.%d\" % (v.major, v.minor))')
               tar czf /out/python-env.tar.gz \
                 /usr/bin/python3 /usr/bin/\$PY \
                 /usr/lib/\$PY \
