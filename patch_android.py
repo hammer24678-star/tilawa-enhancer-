@@ -23,7 +23,7 @@ plugins {
 android {
     namespace "com.tilawa.tilawa_enhancer"
     compileSdk 36
-    ndkVersion flutter.ndkVersion
+    ndkVersion "25.1.8937393"  // S154-B12
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
