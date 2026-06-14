@@ -383,6 +383,15 @@ class _HomeScreenState extends State<HomeScreen>
           duration: Duration(seconds: 3)));
         return;
       }
+      // S162-B18: non-local engines silently fell back to v11.0 in Kotlin —
+      // redirect explicitly and notify user so the swap is visible.
+      if (!_selectedEngine.localOnly) {
+        setState(() => _engine = 'v11.0');
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('☁ SERVER engine redirected to 🏠 v11.0 (local mode)'),
+          backgroundColor: Color(0xFF0F2420),
+          duration: Duration(seconds: 3)));
+      }
       await _processLocal(); return;
     }
     if (_file == null) return;  // S91
