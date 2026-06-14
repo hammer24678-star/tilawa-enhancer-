@@ -59,6 +59,7 @@ jobs:
                 /usr/lib/libopenblas.so.* /usr/lib/libgfortran.so.* \
                 2>/dev/null || true
               echo python-env size: \$(ls -lh /out/python-env.tar.gz | awk '{print \$5}')
+              [ $(stat -c%s /out/python-env.tar.gz 2>/dev/null || echo 0) -gt 1048576 ] || { echo "ERROR: python-env.tar.gz too small"; exit 1; }
             "
 
 
