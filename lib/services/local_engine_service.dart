@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 class LocalEngineService {
   static const _ch =
       MethodChannel('com.tilawa.tilawa_enhancer/local_engine');
+  static bool _handlerSet = false;  // S156: set handler only once
 
   // ── Setup check ──────────────────────────────────────────────────────────
 
@@ -51,6 +52,8 @@ class LocalEngineService {
     required String inputPath,
   }) {
     final ctrl = StreamController<Map<String, dynamic>>();
+    if (!_handlerSet) {  // S156: only register once
+    _handlerSet = true;
     _ch.setMethodCallHandler((call) async {
       if (ctrl.isClosed) return;
       switch (call.method) {
@@ -66,7 +69,7 @@ class LocalEngineService {
             ...Map<String, dynamic>.from(call.arguments as Map)});
           ctrl.close();
       }
-    });
+    }); }  // end if (!_handlerSet)
     _ch.invokeMethod('runEngine', {
       'engineId':  engineId,
       'inputPath': inputPath,

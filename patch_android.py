@@ -677,11 +677,7 @@ class LocalEngineRunner(
                 "v11.0" to "engine_safaa_v3_fixed.py", // S149
                 "v11.1" to "engine_itiqan_v6_official.py",
                 "v11.2" to "engine_isteidad_v21.py",
-                "v10.0" to "engine_v100.py",
-                "v9.0"  to "engine_v90.py",
-                "v8.5"  to "engine_v85.py",
-                "v8.0"  to "engine_v80.py",
-                "v7.0"  to "engine_v70.py",
+                // v10.0-v7.0 are server-only — no local engine files // S156
             )[engineId] ?: "engine_safaa_v3_fixed.py" // S149
 
             // v11.0 (safaa) outputs WAV; v11.1/v11.2 output MP3 // S149
@@ -957,8 +953,7 @@ class LocalEngineRunner(
         enginesDir.mkdirs()
         listOf("engine_safaa_v3_fixed.py","engine_itiqan_v6_official.py", // S155: was true_engine_itiqan_v2_fixed
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",
-               "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
+               "noor_v5.py","ihyaa_ve.py").forEach { name ->  // S156: v7-v10 are server-only
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88
             try { context.assets.open("flutter_assets/assets/engines/$name").use { inp ->
