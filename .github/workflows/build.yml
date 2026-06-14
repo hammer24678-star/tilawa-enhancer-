@@ -42,34 +42,32 @@ jobs:
 
       - name: Patch android/ v11
         run: python3 patch_android.py
-      - name: Build bundled Python env (ARM64 Alpine)  # S158: heredoc avoids quoting hell
+      - name: Build bundled Python env (ARM64 Alpine)  # S158b: proper YAML indent
         run: |
           mkdir -p assets/alpine
           cat > /tmp/alpine_build.sh << 'ALPINE_EOF'
-apk add --no-cache python3 py3-numpy py3-scipy ffmpeg 2>&1 | tail -3
-PY=$(python3 -c "import sys; v=sys.version_info; print('python%d.%d' % (v.major, v.minor))")
-tar czf /out/python-env.tar.gz \
-  /usr/bin/python3 /usr/bin/$PY \
-  /usr/lib/$PY \
-  /usr/bin/ffmpeg \
-  /usr/lib/libavcodec.so.* /usr/lib/libavformat.so.* \
-  /usr/lib/libavutil.so.* /usr/lib/libswresample.so.* \
-  /usr/lib/libopenblas.so.* /usr/lib/libgfortran.so.* \
-  2>/dev/null || true
-echo "python-env size: $(ls -lh /out/python-env.tar.gz | awk '{print $5}')"
-SZ=$(stat -c%s /out/python-env.tar.gz 2>/dev/null || echo 0)
-if [ "$SZ" -le 1048576 ]; then
-  echo "ERROR: python-env.tar.gz too small (got ${SZ} bytes)"
-  exit 1
-fi
-ALPINE_EOF
+          apk add --no-cache python3 py3-numpy py3-scipy ffmpeg 2>&1 | tail -3
+          PY=$(python3 -c "import sys; v=sys.version_info; print('python%d.%d' % (v.major, v.minor))")
+          tar czf /out/python-env.tar.gz \
+            /usr/bin/python3 /usr/bin/$PY \
+            /usr/lib/$PY \
+            /usr/bin/ffmpeg \
+            /usr/lib/libavcodec.so.* /usr/lib/libavformat.so.* \
+            /usr/lib/libavutil.so.* /usr/lib/libswresample.so.* \
+            /usr/lib/libopenblas.so.* /usr/lib/libgfortran.so.* \
+            2>/dev/null || true
+          echo "python-env size: $(ls -lh /out/python-env.tar.gz | awk '{print $5}')"
+          SZ=$(stat -c%s /out/python-env.tar.gz 2>/dev/null || echo 0)
+          if [ "$SZ" -le 1048576 ]; then
+            echo "ERROR: python-env.tar.gz too small (got ${SZ} bytes)"
+            exit 1
+          fi
+          ALPINE_EOF
           chmod +x /tmp/alpine_build.sh
           docker run --rm --platform linux/arm64 \
             -v "$PWD/assets/alpine:/out" \
             -v "/tmp/alpine_build.sh:/alpine_build.sh:ro" \
             alpine:3.21 sh /alpine_build.sh
-
-
       - name: Verify INTERNET permission in manifest
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
