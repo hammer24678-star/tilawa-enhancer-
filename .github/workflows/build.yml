@@ -101,25 +101,25 @@ jobs:
           else
             # inject signingConfigs block after defaultConfig closing brace
             python3 - << 'PYEOF'
-import re, pathlib
-g = pathlib.Path("android/app/build.gradle")
-t = g.read_text()
-block = '''
-    signingConfigs {
-        release {
-            storeFile file("tilawa_release.jks")
-            storePassword System.getenv("KEY_STORE_PASSWORD") ?: ""
-            keyAlias System.getenv("KEY_ALIAS") ?: ""
-            keyPassword System.getenv("KEY_PASSWORD") ?: ""
-        }
-    }
-'''
-t = re.sub(r'(\s*buildTypes\s*\{)', block + r'\1', t, count=1)
-t = t.replace('signingConfig signingConfigs.debug',
-              'signingConfig signingConfigs.release')
-g.write_text(t)
-print("build.gradle signing patched")
-PYEOF
+          import re, pathlib
+          g = pathlib.Path("android/app/build.gradle")
+          t = g.read_text()
+          block = '''
+              signingConfigs {
+                  release {
+                      storeFile file("tilawa_release.jks")
+                      storePassword System.getenv("KEY_STORE_PASSWORD") ?: ""
+                      keyAlias System.getenv("KEY_ALIAS") ?: ""
+                      keyPassword System.getenv("KEY_PASSWORD") ?: ""
+                  }
+              }
+          '''
+          t = re.sub(r'(\s*buildTypes\s*\{)', block + r'\1', t, count=1)
+          t = t.replace('signingConfig signingConfigs.debug',
+                        'signingConfig signingConfigs.release')
+          g.write_text(t)
+          print("build.gradle signing patched")
+          PYEOF
           fi
 
       - name: Write google-services.json
