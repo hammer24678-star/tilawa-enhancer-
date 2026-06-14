@@ -239,7 +239,7 @@ MAIN_ACTIVITY_KT = (
 '                            val resolver = contentResolver\n'
 '                            val values = ContentValues().apply {\n'
 '                                put(MediaStore.Downloads.DISPLAY_NAME, fileName)\n'
-'                                put(MediaStore.Downloads.MIME_TYPE, mimeType)\n'  // S157
+'                                put(MediaStore.Downloads.MIME_TYPE, mimeType)\n'
 '                                put(MediaStore.Downloads.IS_PENDING, 1)\n'
 '                            }\n'
 '                            val collection = MediaStore.Downloads.getContentUri(\n'
