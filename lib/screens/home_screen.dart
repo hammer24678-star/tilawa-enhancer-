@@ -6,8 +6,7 @@ import 'local_mode_info_screen.dart'; // S146
 
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
-import 'dart:math' as math;
-import 'dart:math' show pi, sin, cos, Random; // S29+S30
+import 'dart:math' as math show pi, sin, cos, Random; // S154-B14: consolidated
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
@@ -17,7 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
-import 'screens/audio_editor_screen.dart'; // S152
+import 'audio_editor_screen.dart'; // S152-B13: home_screen is already in lib/screens/
 import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
 
@@ -1208,6 +1207,8 @@ class _HomeScreenState extends State<HomeScreen>
           resultData['score'] = fallbackScore;
         }
         _wakeCh.invokeMethod('release').catchError((_) {});
+        if (mounted) setState(() => _progress = 1.0);  // S157: hit 100% before reset
+        await Future.delayed(const Duration(milliseconds: 300));
         final _outPath = ev['path'] as String? ?? ''; // S140: null-safe
         _abOutputFile = _outPath.isNotEmpty ? File(_outPath) : null; // S144: preserve cacheDir path for A/B
         setState(() { // S92: ALL result state inside setState
