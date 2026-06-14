@@ -41,7 +41,7 @@ from __future__ import annotations
 
 __version__ = 'v3'
 
-import os, shutil, subprocess, tempfile, warnings
+import os, shutil, subprocess, tempfile, time, warnings  # S156: time for temp uniqueness
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,7 +70,7 @@ except ImportError:
 
 # DF3 binary
 _DF3_CLI_BIN = ''
-for _c in ['/home/claude/deep-filter', 'deep-filter', 'deepfilter', 'deep_filter']:
+for _c in ['deep-filter', 'deepfilter', 'deep_filter', '/usr/local/bin/deep-filter']:
     if shutil.which(_c):
         _DF3_CLI_BIN = _c; break
 DF3_OK = bool(_DF3_CLI_BIN)
@@ -153,7 +153,8 @@ def _run(cmd, timeout=600):
     return r.returncode, r.stdout, r.stderr
 
 def _tmp(tag, st=None):
-    p = os.path.join(_TMP, f'safaa3_{tag}_{os.getpid()}.wav')
+    # S156-B2: add nanosecond suffix — avoids collision between concurrent server jobs
+    p = os.path.join(_TMP, f'safaa3_{tag}_{os.getpid()}_{time.time_ns()}.wav')
     if st is not None:
         st._tmps.append(p)
     return p
@@ -178,7 +179,7 @@ def _decode(path, st=None):
     try:
         if SF_OK:
             # ffmpeg → pcm_f32le temp, then soundfile reads it natively
-            t = os.path.join(_TMP, f'safaa3_dec_{os.getpid()}.wav')
+            t = os.path.join(_TMP, f'safaa3_dec_{os.getpid()}_{time.time_ns()}.wav')  # S156-B2
             rc, _, _ = _run(['ffmpeg', '-y', '-i', path,
                              '-acodec', 'pcm_f32le',
                              '-ar', str(SR), '-ac', '1',
@@ -189,7 +190,7 @@ def _decode(path, st=None):
             return data
         elif SCIPY_WAV_OK:
             # scipy.io.wavfile can read pcm_f32le natively
-            t = os.path.join(_TMP, f'safaa3_dec_{os.getpid()}.wav')
+            t = os.path.join(_TMP, f'safaa3_dec_{os.getpid()}_{time.time_ns()}.wav')  # S156-B2
             rc, _, _ = _run(['ffmpeg', '-y', '-i', path,
                              '-acodec', 'pcm_f32le',
                              '-ar', str(SR), '-ac', '1',
@@ -202,7 +203,7 @@ def _decode(path, st=None):
             return data.copy()
         else:
             # Final fallback: pcm_s16le → int16 → float32 normalised
-            t = os.path.join(_TMP, f'safaa3_dec_{os.getpid()}.wav')
+            t = os.path.join(_TMP, f'safaa3_dec_{os.getpid()}_{time.time_ns()}.wav')  # S156-B2
             rc, _, _ = _run(['ffmpeg', '-y', '-i', path,
                              '-acodec', 'pcm_s16le',
                              '-ar', str(SR), '-ac', '1',
@@ -830,11 +831,15 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
 if __name__ == '__main__':
     import argparse, json
     ap = argparse.ArgumentParser(description=f'الصفاء {__version__} — Dereverberation Engine')
-    ap.add_argument('input')
-    ap.add_argument('output')
-    ap.add_argument('--tier',     default='TIER_UNKNOWN')
-    ap.add_argument('--mujawwad', type=float, default=0.0)
-    ap.add_argument('--rt60',     type=float, default=0.0, help='Force RT60 (0=auto)')
+    # S156-B1: use -i/-o flags to match server calling convention
+    # server: python3 engine_safaa_v3_fixed.py -i input -o output --iterations 3 --ref ref
+    ap.add_argument('-i', '--input',      required=True,  dest='input')
+    ap.add_argument('-o', '--output',     required=True,  dest='output')
+    ap.add_argument('--iterations',       type=int,   default=3)   # accepted, ignored (pipeline is fixed)
+    ap.add_argument('--ref',              action='append', default=[], metavar='REF')  # accepted, ignored
+    ap.add_argument('--tier',             default='TIER_UNKNOWN')
+    ap.add_argument('--mujawwad',         type=float, default=0.0)
+    ap.add_argument('--rt60',             type=float, default=0.0, help='Force RT60 (0=auto)')
     a = ap.parse_args()
     st = process(a.input, a.output,
                  source_tier=a.tier, mujawwad_conf=a.mujawwad, force_rt60=a.rt60)
