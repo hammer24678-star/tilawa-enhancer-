@@ -6,7 +6,7 @@ import 'local_mode_info_screen.dart'; // S146
 
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
-import 'dart:math' as math show pi, sin, cos, Random; // S154-B14: consolidated
+import 'dart:math' show pi, sin, cos, Random; // S159c
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
