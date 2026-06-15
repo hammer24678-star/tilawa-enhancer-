@@ -462,6 +462,17 @@ class LocalEngineRunner(
                         context, arrayOf(path), null, null)
                     result.success(null)
                 }
+                "runProotCmd" -> {  // S161: ffmpeg/shell via proot for editor
+                    result.success(null)
+                    val a      = call.arguments as Map<*, *>
+                    val cmd    = (a["cmd"] as? String) ?: ""
+                    val tmMin  = (a["timeoutMin"] as? Int) ?: 10
+                    scope.launch {
+                        val (rc, out) = runProot(listOf("/bin/sh", "-c", cmd), tmMin)
+                        ui { channel?.invokeMethod("shellResult",
+                            mapOf("rc" to rc, "out" to out)) }
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

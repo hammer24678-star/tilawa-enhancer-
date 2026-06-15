@@ -127,8 +127,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _durationSec = 0; _positionSec = 0;
       _trimStart = 0; _trimEnd = 1; _outPath = null;
     });
-    await _player.setSourceDeviceFile(f.path!);
-    final dur = await _player.getDuration();
+    await _player.setSource(DeviceFileSource(f.path!));
+    final dur = await _player.getDuration() ?? Duration.zero;
     if (mounted && dur != null)
       setState(() => _durationSec = dur.inMilliseconds / 1000.0);
   }
@@ -195,7 +195,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           '-af $afStr -acodec $codec $bitrateFlag "$out"';
 
       setState(() => _pct = 0.2);
-      await _ch.invokeMethod('runShellCommand', {'cmd': cmd});
+      await _ch.invokeMethod('runProotCmd', {'cmd': cmd, 'timeoutMin': 10});  // S161
       setState(() { _pct = 1.0; _outPath = out; _busy = false; });
 
       if (mounted) {
@@ -865,7 +865,7 @@ class _WavePainter extends CustomPainter {
   final List<double> bars;
   final double playPos, trimStart, trimEnd, animT;
   final bool playing;
-  const _WavePainter({
+  _WavePainter({
     required this.bars, required this.playPos,
     required this.trimStart, required this.trimEnd,
     required this.animT, required this.playing,
@@ -931,7 +931,7 @@ class _WavePainter extends CustomPainter {
 // ═══════════════════════════════════════════════════════════════════════════
 class _EqPainter extends CustomPainter {
   final List<double> values;
-  const _EqPainter({required this.values});
+  _EqPainter({required this.values});
 
   @override
   void paint(Canvas canvas, Size size) {
