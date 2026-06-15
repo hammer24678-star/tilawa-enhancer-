@@ -70,7 +70,8 @@ except ImportError:
 
 # DF3 binary
 _DF3_CLI_BIN = ''
-for _c in ['deep-filter', 'deepfilter', 'deep_filter', '/usr/local/bin/deep-filter']:
+for _c in ['deep-filter', 'deepfilter', 'deep_filter',
+           '/usr/local/bin/deep-filter', '/app/deep-filter']:
     if shutil.which(_c):
         _DF3_CLI_BIN = _c; break
 DF3_OK = bool(_DF3_CLI_BIN)
@@ -756,6 +757,45 @@ def _arabic_guards(orig_s, proc_wav, st):
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
+
+# ── S171: tier auto-detector ──────────────────────────────────────────────────
+def _auto_detect_tier(path: str) -> str:
+    import numpy as np, wave
+    try:
+        with wave.open(path, 'rb') as wf:
+            sr  = wf.getframerate()
+            nch = wf.getnchannels()
+            raw = wf.readframes(wf.getnframes())
+        s16 = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+        if nch > 1:
+            s16 = s16.reshape(-1, nch).mean(axis=1)
+        fn  = max(1, int(sr * 0.02))
+        nc  = len(s16) // fn
+        rms = np.array([np.sqrt(np.mean(s16[i*fn:(i+1)*fn]**2)) for i in range(nc)])
+        rms = rms[rms > 0]
+        if len(rms) == 0:
+            return 'TIER_UNKNOWN'
+        noise_rms = float(np.percentile(rms, 5))
+        peak_rms  = float(np.percentile(rms, 95))
+        snr_est   = 20 * np.log10(peak_rms / (noise_rms + 1e-9))
+        mid  = len(s16) // 2
+        win  = s16[mid: mid + sr] if len(s16) > mid + sr else s16
+        if len(win) < 512:
+            return 'TIER_UNKNOWN'
+        spec  = np.abs(np.fft.rfft(win * np.hanning(len(win))))
+        freqs = np.fft.rfftfreq(len(win), 1.0 / sr)
+        hf_ratio = float(np.sum(spec[freqs > sr/4]**2)) / (float(np.sum(spec**2)) + 1e-9)
+        active = freqs[spec > spec.max() * 0.01]
+        eff_bw = float(active.max()) if len(active) else sr / 2.0
+        if eff_bw < 4100:             return 'TIER_PHONE'
+        if snr_est < 18:              return 'TIER_NOISY'
+        if hf_ratio > 0.08 and snr_est >= 35: return 'TIER_STUDIO'
+        if snr_est >= 25:             return 'TIER_GOOD'
+        return 'TIER_NOISY'
+    except Exception:
+        return 'TIER_UNKNOWN'
+# ─────────────────────────────────────────────────────────────────────────────
+
 def process(input_path, output_path, source_tier='TIER_UNKNOWN',
             mujawwad_conf=0.0, force_rt60=0.0, verbose=True):
     """
@@ -769,6 +809,11 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
     _L(st, f'  الصفاء {__version__} — إزالة الصدى والريفيرب')
     _L(st, f'  Input   : {Path(input_path).name}')
     _L(st, f'  Tier    : {source_tier}   Mujawwad: {mujawwad_conf:.2f}')
+    # S171: auto-detect when caller did not supply a tier
+    if source_tier == "TIER_UNKNOWN":
+        source_tier     = _auto_detect_tier(input_path)
+        st.source_tier  = source_tier
+        _L(st, f"  [S171] auto-detected tier: {source_tier}")
     _L(st, f'{"═"*60}')
 
     s_orig = _decode(input_path)
@@ -805,10 +850,12 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
 
         # Final stereo encode [I2]
         rc, _, err = _run(['ffmpeg', '-y', '-i', cur,
-                           '-acodec', WAV_CODEC, '-ar', str(SR), '-ac', '2',
+                           '-acodec', 'libmp3lame', '-ar', str(SR), '-ac', '1',
+                           '-b:a', '320k',
                            '-loglevel', 'error', output_path])
         if rc:
-            _L(st, f'  ERROR: final encode: {err[:80]}'); return st
+            _L(st, f'  ERROR: final encode: {err[:80]}')
+            sys.exit(1)  # S169b: non-zero rc so app.py detects failure
 
         sf_ = _decode(output_path)
         if sf_ is not None: st.drr_after = _drr(sf_)
