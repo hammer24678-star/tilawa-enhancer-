@@ -462,15 +462,32 @@ class LocalEngineRunner(
                         context, arrayOf(path), null, null)
                     result.success(null)
                 }
-                "runProotCmd" -> {  // S161: ffmpeg/shell via proot for editor
+                "runProotCmd" -> {  // S172b: fixed events + file binds
                     result.success(null)
-                    val a      = call.arguments as Map<*, *>
-                    val cmd    = (a["cmd"] as? String) ?: ""
-                    val tmMin  = (a["timeoutMin"] as? Int) ?: 10
+                    val a       = call.arguments as Map<*, *>
+                    val cmd     = (a["cmd"] as? String) ?: ""
+                    val inFile  = (a["inputPath"] as? String) ?: ""
+                    val outFile = (a["outputPath"] as? String) ?: ""
+                    val tmMin   = (a["timeoutMin"] as? Int) ?: 10
                     scope.launch {
-                        val (rc, out) = runProot(listOf("/bin/sh", "-c", cmd), tmMin)
-                        ui { channel?.invokeMethod("shellResult",
-                            mapOf("rc" to rc, "out" to out)) }
+                        val extra = mutableListOf<String>()
+                        listOf(inFile, outFile).forEach { p ->
+                            if (p.isNotEmpty()) {
+                                val dir = File(p).parent ?: return@forEach
+                                extra += listOf("-b", "$dir:$dir")
+                            }
+                        }
+                        extra += listOf("-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}")
+                        context.getExternalFilesDir(null)?.absolutePath?.let { ed ->
+                            extra += listOf("-b", "$ed:$ed") }
+                        val (rc, out) = runProotWithBinds(listOf("/bin/sh", "-c", cmd), extra, tmMin)
+                        if (rc == 0) {
+                            ui { channel?.invokeMethod("engineDone",
+                                mapOf("done" to true, "path" to outFile, "json" to out)) }
+                        } else {
+                            ui { channel?.invokeMethod("engineError",
+                                mapOf("msg" to "ffmpeg rc=$rc: ${out.takeLast(300)}")) }
+                        }
                     }
                 }
                 else -> result.notImplemented()
@@ -687,11 +704,11 @@ class LocalEngineRunner(
         withContext(Dispatchers.IO) {
         try {
             val script = mapOf(
-                "v11.0" to "engine_safaa_v3_fixed.py", // S149
+                "v11.0" to "engine_safaa_v4.py",  // S172 // S149
                 "v11.1" to "engine_itiqan_v6_official.py",
                 "v11.2" to "engine_isteidad_v21.py",
                 // v10.0-v7.0 are server-only — no local engine files // S156
-            )[engineId] ?: "engine_safaa_v3_fixed.py" // S149
+            )[engineId] ?: "engine_safaa_v4.py"  // S172b
 
             // v11.0 (safaa) outputs WAV; v11.1/v11.2 output MP3 // S149
             val outExt = if (engineId == "v11.0") "wav" else "mp3"
@@ -739,13 +756,19 @@ class LocalEngineRunner(
                 "-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}",
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
-                "-i", actualInput, "-o", outputPath,
-                "--iterations", "3",
+                // S172b: safaa v4 = positional; others = -i/-o
+                *( if (script.startsWith("engine_safaa_v4"))
+                    arrayOf(actualInput, outputPath)
+                else
+                    arrayOf("-i", actualInput, "-o", outputPath, "--iterations", "3")),
             )
-            // S118: pass all 3 reference files
-            listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
-                val refFile = File(refAudioDir, rf)
-                if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
+            // F8: engine_safaa_v4 argparse has no --ref flag — crash if ref files exist
+            if (!script.startsWith("engine_safaa_v4")) {
+                // S118: pass all 3 reference files
+                listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
+                    val refFile = File(refAudioDir, rf)
+                    if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
+                }
             }
 
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
@@ -769,7 +792,9 @@ class LocalEngineRunner(
                 val l = line!!.trim(); if (l.isEmpty()) continue
                 lastLine = l
                 allOutput.appendLine(l)
-                if (l.startsWith("{") && (l.contains("score") || l.contains("version"))) lastJson = l
+                // F9b: also detect safaa_v4 compact JSON (drr_before/drr_gain keys)
+                if (l.startsWith("{") && (l.contains("score") || l.contains("version")
+                        || l.contains("drr_before") || l.contains("drr_gain"))) lastJson = l
                 if (lastJson == null && l.contains("/100")) {
                     val sc = Regex("([0-9]+[.][0-9]+)/100").findAll(l).lastOrNull()?.groupValues?.getOrNull(1)
                     if (sc != null) lastJson = "{\\"score\\": $sc, \\"lufs\\": 0.0, \\"rms\\": 0.0, \\"crest\\": 0.0, \\"lra\\": 0.0}"
@@ -809,6 +834,16 @@ class LocalEngineRunner(
                     l.contains("── phase_I") -> 84
                     l.contains("── phase_J") -> 90
                     l.contains("score") && l.contains("/100") -> 96
+                    // F9: engine_safaa_v4 stage tags → progress
+                    l.startsWith("[S1]")                                              -> 10
+                    l.startsWith("[S2-LF]")                                           -> 20
+                    l.startsWith("[S3-WPE]")                                          -> 30
+                    l.startsWith("[S4-ADF]") || l.startsWith("[S4-DF3]")              -> 45
+                    l.startsWith("[S5-JALAA]")                                        -> 60
+                    l.startsWith("[S6-tailNR]")                                       -> 72
+                    l.startsWith("[S6.5-WIND]")                                       -> 82
+                    l.startsWith("[S7-PASS]") || l.startsWith("[S7-WARN]") || l.startsWith("[S7]") -> 90
+                    l == "[REPORT]"                                                   -> 96
                     else -> -1
                 }
                 ui { channel?.invokeMethod("engineProgress", mapOf("pct" to linePct, "msg" to l)) }
@@ -841,6 +876,27 @@ class LocalEngineRunner(
             ui { channel?.invokeMethod("engineError", mapOf("msg" to (e.message ?: "Unknown error"))) }
         } finally { engineProc = null }
     }
+
+    private fun runProotWithBinds(args: List<String>, extra: List<String>, tmMin: Int = 10): Pair<Int, String> {  // S172b
+        val cmd = mutableListOf(prootBin.absolutePath,
+            "--link2symlink", "-0",
+            "-r", alpineDir.absolutePath,
+            "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys") + extra +
+            listOf("-w", "/", "--kill-on-exit") + args
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
+            environment()["HOME"] = "/root"; environment()["TERM"] = "xterm"
+            environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
+            environment()["PROOT_TMP_DIR"] = File(dataDir, "proot-tmp").also { it.mkdirs() }.absolutePath
+            if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
+        }.start()
+        val output = proc.inputStream.bufferedReader().readText().takeLast(800)
+        val code = try {
+            if (!proc.waitFor(tmMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
+            else proc.exitValue()
+        } catch (_: Exception) { proc.destroyForcibly(); -1 }
+        return Pair(code, output)
+}
 
     private fun runProot(args: List<String>, timeoutMin: Int = 35): Pair<Int, String> {
         val cmd = mutableListOf(prootBin.absolutePath,
