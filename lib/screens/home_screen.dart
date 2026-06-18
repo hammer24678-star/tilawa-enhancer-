@@ -110,6 +110,7 @@ class _HomeScreenState extends State<HomeScreen>
   static const _wakeCh = MethodChannel('com.tilawa.tilawa_enhancer/wake'); // S63
   bool   _localMode  = false;  // S65: run via proot (offline)
   bool   _localReady = false;  // S65: setup confirmed complete
+  bool   _aggressive = false;  // S173: safaa standard / aggressive mode
   String _localMsg   = '';     // S65: last line from engine stdout
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
@@ -1137,6 +1138,8 @@ class _HomeScreenState extends State<HomeScreen>
             if (!_localMode) // S147: hide server banner in local mode
               SliverToBoxAdapter(child: _serverBanner(s)),
             SliverToBoxAdapter(child: _localModeToggle(s)), // S65
+            if (_localMode && _localReady && _engine == 'v11.0')
+              SliverToBoxAdapter(child: _aggressiveModeToggle(s)), // S173
             SliverToBoxAdapter(child: _geoSep(s.ar ? 'اختر المحرك' : 'Engine')),
             SliverToBoxAdapter(child: _engineSelector(s)),
             SliverToBoxAdapter(child: _geoDiamond()),
@@ -1186,8 +1189,9 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     await for (final ev in LocalEngineService.runEngine(
-      engineId:  _engine,
-      inputPath: _file!.path,
+      engineId:   _engine,
+      inputPath:  _file!.path,
+      aggressive: _aggressive,  // S173
     )) {
       if (!mounted) return;
 
@@ -1206,7 +1210,13 @@ class _HomeScreenState extends State<HomeScreen>
           final jsonStr = ev['json'] as String?;
           if (jsonStr != null) {
             final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-            parsedScore = (data['score'] as num?)?.toDouble() ?? 0;
+            // S172: v4 has no score — derive from drr_gain (0-6 dB → 80-99)
+            if (data.containsKey('score')) {
+              parsedScore = (data['score'] as num?)?.toDouble() ?? 0;
+            } else {
+              final drr = (data['drr_gain'] as num?)?.toDouble() ?? 0;
+              parsedScore = (80 + drr.clamp(0.0, 6.0) * 3.0).clamp(80.0, 99.0);
+            }
             _result = Map<String, dynamic>.from(data); // S66
           }
         } catch (_) {}

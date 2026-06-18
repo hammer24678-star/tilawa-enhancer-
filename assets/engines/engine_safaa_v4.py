@@ -31,6 +31,8 @@ PIPELINE  (unchanged order)
   S5  JALAA per-frame DRR gate [B1/I10]
   S6  Tail floor NR (afftdn calibrated) [I3]
   S7  Arabic phoneme guards [B3/B4]
+  S8a dynaudnorm level evenness (f=500ms, m=10, p=0.92) — kills DF3 adaptation bumps
+  S8b Volume boost: standard=1.85, aggressive=7.40 (4x)
 
 USAGE
   python3 engine_safaa_v3.py input.wav output.wav [--tier X] [--mujawwad 0.0] [--rt60 0.0]
@@ -485,7 +487,15 @@ def _stft_restore_bands(processed, original, sr, bands):
     for s in range(0, min_n - N, HOP):
         Pf = rfft(p[s:s+N] * win)
         Of = rfft(o[s:s+N] * win)
-        Pf[restore_mask] = Of[restore_mask]   # restore original in guard bands
+        # S167: soft blend instead of hard copy — avoids tonal whistle when DF3
+        # removes reverb masking context around nasal/formant poles.
+        # 220-290Hz (nasal pole): 60% original (safe, low-freq, well-masked)
+        # 950-1100Hz (formant zone): 15% original — high-risk for unmasked whistle;
+        #   just enough to prevent total nasalization kill without audible tones.
+        for lo, hi in bands:
+            band_mask = (freqs >= lo) & (freqs <= hi)
+            alpha = 0.60 if hi <= 300 else 0.15
+            Pf[band_mask] = alpha * Of[band_mask] + (1.0 - alpha) * Pf[band_mask]
         frame = irfft(Pf) * win
         out[s:s+N] += frame; norm[s:s+N] += win**2
 
@@ -494,16 +504,26 @@ def _stft_restore_bands(processed, original, sr, bands):
     out[~valid] = p[~valid]
     return out.astype(np.float32)
 
-def _df3(wav, samples, rt60, st):
+def _df3(wav, samples, rt60, st, aggressive=False):
     if not DF3_OK:
         _L(st, '  [S4-DF3] deep-filter not found — skip'); return wav
 
     # §106.3 + §79 atten limits — v4: stronger per-class
     lim = _DF3_LIM_MUJAWWAD if st.mujawwad_conf > 0.6 else _DF3_LIM_MURATTAL
-    a_loud  = min(10, lim)       # was 8
-    a_mid   = min(18, lim)       # was 15
-    a_quiet = min(24, lim + 10)  # was 20
-    a_trans = min(14, lim)       # v4: new transition class between loud/mid
+    if aggressive:
+        # Raise the numeric caps, but they still pass through min(x, lim) —
+        # for Mujawwad sources lim=8 so this changes nothing for them; the
+        # ornamentation protection is preserved by construction, not by a
+        # separate check. Only Murattal-style sources (lim=24) get headroom.
+        a_loud  = min(16, lim)
+        a_mid   = min(22, lim)
+        a_quiet = min(28, lim + 14)
+        a_trans = min(20, lim)
+    else:
+        a_loud  = min(10, lim)       # was 8
+        a_mid   = min(18, lim)       # was 15
+        a_quiet = min(24, lim + 10)  # was 20
+        a_trans = min(14, lim)       # v4: new transition class between loud/mid
     if st.mujawwad_conf > 0.6:
         a_loud  = min(a_loud,  8)
         a_mid   = min(a_mid,  10)
@@ -538,7 +558,11 @@ def _df3(wav, samples, rt60, st):
         mid_m   = ~loud_m & ~quiet_m
         # §22.5 SNR gate: chunks already clean enough → skip DF3, use original
         chunk_snr = rms_db - noise_floor
-        clean_m   = chunk_snr >= _ADF_SNR_GATE
+        # Raising the gate (not lowering it) is correct here: clean_m requires
+        # chunk_snr >= snr_gate, so a HIGHER bar means FEWER chunks qualify as
+        # "already clean enough to skip" — i.e. more chunks actually get DF3.
+        snr_gate  = (_ADF_SNR_GATE + 3.0) if aggressive else _ADF_SNR_GATE
+        clean_m   = chunk_snr >= snr_gate
 
         # ── Label smoothing — mode filter over 7-chunk window (v4: was 3) ──────
         # Wider window prevents micro-class flicker that causes audible texture changes
@@ -582,10 +606,10 @@ def _df3(wav, samples, rt60, st):
 
         with ThreadPoolExecutor(max_workers=4) as ex:
             futs = [
-                ex.submit(_run_pass, 'loud',  a_loud,  False),
-                ex.submit(_run_pass, 'mid',   a_mid,   False),
-                ex.submit(_run_pass, 'quiet', a_quiet, True, 0.04),   # PF quiet only
-                ex.submit(_run_pass, 'trans', a_trans, False),         # v4: transition class
+                ex.submit(_run_pass, 'loud',  a_loud,  aggressive, 0.02),
+                ex.submit(_run_pass, 'mid',   a_mid,   aggressive, 0.02),
+                ex.submit(_run_pass, 'quiet', a_quiet, True, 0.04),   # PF quiet always
+                ex.submit(_run_pass, 'trans', a_trans, aggressive, 0.02),
             ]
             for fut in as_completed(futs):
                 cls, arr = fut.result()
@@ -873,53 +897,78 @@ def _windnr(wav, samples, rt60, st):
     if wind_floor_db < -62.0:
         _L(st, f'  [S6.5-WIND] LF floor={wind_floor_db:.1f}dBFS — inaudible, skip'); return wav
 
-    lo_before = _band_energy(samples, 60, 400)
+    # Baseline for guards must be the wav INPUT (already DF3/tailNR processed),
+    # NOT s_orig — comparing against original would fire on DF3's own changes.
+    wav_pre = _decode(wav)
+    if wav_pre is None:
+        _L(st, '  [S6.5-WIND] decode failed — skip'); return wav
 
-    # Stage A: HPF 60Hz (kills pure sub-rumble, inaudible to voice)
+    lo_before  = _band_energy(wav_pre, 60,  200)   # wind zone: 60-200Hz
+    mid_before = _band_energy(wav_pre, 250, 900)   # vowel zone: protect formants
+
+    # Wind noise in mosque/outdoor recordings sits below 200Hz.
+    # afftdn nt=w is too broad (hits vowel formants) — use HPF + low-shelf instead.
+    # Stage A: HPF at 80Hz (2-pole) — kills sub-rumble below speech
     tmp_a = _tmp('s65a', st)
     rc, _, _ = _run(['ffmpeg', '-y', '-i', wav,
-                     '-af', 'highpass=f=60:poles=2',
+                     '-af', 'highpass=f=80:poles=2',
                      '-acodec', WAV_CODEC, '-ar', str(SR), '-ac', '2',
                      '-loglevel', 'error', tmp_a])
     if rc or not os.path.exists(tmp_a):
         _L(st, '  [S6.5-WIND] HPF failed — skip'); return wav
 
-    # Stage B: spectral NR tuned to wind band
-    # nf = wind floor + 4dB headroom; nr scaled to how bad the wind is
-    nf_wind = float(np.clip(wind_floor_db + 4.0, -72, -18))
-    nr_wind  = 2 if wind_floor_db > -40 else 1
-
+    # Stage B: low-shelf EQ targeting 80-200Hz wind band.
+    # Depth scales with severity: heavy wind → up to -8dB shelf; faint → -3dB.
+    # shelf at 200Hz, so everything above is unaffected.
+    shelf_db = -8.0 if wind_floor_db > -35 else (-5.0 if wind_floor_db > -45 else -3.0)
     tmp_b = _tmp('s65b', st)
     rc2, _, _ = _run(['ffmpeg', '-y', '-i', tmp_a,
-                      '-af', f'afftdn=nr={nr_wind}:nf={nf_wind:.0f}:nt=w',
+                      '-af', (f'equalizer=f=100:width_type=o:width=1.0:g={shelf_db:.0f},'
+                              f'equalizer=f=180:width_type=o:width=0.8:g={shelf_db*0.5:.0f}'),
                       '-acodec', WAV_CODEC, '-ar', str(SR), '-ac', '2',
                       '-loglevel', 'error', tmp_b])
     if rc2 or not os.path.exists(tmp_b):
-        _cleanup(tmp_a)
-        _L(st, '  [S6.5-WIND] spectral NR failed — keep HPF only'); return tmp_a
+        _L(st, '  [S6.5-WIND] shelf EQ failed — keep HPF only')
+        result = tmp_a
+    else:
+        # Stage C: very gentle anlmdn for residual wind texture (s=2, conservative)
+        tmp_c = _tmp('s65c', st)
+        rc3, _, _ = _run(['ffmpeg', '-y', '-i', tmp_b,
+                          '-af', 'anlmdn=s=2:p=2:r=6:m=1',
+                          '-acodec', WAV_CODEC, '-ar', str(SR), '-ac', '2',
+                          '-loglevel', 'error', tmp_c])
+        result = tmp_c if (rc3 == 0 and os.path.exists(tmp_c)) else tmp_b
 
-    # Stage C: lightweight anlmdn for residual wind texture
-    tmp_c = _tmp('s65c', st)
-    rc3, _, _ = _run(['ffmpeg', '-y', '-i', tmp_b,
-                      '-af', 'anlmdn=s=3:p=2:r=8:m=1',
-                      '-acodec', WAV_CODEC, '-ar', str(SR), '-ac', '2',
-                      '-loglevel', 'error', tmp_c])
-    result = tmp_c if (rc3 == 0 and os.path.exists(tmp_c)) else tmp_b
-
-    # Guard: low-band energy drop check (protect vowel bass)
+    # Dual guard:
+    #   Wind zone (60-200Hz): allow up to -15dB — this IS the wind band
+    #   Vowel zone (250-900Hz): max -2dB — protect speech formants tightly
     post_s = _decode(result)
     if post_s is not None:
-        lo_after = _band_energy(post_s, 60, 400)
+        lo_after  = _band_energy(post_s,  60,  200)
+        mid_after = _band_energy(post_s, 250,  900)
         if lo_before > 1e-15:
-            lo_drop = 10 * np.log10(lo_after / lo_before + 1e-20)
-            if lo_drop < -8.0:
-                _cleanup(tmp_a); _cleanup(tmp_b); _cleanup(tmp_c)
+            lo_drop  = 10 * np.log10(lo_after  / (lo_before  + 1e-20) + 1e-20)
+            if lo_drop < -15.0:
+                for t in [tmp_a, tmp_b, tmp_c if 'tmp_c' in dir() else None]:
+                    if t: _cleanup(t)
                 st.guard_reverts += 1
-                _L(st, f'  [S6.5-WIND] low-band drop {lo_drop:+.1f}dB — REVERT')
+                _L(st, f'  [S6.5-WIND] wind-zone over-removal {lo_drop:+.1f}dB — REVERT')
                 return wav
+        if mid_before > 1e-15:
+            mid_drop = 10 * np.log10(mid_after / (mid_before + 1e-20) + 1e-20)
+            if mid_drop < -2.0:
+                for t in [tmp_a, tmp_b, tmp_c if 'tmp_c' in dir() else None]:
+                    if t: _cleanup(t)
+                st.guard_reverts += 1
+                _L(st, f'  [S6.5-WIND] vowel band drop {mid_drop:+.1f}dB — REVERT')
+                return wav
+            _L(st, f'  [S6.5-WIND] guards ✓  wind={lo_drop:+.1f}dB  vowel={mid_drop:+.1f}dB')
 
-    _cleanup(tmp_a); _cleanup(tmp_b)
-    _L(st, f'  [S6.5-WIND] ✓ floor={wind_floor_db:.1f}dBFS  nr={nr_wind}  nf={nf_wind:.0f}dB')
+    if result not in (tmp_a,):
+        _cleanup(tmp_a)
+    if 'tmp_b' in dir() and result not in (tmp_b,):
+        _cleanup(tmp_b)
+    _L(st, f'  [S6.5-WIND] ✓ floor={wind_floor_db:.1f}dBFS  shelf={shelf_db:.0f}dB @100-180Hz')
     return result
 
 
@@ -1031,7 +1080,7 @@ def _arabic_guards(orig_s, proc_wav, st):
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def process(input_path, output_path, source_tier='TIER_UNKNOWN',
-            mujawwad_conf=0.0, force_rt60=0.0, verbose=True):
+            mujawwad_conf=0.0, force_rt60=0.0, verbose=True, aggressive=False):
     """
     الصفاء v3 — main entry point.
     Returns SafaaState with full diagnostics.
@@ -1044,6 +1093,9 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
     _L(st, f'  Input   : {Path(input_path).name}')
     _L(st, f'  Tier    : {source_tier}   Mujawwad: {mujawwad_conf:.2f}')
     _L(st, f'{"═"*60}')
+    if aggressive:
+        _L(st, '  [AGGRESSIVE] DF3 attenuation caps + post-filter coverage widened '
+                '(Mujawwad ceiling unchanged — protected by design)')
 
     s_orig = _decode(input_path)
     if s_orig is None:
@@ -1067,7 +1119,7 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
         cur = _wpe(cur, rt60, st)
         # S4 DF3 (parallel)
         _s4 = _decode(cur); s4 = _s4 if _s4 is not None else s_orig
-        cur = _df3(cur, s4, rt60, st)
+        cur = _df3(cur, s4, rt60, st, aggressive=aggressive)
         # S5 JALAA (DRR-weighted, corrected late window)
         _s5 = _decode(cur); s5 = _s5 if _s5 is not None else s_orig
         cur = _jalaa(cur, s5, rt60, st.drr_before, st)
@@ -1079,12 +1131,24 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
         # S7 Arabic guards
         cur = _arabic_guards(s_orig, cur, st)
 
-        # Final stereo encode + S8 volume boost + v4: presence lift 2kHz +1.5dB
+        # Final stereo encode + S8a dynamic normalizer + S8b volume boost
+        # S8a: dynaudnorm evens out DF3 adaptation artifacts (uneven levels)
+        #   f=500ms window (long=smooth), m=10 max gain cap (20dB safety),
+        #   p=0.92 peak target, r=0.0 (peak mode, not RMS — preserves Tajweed transients)
+        # S8b: Aggressive mode = 4x boost (7.40) vs standard (1.85); limiter tightened
+        _s8_vol = 7.40 if aggressive else 1.85
+        _s8_lim = 0.94 if aggressive else 0.89
+        _s8_norm = 'dynaudnorm=f=500:g=31:p=0.92:m=10:r=0.0:b=1,'
+        _s8_af  = (_s8_norm +
+                   f'volume={_s8_vol},'
+                   'equalizer=f=2000:width_type=o:width=1.0:g=1.5,'
+                   'equalizer=f=300:width_type=o:width=1.0:g=-1.0,'
+                   f'alimiter=level_in=1:level_out=1:limit={_s8_lim}:attack=5:release=50')
+        _s8_mode = 'AGGRESSIVE 4x' if aggressive else 'standard'
+        _L(st, f'  [S8a] dynaudnorm f=500ms m=10 p=0.92 — level evenness pass')
+        _L(st, f'  [S8b] volume boost={_s8_vol:.2f} ({_s8_mode})')
         rc, _, err = _run(['ffmpeg', '-y', '-i', cur,
-                           '-af', ('volume=1.85,'
-                                   'equalizer=f=2000:width_type=o:width=1.0:g=1.5,'
-                                   'equalizer=f=300:width_type=o:width=1.0:g=-1.0,'
-                                   'alimiter=level_in=1:level_out=1:limit=0.89:attack=5:release=50'),
+                           '-af', _s8_af,
                            '-acodec', WAV_CODEC, '-ar', str(SR), '-ac', '2',
                            '-loglevel', 'error', output_path])
         if rc:
@@ -1115,10 +1179,13 @@ if __name__ == '__main__':
     ap.add_argument('output')
     ap.add_argument('--tier',     default='TIER_UNKNOWN')
     ap.add_argument('--mujawwad', type=float, default=0.0)
-    ap.add_argument('--rt60',     type=float, default=0.0, help='Force RT60 (0=auto)')
+    ap.add_argument('--rt60',       type=float, default=0.0, help='Force RT60 (0=auto)')
+    ap.add_argument('--aggressive', action='store_true',
+                    help='4x volume boost (7.40) + wider DF3 caps vs standard (1.85)')
     a = ap.parse_args()
     st = process(a.input, a.output,
-                 source_tier=a.tier, mujawwad_conf=a.mujawwad, force_rt60=a.rt60)
+                 source_tier=a.tier, mujawwad_conf=a.mujawwad, force_rt60=a.rt60,
+                 aggressive=a.aggressive)
     print('\n[REPORT]')
     print(json.dumps({
         'version':      __version__,
@@ -1136,4 +1203,4 @@ if __name__ == '__main__':
         'guard_reverts': st.guard_reverts,
         'guard_pass':    st.guard_pass,
         'guard_warn':    st.guard_warn,
-    }, ensure_ascii=False))  # F9b: compact single-line for Kotlin detection
+    }, indent=2, ensure_ascii=False))

@@ -44,7 +44,8 @@ class LocalEngineRunner(
                     result.success(null)
                     val a = call.arguments as Map<*, *>
                     scope.launch {
-                        runEngine(a["engineId"] as String, a["inputPath"] as String)
+                        runEngine(a["engineId"] as String, a["inputPath"] as String,
+                            (a["aggressive"] as? Boolean) ?: false)  // S173
                     }
                 }
                 "cancelEngine" -> { engineProc?.destroyForcibly(); engineProc = null; result.success(null) }
@@ -261,7 +262,8 @@ class LocalEngineRunner(
         progress(100, "Local engine ready!")
     }
 
-    private suspend fun runEngine(engineId: String, inputPath: String) =
+    private suspend fun runEngine(engineId: String, inputPath: String,
+        aggressive: Boolean = false) =  // S173
         withContext(Dispatchers.IO) {
         try {
             val script = mapOf(
@@ -328,6 +330,11 @@ class LocalEngineRunner(
             listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
                 val refFile = File(refAudioDir, rf)
                 if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
+            }
+
+            // S173: --aggressive flag for الصفاء v4 only
+            if (script.startsWith("engine_safaa_v4") && aggressive) {
+                cmd += listOf("--aggressive")
             }
 
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {

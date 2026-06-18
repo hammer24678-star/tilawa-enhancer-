@@ -80,13 +80,15 @@ class LocalEngineService {
   static Stream<Map<String, dynamic>> runEngine({  // S157
     required String engineId,
     required String inputPath,
+    bool aggressive = false,  // S173: standard / aggressive mode
   }) {
     final ctrl = StreamController<Map<String, dynamic>>();
     _engineCtrl = ctrl;  // S157: register before invokeMethod
     if (!_handlerInstalled) { _handlerInstalled = true; _installHandler(); }
     _ch.invokeMethod('runEngine', {
-      'engineId':  engineId,
-      'inputPath': inputPath,
+      'engineId':   engineId,
+      'inputPath':  inputPath,
+      'aggressive': aggressive,  // S173
     }).catchError((e) {
       if (!ctrl.isClosed) { ctrl.add({'error': true, 'msg': e.toString()}); ctrl.close(); }
     });
