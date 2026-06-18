@@ -1535,6 +1535,63 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // S173/S174-hotfix: aggressive dereverberation toggle (الصفاء v11.0 only)
+  Widget _aggressiveModeToggle(S s) {
+    const amber  = Color(0xFFE8943A);
+    const textB  = Color(0xFF8AACBA);
+    const darkBg = Color(0xFF1A0E05);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _aggressive
+            ? darkBg.withValues(alpha: 0.85)
+            : const Color(0xFF0A0E12).withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _aggressive
+              ? amber.withValues(alpha: 0.45)
+              : const Color(0xFF1A2733),
+            width: 1.0)),
+        child: Row(children: [
+          Icon(
+            _aggressive ? Icons.waves_rounded : Icons.water_drop_outlined,
+            color: _aggressive ? amber : textB, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            Text(
+              _aggressive
+                ? (s.ar ? 'وضع صارم (إزالة صدى عميقة)' : 'Aggressive (deep dereverberation)')
+                : (s.ar ? 'وضع قياسي (محافظ على الصوت)' : 'Standard (voice-preserving)'),
+              style: TextStyle(
+                color: _aggressive ? amber : textB,
+                fontSize: 12, fontWeight: FontWeight.w700)),
+            Text(
+              _aggressive
+                ? (s.ar ? 'لتسجيلات شديدة الصدى' : 'Best for heavily reverberant recordings')
+                : (s.ar ? 'موصى به للتسجيلات العادية' : 'Recommended for most recordings'),
+              style: const TextStyle(
+                color: Color(0xFF3D5A65), fontSize: 10)),
+          ])),
+          Switch(
+            value: _aggressive,
+            onChanged: _busy ? null : (v) {
+              setState(() => _aggressive = v);
+              SharedPreferences.getInstance().then(
+                (p) => p.setBool('aggressive_mode', v));  // S174-B4
+            },
+            activeColor: amber,
+            inactiveThumbColor: textB.withValues(alpha: 0.5),
+            inactiveTrackColor: const Color(0xFF1A2733)),
+        ]),
+      ),
+    );
+  }
+
   Widget _serverBanner(S s) {
     final isOffline = !_serverUp;
 
