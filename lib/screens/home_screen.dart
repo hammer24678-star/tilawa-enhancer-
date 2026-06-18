@@ -216,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen>
       ..repeat();
     _checkServer();
     SharedPreferences.getInstance().then((p){if(mounted)setState(()=>_localMode=p.getBool("local_mode")??false);});
+    SharedPreferences.getInstance().then((p){if(mounted)setState(()=>_aggressive=p.getBool("aggressive_mode")??false);});  // S174-B4
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
     LocalEngineService.isSetupComplete() // S65

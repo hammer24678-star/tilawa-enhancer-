@@ -452,7 +452,8 @@ class LocalEngineRunner(
                     result.success(null)
                     val a = call.arguments as Map<*, *>
                     scope.launch {
-                        runEngine(a["engineId"] as String, a["inputPath"] as String)
+                        runEngine(a["engineId"] as String, a["inputPath"] as String,
+                            (a["aggressive"] as? Boolean) ?: false)  // S173
                     }
                 }
                 "cancelEngine" -> { engineProc?.destroyForcibly(); engineProc = null; result.success(null) }
@@ -462,8 +463,7 @@ class LocalEngineRunner(
                         context, arrayOf(path), null, null)
                     result.success(null)
                 }
-                "runProotCmd" -> {  // S172b: fixed events + file binds
-                    result.success(null)
+                "runProotCmd" -> {  // S172b+S174-B2: returns real rc/out via result.success
                     val a       = call.arguments as Map<*, *>
                     val cmd     = (a["cmd"] as? String) ?: ""
                     val inFile  = (a["inputPath"] as? String) ?: ""
@@ -481,13 +481,7 @@ class LocalEngineRunner(
                         context.getExternalFilesDir(null)?.absolutePath?.let { ed ->
                             extra += listOf("-b", "$ed:$ed") }
                         val (rc, out) = runProotWithBinds(listOf("/bin/sh", "-c", cmd), extra, tmMin)
-                        if (rc == 0) {
-                            ui { channel?.invokeMethod("engineDone",
-                                mapOf("done" to true, "path" to outFile, "json" to out)) }
-                        } else {
-                            ui { channel?.invokeMethod("engineError",
-                                mapOf("msg" to "ffmpeg rc=$rc: ${out.takeLast(300)}")) }
-                        }
+                        ui { result.success(mapOf("rc" to rc, "out" to out)) }  // S174-B2
                     }
                 }
                 else -> result.notImplemented()
@@ -700,7 +694,8 @@ class LocalEngineRunner(
         progress(100, "Local engine ready!")
     }
 
-    private suspend fun runEngine(engineId: String, inputPath: String) =
+    private suspend fun runEngine(engineId: String, inputPath: String,
+            aggressive: Boolean = false) =  // S173
         withContext(Dispatchers.IO) {
         try {
             val script = mapOf(
@@ -740,8 +735,7 @@ class LocalEngineRunner(
                 }
             }
             val actualInput = if (safeInput.exists() && safeInput.length() > 0) safeInput.absolutePath else inputPath
-            val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
-            val inParent  = cacheDir.absolutePath
+            val inParent  = cacheDir.absolutePath  // S174-B5: removed dead refMp3 var
             File(inParent).mkdirs()
 
             val cmd = mutableListOf(
@@ -769,6 +763,11 @@ class LocalEngineRunner(
                     val refFile = File(refAudioDir, rf)
                     if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
                 }
+            }
+
+            // S173: --aggressive flag for الصفاء v4 only
+            if (script.startsWith("engine_safaa_v4") && aggressive) {
+                cmd += listOf("--aggressive")
             }
 
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {

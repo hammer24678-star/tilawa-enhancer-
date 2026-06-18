@@ -101,11 +101,21 @@ class LocalEngineService {
   }
 
   // S161: run an arbitrary shell command via proot (for AudioLab editor)
+  // S174-B3: inputPath/outputPath trigger extra proot bind mounts so
+  //          user audio files outside cacheDir are accessible inside proot.
   static Future<Map<String, dynamic>> runProotCmd(
-    String cmd, {int timeoutMin = 10}) async {
+    String cmd, {
+    String inputPath  = '',  // S174-B3: adds -b bind for file's parent dir
+    String outputPath = '',  // S174-B3
+    int timeoutMin = 10,
+  }) async {
     try {
-      final r = await _ch.invokeMethod<Map>('runProotCmd',
-          {'cmd': cmd, 'timeoutMin': timeoutMin});
+      final r = await _ch.invokeMethod<Map>('runProotCmd', {
+        'cmd':        cmd,
+        'inputPath':  inputPath,
+        'outputPath': outputPath,
+        'timeoutMin': timeoutMin,
+      });
       return Map<String, dynamic>.from(r ?? {'rc': 0, 'out': ''});
     } catch (e) {
       return {'rc': -1, 'out': e.toString()};
