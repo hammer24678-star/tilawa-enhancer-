@@ -9,9 +9,9 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   static const _history = [
-    _EHist('v11.0','التجلي — The Manifestation','≥ 99.5/100','LATEST','gold',
-      'المحرك الموحَّد والذكي. يصنِّف التسجيل في 5 مستويات ثم يوجِّهه للمسار الأمثل: الإتقان للنظيف، والاسترداد للتالف. يمرُّ الصوت عبر البيان والنور قبل الترميز النهائي مع توقيع SHA-256.',
-      'The unified smart router. Classifies the recording into 5 tiers then routes to the optimal path: Itiqan for clean, Isteidad for damaged. Passes through Bayan and Noor before final TPDF encode with SHA-256 provenance.',
+    _EHist('v11.0','الصفاء — Purity','≥ 99.5/100','LATEST','gold',
+      'محرك إزالة صدى المساجد. يجمع دي-ريفِرب وWPE وDF3 NR رباعي الفئات وJALAA على مرحلتين وTail-NR ثلاثي المراحل، مع حارس عربي يحافظ على أحكام التجويد كاملةً. يُخرج WAV مباشرة دون أي اتصال بالخادم.',
+      'Mosque-echo dereverberation engine. Combines WPE, 4-class DF3 noise reduction, 2-pass JALAA, and 3-stage tail-NR with a Tajweed phonology guard. Outputs WAV directly — no server round-trip.',
       'S+'),
     _EHist('v11.1','الإتقان — Perfection','≥ 99/100','','gold',
       'تسعة مراحل متتالية للتسجيلات النظيفة. يعمل بـ 48 حزمة طيفية مع محسِّن L-BFGS-B لضبط الـ EQ. يحمي مناطق الفورمانت بحدٍّ ±2dB. أفضل محرك للتسجيلات عالية الجودة.',

@@ -304,9 +304,9 @@ class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
           : 'These engines run locally — look for the v11.x badge in the engine list:',
         style: const TextStyle(color: _textC, fontSize: 10, height: 1.5)),
       const SizedBox(height: 12),
-      _engineRow(ar, 'v11.0', ar ? 'التجلي'     : 'Tajalli',
-        ar ? 'توجيه تلقائي — الأمثل للاستخدام العام'
-           : 'Auto-routes to optimal path — best for general use',
+      _engineRow(ar, 'v11.0', ar ? 'الصفاء'     : 'Safaa',
+        ar ? 'إزالة صدى المساجد — يحافظ على أحكام التجويد كاملةً'
+           : 'Mosque echo removal — full Tajweed phonology preservation',
         _gold, 99.5),
       _engineRow(ar, 'v11.1', ar ? 'الإتقان'    : 'Itiqan',
         ar ? 'مسار التسجيلات النظيفة والمضغوطة'

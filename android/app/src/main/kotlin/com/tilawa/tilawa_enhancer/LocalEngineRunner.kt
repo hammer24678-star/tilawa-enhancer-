@@ -64,6 +64,11 @@ class LocalEngineRunner(
         if (!File(dataDir, ".tilawa_setup_done").exists()) return false
         if (!prootBin.exists()) return false
         if (!File(alpineDir, "usr/bin/python3").exists()) return false
+        // S178: python3 binary alone isn't enough — without its matching
+        // libpythonX.Y.so every engine run fails with rc=127.
+        val hasLibPython = File(alpineDir, "usr/lib").listFiles()
+            ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
+        if (!hasLibPython) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
         val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
             File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
@@ -112,6 +117,21 @@ class LocalEngineRunner(
         if (tallocSrc.exists() && !tallocDst.exists())
             tallocSrc.copyTo(tallocDst, overwrite = true)
         progress(10, "proot ready (bundled libproot.so)")
+
+        // S178: detect a python3 binary with no matching libpythonX.Y.so —
+        // happens when python-env.tar.gz was packaged without the shared
+        // library, so python3 dies with "Error loading shared library …"
+        // (rc=127). Wipe before the busybox check below so this same pass
+        // re-extracts everything cleanly instead of leaving a half rootfs.
+        val hasLibPython = File(alpineDir, "usr/lib").listFiles()
+            ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
+        if (File(alpineDir, "usr/bin/python3").exists() && !hasLibPython) {
+            progress(11, "Fixing missing Python shared library…")
+            alpineDir.deleteRecursively()
+            alpineDir.mkdirs()
+            context.getSharedPreferences("tilawa_local", 0)
+                .edit().putBoolean("setup_complete", false).apply()
+        }
 
         // 2. Alpine rootfs — download like Termux proot-distro
         if (!File(alpineDir, "usr/bin/busybox").exists()) {

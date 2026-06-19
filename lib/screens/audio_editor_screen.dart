@@ -195,7 +195,21 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           '-af $afStr -acodec $codec $bitrateFlag "$out"';
 
       setState(() => _pct = 0.2);
-      await _ch.invokeMethod('runProotCmd', {'cmd': cmd, 'timeoutMin': 10});  // S161
+      // S178: pass inputPath/outputPath so Kotlin's runProotCmd bind-mounts
+      // their real directories into the proot chroot — without these the
+      // picked file and the output folder are invisible inside proot and
+      // ffmpeg fails to read/write them. Also check rc instead of assuming
+      // success regardless of what ffmpeg actually did.
+      final r = await _ch.invokeMethod<Map>('runProotCmd', {
+        'cmd':        cmd,
+        'inputPath':  _filePath!,
+        'outputPath': out,
+        'timeoutMin': 10,
+      });  // S161/S178
+      final rc = (r?['rc'] as int?) ?? 0;
+      if (rc != 0) {
+        throw Exception('ffmpeg failed (rc=$rc): ${(r?['out'] as String? ?? '').trim()}');
+      }
       setState(() { _pct = 1.0; _outPath = out; _busy = false; });
 
       if (mounted) {
