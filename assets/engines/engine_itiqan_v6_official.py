@@ -3167,10 +3167,10 @@ def sadaa_altamayuz(wav_path: str, state: ItiqanState,
 
     _gain_db = round(_target_lufs - _source_lufs, 1)
     L(f'  [صدي] source={_source_lufs:.2f} LUFS → target={_target_lufs} LUFS → gain={_gain_db:+.1f}dB')
-    g_500hz = round(_base_g500, 1)   # 500Hz room mode — no scaling, always needed
-    g_580hz = round(_base_g580, 1)   # H4 harmonic correction
-    g_1khz  = round(_base_g1k,  1)   # presence
-    g_2khz  = round(_base_g2k,  1)   # presence
+    # S177: removed g_500hz/g_580hz/g_1khz/g_2khz — computed from undefined
+    # _base_g500/_base_g580/_base_g1k/_base_g2k (NameError every call) and,
+    # like g_3khz/g_5khz/g_7khz below, never read again — confirmed dead
+    # leftovers from the pre-v6.0 EQ-fingerprint approach.
     g_3khz  = 0.0
     g_5khz  = 0.0
     g_7khz  = 0.0
@@ -3188,7 +3188,7 @@ def sadaa_altamayuz(wav_path: str, state: ItiqanState,
         target_gap  = 5.83  # F1: real 1425H p10-p90 gap (was 8.0, which is p5-p95)
         gap_deficit = max(0.0, current_gap - target_gap)
         # F2: stronger scaling (0.016/dB), higher cap (0.45)
-        _sus_cap = 0.45 if _sadaa_aggressive else 0.45
+        _sus_cap = 0.45  # S177: was a no-op ternary on undefined _sadaa_aggressive
         sustain_mix = float(min(_sus_cap, 0.25 + gap_deficit * 0.016))
         L(f'  [صدي] gap={current_gap:.1f}dB target={target_gap}dB deficit={gap_deficit:.2f}dB → sustain_mix={sustain_mix:.3f}')
 
