@@ -26,31 +26,37 @@ class LocalEngineService {
         case 'setupProgress':
           if (_setupCtrl != null && !_setupCtrl!.isClosed)
             _setupCtrl!.add(Map<String, dynamic>.from(call.arguments as Map));
+          break;  // S176
         case 'setupDone':
           _setupCtrl?.close(); _setupCtrl = null;
+          break;  // S176
         case 'setupError':
           if (_setupCtrl != null && !_setupCtrl!.isClosed) {
             _setupCtrl!.addError(Exception(
               ((call.arguments as Map?)?['msg'] as String?) ?? 'Setup failed'));
             _setupCtrl!.close(); _setupCtrl = null;
           }
+          break;  // S176
         // Engine events
         case 'engineProgress':
           if (_engineCtrl != null && !_engineCtrl!.isClosed)
             _engineCtrl!.add({'pct': -1,
               ...Map<String, dynamic>.from(call.arguments as Map)});
+          break;  // S176
         case 'engineDone':
           if (_engineCtrl != null && !_engineCtrl!.isClosed) {
             _engineCtrl!.add({'done': true,
               ...Map<String, dynamic>.from(call.arguments as Map)});
             _engineCtrl!.close(); _engineCtrl = null;
           }
+          break;  // S176
         case 'engineError':
           if (_engineCtrl != null && !_engineCtrl!.isClosed) {
             _engineCtrl!.add({'error': true,
               ...Map<String, dynamic>.from(call.arguments as Map)});
             _engineCtrl!.close(); _engineCtrl = null;
           }
+          break;  // S176
       }
     });
   }
