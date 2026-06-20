@@ -499,12 +499,16 @@ class LocalEngineRunner(
             ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
         if (!hasLibPython) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
-        val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
-            File(alpineDir, "tilawa_numpy/numpy").exists()
-        val scipyOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists() ||
-            File(alpineDir, "tilawa_numpy/scipy").exists()
+        // S182: a system-site-packages numpy (rare, bundled-in-image case) is
+        // still trusted by existence — only the tilawa_numpy/ pip-installed
+        // path is the one that can end up partially-written, so only that
+        // path needs the stronger .numpy_verified marker check (S179/S182).
+        val numpySystemOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
+        val numpyOk = numpySystemOk || File(alpineDir, ".numpy_verified").exists()
+        val scipySystemOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
+        val scipyOk = scipySystemOk || File(alpineDir, ".numpy_verified").exists()
         if (!numpyOk || !scipyOk) return false  // S148: scipy required by v11.2
         val df = File(alpineDir, "usr/local/bin/deep-filter")
         if (!df.exists() || df.length() < 1_000_000L) return false
@@ -633,10 +637,15 @@ class LocalEngineRunner(
         // that "exists" forever after, so it's never retried and every engine
         // run hits a half-written package ("import numpy from its source
         // directory" ImportError). Probe with a real import, not just exists().
+        // S182: marker isSetupComplete() can check cheaply (no proot) instead
+        // of trusting the numpy/ folder's mere existence forever.
+        val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
         fun numpyWorks(): Boolean {
             if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) return false
             val probe = runProot(listOf("/usr/bin/python3", "-c", "import numpy, scipy"), timeoutMin=2)
-            return probe.first == 0
+            val ok = probe.first == 0
+            if (ok) numpyVerifiedMarker.writeText("ok") else numpyVerifiedMarker.delete()
+            return ok
         }
         if (!numpyWorks()) {
             progress(79, "Installing numpy + scipy (one-time ~2 min)…")
