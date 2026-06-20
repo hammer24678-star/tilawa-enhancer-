@@ -278,6 +278,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           textAlign: TextAlign.center,
           style: TextStyle(color: _gold, fontSize: 17,
               fontWeight: FontWeight.w700, letterSpacing: 0.3))),
+      IconButton(  // S180: explain what the editor's tabs/controls do
+        icon: const Icon(Icons.info_outline_rounded,
+            size: 18, color: _textB),
+        onPressed: _showHelp),
       if (_filePath != null)
         TextButton(
           onPressed: _pick,
@@ -285,8 +289,37 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               style: TextStyle(color: _teal, fontSize: 12,
                   fontWeight: FontWeight.w600)))
       else
-        const SizedBox(width: 48),
+        const SizedBox(width: 8),
     ]),
+  );
+
+  // S180: quick explanation of the editor — trim/EQ/effects/export.
+  void _showHelp() => showDialog(
+    context: context,
+    builder: (_) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        backgroundColor: _card,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: _gold, width: 0.7)),
+        title: const Text('عن محرر الصوت',
+            style: TextStyle(color: _gold, fontWeight: FontWeight.w700)),
+        content: const Text(
+          '• القص: اسحب البداية والنهاية لاختيار الجزء المطلوب من التسجيل.\n'
+          '• الموازن (EQ): تحكم بمستوى كل نطاق تردد لتغيير طابع الصوت.\n'
+          '• المؤثرات: تلاشي الدخول/الخروج، طبقة الصوت، السرعة، الصدى، والحجم.\n'
+          '• التصدير: يحفظ نسخة جديدة بصيغة MP3 أو WAV أو M4A بكل التعديلات.\n\n'
+          'يعمل التحرير محليًا على جهازك عبر ffmpeg — لا يحتاج اتصالًا بالإنترنت.',
+          style: TextStyle(color: _textA, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('حسنًا', style: TextStyle(color: _teal))),
+        ],
+      ),
+    ),
   );
 
   // ── Picker view ───────────────────────────────────────────────────────────────
@@ -603,16 +636,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               child: Row(children: [
                 SizedBox(width: 44, child: Text(_bands[i],
                     style: const TextStyle(color: _textB, fontSize: 11))),
-                Expanded(child: SliderTheme(
-                  data: SliderThemeData(
-                    trackHeight: 3,
-                    thumbSize: WidgetStateProperty.all(const Size(14, 14)),
-                    thumbColor: c,
-                    activeTrackColor: c.withValues(alpha: 0.75),
-                    inactiveTrackColor: _border,
-                    overlayColor: c.withValues(alpha: 0.12)),
-                  child: Slider(value: v, min: -12, max: 12, divisions: 24,
-                      onChanged: (val) => setState(() => _eq[i] = val)))),
+                Expanded(child: Directionality(  // S180: keep EQ bands ltr (see _slider)
+                  textDirection: TextDirection.ltr,
+                  child: SliderTheme(
+                    data: SliderThemeData(
+                      trackHeight: 3,
+                      thumbSize: WidgetStateProperty.all(const Size(14, 14)),
+                      thumbColor: c,
+                      activeTrackColor: c.withValues(alpha: 0.75),
+                      inactiveTrackColor: _border,
+                      overlayColor: c.withValues(alpha: 0.12)),
+                    child: Slider(value: v, min: -12, max: 12, divisions: 24,
+                        onChanged: (val) => setState(() => _eq[i] = val))))),
                 SizedBox(width: 54,
                   child: Text(
                     '${v >= 0 ? "+" : ""}${v.toStringAsFixed(1)} dB',
@@ -812,16 +847,22 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               children: body)),
       ]));
 
+  // S180: nested ltr Directionality — Slider is direction-aware and under
+  // the screen's ambient rtl it fills/drags backwards (right = decrease).
+  // Time/magnitude controls (trim, EQ, effects) should always drag
+  // left→right = increase, regardless of the surrounding Arabic UI.
   Widget _slider(double v, double min, double max, Color c,
       ValueChanged<double> fn) =>
-    SliderTheme(
-      data: SliderThemeData(
-        trackHeight: 4,
-        thumbSize: WidgetStateProperty.all(const Size(18, 18)),
-        thumbColor: c, activeTrackColor: c.withValues(alpha: 0.8),
-        inactiveTrackColor: _border,
-        overlayColor: c.withValues(alpha: 0.12)),
-      child: Slider(value: v, min: min, max: max, onChanged: fn));
+    Directionality(
+      textDirection: TextDirection.ltr,
+      child: SliderTheme(
+        data: SliderThemeData(
+          trackHeight: 4,
+          thumbSize: WidgetStateProperty.all(const Size(18, 18)),
+          thumbColor: c, activeTrackColor: c.withValues(alpha: 0.8),
+          inactiveTrackColor: _border,
+          overlayColor: c.withValues(alpha: 0.12)),
+        child: Slider(value: v, min: min, max: max, onChanged: fn)));
 
   Widget _knob(String label, String val, double v, double min, double max,
       ValueChanged<double> fn) =>
@@ -838,15 +879,17 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                     fontWeight: FontWeight.w700))),
         ]),
         const SizedBox(height: 2),
-        SliderTheme(
-          data: SliderThemeData(
-            trackHeight: 3,
-            thumbSize: WidgetStateProperty.all(const Size(14, 14)),
-            thumbColor: _teal,
-            activeTrackColor: _teal.withValues(alpha: 0.7),
-            inactiveTrackColor: _border,
-            overlayColor: _teal.withValues(alpha: 0.1)),
-          child: Slider(value: v, min: min, max: max, onChanged: fn)),
+        Directionality(  // S180: keep effect-knob sliders ltr (see _slider)
+          textDirection: TextDirection.ltr,
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 3,
+              thumbSize: WidgetStateProperty.all(const Size(14, 14)),
+              thumbColor: _teal,
+              activeTrackColor: _teal.withValues(alpha: 0.7),
+              inactiveTrackColor: _border,
+              overlayColor: _teal.withValues(alpha: 0.1)),
+            child: Slider(value: v, min: min, max: max, onChanged: fn))),
       ]));
 
   Widget _chip_(String label, VoidCallback fn) =>
