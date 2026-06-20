@@ -10,17 +10,21 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-const _bg      = Color(0xFF070F0B);
-const _surface = Color(0xFF0C1E14);
-const _card    = Color(0xFF0F2418);
+// S181: re-pointed to the app's shared "Sacred Cosmos" palette (same
+// constant names used throughout this file — see home_screen.dart for
+// the canonical values) so this screen matches the rest of the app
+// instead of its own slightly cooler/greener one-off colors.
+const _bg      = Color(0xFF020D17);
+const _surface = Color(0xFF0C1E28);
+const _card    = Color(0xFF0F2420);
 const _gold    = Color(0xFFD4AF37);
-const _goldDim = Color(0xFF8B6914);
+const _goldDim = Color(0xFF3A2B08);
 const _teal    = Color(0xFF1DB898);
 const _tealDk  = Color(0xFF0A3D2A);
-const _red     = Color(0xFFE05252);
-const _textA   = Color(0xFFCDD9CF);
-const _textB   = Color(0xFF7A9E8A);
-const _textDim = Color(0xFF3A5040);
+const _red     = Color(0xFFD94040);
+const _textA   = Color(0xFFE2CFA0);
+const _textB   = Color(0xFF8AACBA);
+const _textDim = Color(0xFF3D5A65);
 const _border  = Color(0xFF1A2E20);
 
 enum _Tab { trim, eq, effects, export_ }
@@ -274,10 +278,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         icon: const Icon(Icons.arrow_back_ios_new_rounded,
             size: 18, color: _textB),
         onPressed: () => Navigator.pop(context)),
-      const Expanded(child: Text('محرر الصوت',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: _gold, fontSize: 17,
-              fontWeight: FontWeight.w700, letterSpacing: 0.3))),
+      Expanded(child: ShaderMask(  // S181: match other screens' gold gradient titles
+        shaderCallback: (b) => const LinearGradient(
+            colors: [_gold, Color(0xFFF0CF60)]).createShader(b),
+        child: const Text('محرر الصوت',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white, fontSize: 17,
+                fontWeight: FontWeight.w700, letterSpacing: 0.3)))),
       IconButton(  // S180: explain what the editor's tabs/controls do
         icon: const Icon(Icons.info_outline_rounded,
             size: 18, color: _textB),
