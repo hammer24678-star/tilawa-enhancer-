@@ -163,6 +163,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       final ext  = _fmt.toLowerCase();
       final out  = '${dir.path}/tilawa_${base}_edited.$ext';
 
+      // S179: copy the picked file into a temp dir before handing it to
+      // ffmpeg/proot — file_picker paths often resolve through
+      // /data/user/0/... symlinks that proot's bind-mount can't follow
+      // (same root cause runEngine() already works around for engine runs,
+      // S128). Without this, ffmpeg can't see the source file inside the
+      // chroot even with S178's bind-mount fix.
+      final tmpDir = await getTemporaryDirectory();
+      final safeInput = File(
+          '${tmpDir.path}/tilawa_edit_input_${DateTime.now().millisecondsSinceEpoch}.${_filePath!.split('.').last}');
+      await File(_filePath!).copy(safeInput.path);
+      final realInput = safeInput.path;
+
       final ss  = (_trimStart * _durationSec).toStringAsFixed(3);
       final dur = ((_trimEnd - _trimStart) * _durationSec).toStringAsFixed(3);
 
@@ -191,7 +203,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                   : 'libmp3lame';
       final bitrateFlag = _fmt == 'WAV' ? '' : '-b:a ${_kbps}k';
 
-      final cmd = 'ffmpeg -y -ss $ss -i "${_filePath!}" -t $dur '
+      final cmd = 'ffmpeg -y -ss $ss -i "$realInput" -t $dur '
           '-af $afStr -acodec $codec $bitrateFlag "$out"';
 
       setState(() => _pct = 0.2);
@@ -202,10 +214,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       // success regardless of what ffmpeg actually did.
       final r = await _ch.invokeMethod<Map>('runProotCmd', {
         'cmd':        cmd,
-        'inputPath':  _filePath!,
+        'inputPath':  realInput,
         'outputPath': out,
         'timeoutMin': 10,
-      });  // S161/S178
+      });  // S161/S178/S179
       final rc = (r?['rc'] as int?) ?? 0;
       if (rc != 0) {
         throw Exception('ffmpeg failed (rc=$rc): ${(r?['out'] as String? ?? '').trim()}');

@@ -628,13 +628,36 @@ class LocalEngineRunner(
         }
                 // S106: install numpy/scipy to fixed known path
         val numpyTarget = File(alpineDir, "tilawa_numpy")
-        if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) { // S148
+        // S179: a dir existing doesn't mean the install is good — pip can fail
+        // partway (no network, interrupted) and leave a broken numpy/ folder
+        // that "exists" forever after, so it's never retried and every engine
+        // run hits a half-written package ("import numpy from its source
+        // directory" ImportError). Probe with a real import, not just exists().
+        fun numpyWorks(): Boolean {
+            if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) return false
+            val probe = runProot(listOf("/usr/bin/python3", "-c", "import numpy, scipy"), timeoutMin=2)
+            return probe.first == 0
+        }
+        if (!numpyWorks()) {
             progress(79, "Installing numpy + scipy (one-time ~2 min)…")
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
                 "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
                 "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
                 timeoutMin=20)
+            if (!numpyWorks()) {
+                // S179: one clean retry — wipe whatever partial/broken state pip left behind
+                progress(79, "Retrying numpy + scipy install (previous attempt was broken)…")
+                numpyTarget.deleteRecursively()
+                numpyTarget.mkdirs()
+                runProot(listOf("/bin/sh", "-c",
+                    "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
+                    "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                    timeoutMin=20)
+                if (!numpyWorks()) {
+                    throw IOException("numpy/scipy install failed — check internet connection and retry setup")
+                }
+            }
         }
         // S104: discover actual Python site-packages path at runtime
         val pyPathResult = runProot(listOf("/usr/bin/python3", "-c",
@@ -1039,7 +1062,7 @@ class LocalEngineRunner(
 
     private fun extractEngines() {
         enginesDir.mkdirs()
-        listOf("engine_safaa_v3_fixed.py","engine_itiqan_v6_official.py", // S155: was true_engine_itiqan_v2_fixed
+        listOf("engine_safaa_v4.py","engine_safaa_v3_fixed.py","engine_itiqan_v6_official.py", // S179: v4 is what runEngine() actually invokes (S172) — v3_fixed was never replaced here, so /engines/engine_safaa_v4.py never existed on disk (rc=2)
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
                "noor_v5.py","ihyaa_ve.py").forEach { name ->  // S156: v7-v10 are server-only
             val dest = File(enginesDir, name)
