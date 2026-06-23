@@ -152,7 +152,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Future<void> _stop() async {
     await _player.stop();
-    setState(() => _positionSec = _trimStart * _durationSec);
+    if (mounted) setState(() => _positionSec = _trimStart * _durationSec); // S184-B1
   }
 
   // ── Export ───────────────────────────────────────────────────────────────────

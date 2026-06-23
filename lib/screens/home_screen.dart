@@ -16,7 +16,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
-import 'audio_editor_screen.dart'; // S152-B13: home_screen is already in lib/screens/
+import 'audio_editor_screen.dart';
+import 'ai_tools_screen.dart'; // S184 // S152-B13: home_screen is already in lib/screens/
 import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
 
@@ -311,6 +312,7 @@ class _HomeScreenState extends State<HomeScreen>
   // ── S28: Reset for new file ────────────────────────────────────────────────
   void _resetForNewFile() {
     _abPlayer.stop(); // S144: stop audio when picking new file
+    if (!mounted) return; // S184-B2
     setState(() {
       _abEverPlayed = false; // S144: reset A/B state for clean start
       _abPlaying    = false;
@@ -546,6 +548,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Auto download after processing ────────────────────────────────────────
   Future<void> _downloadAndSave(Map<String, dynamic> sd) async {
+    if (!mounted) return; // S184-B3
     final s = LangProvider.strings(context);
     setState(() { _status = s.downloading; _progress = 0.95; });
 
@@ -1168,6 +1171,7 @@ class _HomeScreenState extends State<HomeScreen>
                 SliverToBoxAdapter(child: _abCard(s)),
             SliverToBoxAdapter(child: _bottomRow(s)),
             SliverToBoxAdapter(child: _audioEditorCard(s)),  // S152
+            SliverToBoxAdapter(child: _aiToolsCard(s)),     // S184
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ]),
