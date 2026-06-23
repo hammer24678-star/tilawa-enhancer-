@@ -252,15 +252,98 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────────────────────────────────────
+  // S183 ── show a SnackBar explaining why back is blocked during export
+  void _warnBusy() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: _card,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: _gold, width: 0.7)),
+      content: const Text('جارٍ المعالجة… انتظر حتى تنتهي العملية',
+          style: TextStyle(color: _gold, fontSize: 12)),
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
   @override
   Widget build(BuildContext ctx) => Directionality(
     textDirection: TextDirection.rtl,
-    child: Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
-        child: Column(children: [
-          _appBar(),
-          Expanded(child: _filePath == null ? _pickerView() : _editorView()),
+    // S183: PopScope prevents hardware-back + predictive-back while exporting
+    child: PopScope(
+      canPop: !_busy,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _warnBusy();
+      },
+      child: Scaffold(
+        backgroundColor: _bg,
+        body: SafeArea(
+          child: Stack(children: [
+            Column(children: [
+              _appBar(),
+              Expanded(child: _filePath == null ? _pickerView() : _editorView()),
+            ]),
+            // S183: darkening overlay — appears while ffmpeg is running
+            if (_busy) _processingOverlay(),
+          ]),
+        ),
+      ),
+    ),
+  );
+
+  // S183 ── Full-screen processing overlay for audio editor ────────────────
+  Widget _processingOverlay() => AbsorbPointer(
+    child: AnimatedBuilder(
+      animation: _glowCtrl,
+      builder: (_, __) => Container(
+        color: Colors.black.withValues(alpha: 0.72),
+        alignment: Alignment.center,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Pulsing gold ring + spinner
+          SizedBox(width: 92, height: 92,
+            child: Stack(alignment: Alignment.center, children: [
+              Container(
+                width: 92, height: 92,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _gold.withValues(alpha: 0.18 + 0.30 * _glowCtrl.value),
+                    width: 1.4),
+                  boxShadow: [BoxShadow(
+                    color: _gold.withValues(alpha: 0.06 + 0.14 * _glowCtrl.value),
+                    blurRadius: 28)])),
+              SizedBox(width: 68, height: 68,
+                child: CircularProgressIndicator(
+                  value: _pct > 0.05 ? _pct : null,
+                  strokeWidth: 3,
+                  backgroundColor: _border,
+                  valueColor: AlwaysStoppedAnimation(
+                    Color.lerp(_teal, _gold, _glowCtrl.value)!),
+                  strokeCap: StrokeCap.round)),
+              const Icon(Icons.audio_file_rounded, color: _gold, size: 26),
+            ])),
+          const SizedBox(height: 24),
+          const Text('جارٍ المعالجة',
+            style: TextStyle(color: _gold, fontSize: 20,
+              fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+          const SizedBox(height: 6),
+          const Text('يُرجى الانتظار — لا تغلق الشاشة',
+            style: TextStyle(color: _textB, fontSize: 13)),
+          const SizedBox(height: 20),
+          SizedBox(width: 220,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: _pct > 0.05 ? _pct : null,
+                backgroundColor: _border,
+                valueColor: const AlwaysStoppedAnimation(_gold),
+                minHeight: 5))),
+          if (_pct > 0.05) ...[
+            const SizedBox(height: 8),
+            Text('${(_pct * 100).round()}%',
+              style: const TextStyle(color: _textB, fontSize: 12)),
+          ],
         ]),
       ),
     ),
@@ -274,10 +357,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           color: _gold.withValues(alpha: 0.25), width: 1))),
     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
     child: Row(children: [
+      // S183: blocked while exporting
       IconButton(
         icon: const Icon(Icons.arrow_back_ios_new_rounded,
             size: 18, color: _textB),
-        onPressed: () => Navigator.pop(context)),
+        onPressed: () => _busy ? _warnBusy() : Navigator.pop(context)),
       Expanded(child: ShaderMask(  // S181: match other screens' gold gradient titles
         shaderCallback: (b) => const LinearGradient(
             colors: [_gold, Color(0xFFF0CF60)]).createShader(b),
@@ -317,7 +401,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           '• الموازن (EQ): تحكم بمستوى كل نطاق تردد لتغيير طابع الصوت.\n'
           '• المؤثرات: تلاشي الدخول/الخروج، طبقة الصوت، السرعة، الصدى، والحجم.\n'
           '• التصدير: يحفظ نسخة جديدة بصيغة MP3 أو WAV أو M4A بكل التعديلات.\n\n'
-          'يعمل التحرير محليًا على جهازك عبر ffmpeg — لا يحتاج اتصالًا بالإنترنت.',
+          'يعمل التحرير محليًا على جهازك عبر ffmpeg — لا يحتاج اتصالًا بالإنترنت.\n\n'
+          '⚙️  أثناء التصدير تظلم الشاشة وتُعرض دائرة التقدم — لا تضغط رجوع حتى تنتهي المعالجة.',
           style: TextStyle(color: _textA, fontSize: 13, height: 1.5),
         ),
         actions: [

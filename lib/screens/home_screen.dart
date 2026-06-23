@@ -1171,6 +1171,89 @@ class _HomeScreenState extends State<HomeScreen>
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ]),
+          // S183: processing overlay — sits above CustomScrollView in the Stack
+          if (_busy)
+            Positioned.fill(child: _engineProcessingOverlay()),
+        ]),
+      ),
+    );
+  }
+
+  // S183 ── Engine processing overlay ─────────────────────────────────────────
+  // Semi-transparent dark scrim over the whole screen while _busy.
+  // The Cancel button is embedded in the overlay so the user can still stop.
+  Widget _engineProcessingOverlay() {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.62),
+      alignment: Alignment.center,
+      child: AnimatedBuilder(
+        animation: _glowCtrl,
+        builder: (_, __) => Column(mainAxisSize: MainAxisSize.min, children: [
+          // Outer glow ring + spinner
+          SizedBox(width: 104, height: 104,
+            child: Stack(alignment: Alignment.center, children: [
+              Container(
+                width: 104, height: 104,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _engineColor.withValues(alpha: 0.20 + 0.30 * _glowCtrl.value),
+                    width: 1.4),
+                  boxShadow: [BoxShadow(
+                    color: _engineColor.withValues(alpha: 0.08 + 0.14 * _glowCtrl.value),
+                    blurRadius: 32)])),
+              SizedBox(width: 76, height: 76,
+                child: CircularProgressIndicator(
+                  value: _progress > 0.05 ? _progress : null,
+                  strokeWidth: 3,
+                  backgroundColor: _tBorder,
+                  valueColor: AlwaysStoppedAnimation(
+                    Color.lerp(_teal, _gold, _glowCtrl.value)!),
+                  strokeCap: StrokeCap.round)),
+              const Icon(Icons.graphic_eq_rounded, color: _gold, size: 30),
+            ])),
+          const SizedBox(height: 22),
+          ShaderMask(
+            shaderCallback: (b) => const LinearGradient(
+              colors: [_gold, _goldLight]).createShader(b),
+            child: const Text('جارٍ المعالجة',
+              style: TextStyle(color: Colors.white, fontSize: 22,
+                fontWeight: FontWeight.w800, letterSpacing: 0.5))),
+          const SizedBox(height: 8),
+          Text(
+            _isMerging ? 'جارٍ دمج المقاطع…' : _status.isNotEmpty ? _status : 'يُرجى الانتظار…',
+            style: const TextStyle(color: _textB, fontSize: 13)),
+          const SizedBox(height: 18),
+          // Progress bar
+          SizedBox(width: 240,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: _isMerging ? null : (_progress > 0.05 ? _progress : null),
+                backgroundColor: _tBorder,
+                valueColor: const AlwaysStoppedAnimation(_gold),
+                minHeight: 5))),
+          if (_progress > 0.05) ...[
+            const SizedBox(height: 8),
+            Text('${(_progress * 100).round()}%',
+              style: const TextStyle(color: _textB, fontSize: 12)),
+          ],
+          const SizedBox(height: 22),
+          // Cancel button (NOT behind AbsorbPointer — user must be able to cancel)
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: const Color(0xFF1B6B80).withValues(alpha: 0.45)),
+              borderRadius: BorderRadius.circular(10)),
+            child: TextButton.icon(
+              onPressed: _cancelProcessing,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                minimumSize: Size.zero),
+              icon: const Icon(Icons.cancel_outlined, size: 16,
+                color: Color(0xFF6B9EAE)),
+              label: const Text('إلغاء',
+                style: TextStyle(color: Color(0xFF6B9EAE), fontSize: 13)))),
         ]),
       ),
     );
