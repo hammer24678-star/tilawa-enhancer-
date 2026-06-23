@@ -339,6 +339,7 @@ class _HomeScreenState extends State<HomeScreen>
       final f = File(r!.files.single.path!);
       final bytes = await f.length();
       _abPlayer.stop(); // S145: stop audio when new file is picked
+      if (!mounted) return; // S184-B2
       setState(() {
         _abEverPlayed = false; // S145: reset A/B state
         _abPlaying    = false;
@@ -1318,6 +1319,7 @@ class _HomeScreenState extends State<HomeScreen>
         await Future.delayed(const Duration(milliseconds: 300));
         final _outPath = ev['path'] as String? ?? ''; // S140: null-safe
         _abOutputFile = _outPath.isNotEmpty ? File(_outPath) : null; // S144: preserve cacheDir path for A/B
+        if (!mounted) return; // S184-B4
         setState(() { // S92: ALL result state inside setState
           _busy = false; _progress = 0;
           _status = 'Local engine complete';
@@ -3345,6 +3347,46 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(width: 8),
             const Text('محرر الصوت',
                 style: TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
+            const Spacer(),
+            const Icon(Icons.chevron_left_rounded,
+                color: Color(0xFF484F58), size: 18),
+          ]),
+        ),
+      ),
+    ),
+  );
+
+  // ── AI TOOLS CARD — S184 ──────────────────────────────────────────────────
+  Widget _aiToolsCard(S s) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+    child: Material(
+      color: const Color(0xFF1A1800),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const AiToolsScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 220))),
+        splashColor: const Color(0xFFE8A020).withValues(alpha: 0.14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: const Color(0xFFE8A020).withValues(alpha: 0.30))),
+          child: Row(children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFE8A020), size: 18),
+            const SizedBox(width: 8),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('أدوات الذكاء الاصطناعي',
+                  style: TextStyle(color: Color(0xFFE8A020),
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+              const Text('الخيار الأخير — استخدم بحذر ⚠️',
+                  style: TextStyle(color: Color(0xFF8B6020), fontSize: 10)),
+            ]),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
                 color: Color(0xFF484F58), size: 18),
