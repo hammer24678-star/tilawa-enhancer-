@@ -126,6 +126,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         .pickFiles(type: FileType.audio, allowMultiple: false);
     if (r == null || r.files.isEmpty || r.files.first.path == null) return;
     final f = r.files.first;
+    if (!mounted) return; // S185-B1
     setState(() {
       _filePath = f.path; _fileName = f.name;
       _durationSec = 0; _positionSec = 0;
@@ -226,6 +227,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       if (rc != 0) {
         throw Exception('ffmpeg failed (rc=$rc): ${(r?['out'] as String? ?? '').trim()}');
       }
+      if (!mounted) return; // S185-B2
       setState(() { _pct = 1.0; _outPath = out; _busy = false; });
 
       if (mounted) {
@@ -527,7 +529,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _tBtn(Icons.skip_previous_rounded, () async {
         await _player.seek(Duration(
             milliseconds: (_trimStart * _durationSec * 1000).round()));
-        setState(() => _positionSec = _trimStart * _durationSec);
+        if (mounted) setState(() => _positionSec = _trimStart * _durationSec); // S185-B3
       }),
       const SizedBox(width: 12),
       AnimatedBuilder(

@@ -617,6 +617,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     if (file != null) {
+      if (!mounted) return; // S185-B5
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           s.ar
