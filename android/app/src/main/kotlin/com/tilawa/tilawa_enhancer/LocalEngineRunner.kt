@@ -86,10 +86,19 @@ class LocalEngineRunner(
             ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
         if (!hasLibPython) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
-        val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
+        // S194: check both numpy AND scipy; also accept .numpy_verified marker
+        // written by numpyWorks() so a verified system install never re-runs pip.
+        val numpySystemOk =
+            File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
+        val numpyOk = numpySystemOk || File(alpineDir, ".numpy_verified").exists() ||
             File(alpineDir, "tilawa_numpy/numpy").exists()
-        if (!numpyOk) return false  // S122: force re-setup if numpy missing
+        val scipySystemOk =
+            File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
+        val scipyOk = scipySystemOk || File(alpineDir, ".numpy_verified").exists() ||
+            File(alpineDir, "tilawa_numpy/scipy").exists()
+        if (!numpyOk || !scipyOk) return false  // S148: scipy required by v11.2
         val df = File(alpineDir, "usr/local/bin/deep-filter")
         if (!df.exists() || df.length() < 1_000_000L) return false
         // S-DF3ARCH: reject if binary is not aarch64 — x86_64 runs setup but
@@ -210,15 +219,56 @@ class LocalEngineRunner(
             extractTarGz(tmp2, alpineDir)
             tmp2.delete()
         }
-                // S106: install numpy/scipy to fixed known path
+                // S194: numpy/scipy install — check system paths FIRST (bundled via
+        // `apk add` in the APK build), then pip target, then verify with a
+        // real proot import.  BUG-A: old code only checked tilawa_numpy/ and
+        // never looked at system site-packages, so pip always ran even when
+        // numpy was already present, causing failures on offline devices.
         val numpyTarget = File(alpineDir, "tilawa_numpy")
-        if (!File(numpyTarget, "numpy").exists()) {
+        val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
+        fun numpyWorks(): Boolean {
+            // 1. System numpy installed via `apk add` in python-env.tar.gz
+            val sysNumpyOk =
+                File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+                File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
+            val sysScipyOk =
+                File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
+                File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
+            if (sysNumpyOk && sysScipyOk) {
+                numpyVerifiedMarker.writeText("ok"); return true
+            }
+            // 2. Pip-installed target — must have BOTH packages
+            if (!File(numpyTarget, "numpy").exists() ||
+                !File(numpyTarget, "scipy").exists()) return false
+            // 3. Verify with real proot import (catches half-written installs)
+            val probe = runProot(
+                listOf("/usr/bin/python3", "-c", "import numpy, scipy; print('ok')"),
+                timeoutMin = 2)
+            val ok = probe.first == 0 && probe.second.contains("ok")
+            if (ok) numpyVerifiedMarker.writeText("ok") else numpyVerifiedMarker.delete()
+            return ok
+        }
+        if (!numpyWorks()) {
             progress(79, "Installing numpy + scipy (one-time ~2 min)…")
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
                 "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
                 "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
-                timeoutMin=20)
+                timeoutMin = 20)
+            if (!numpyWorks()) {
+                // BUG-C fix: wipe broken/partial install and retry once
+                progress(79, "Retrying numpy + scipy install (cleaning previous attempt)…")
+                numpyTarget.deleteRecursively()
+                numpyTarget.mkdirs()
+                runProot(listOf("/bin/sh", "-c",
+                    "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
+                    "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                    timeoutMin = 20)
+                if (!numpyWorks()) {
+                    throw IOException(
+                        "numpy/scipy install failed — check internet connection and retry setup")
+                }
+            }
         }
         // S104: discover actual Python site-packages path at runtime
         val pyPathResult = runProot(listOf("/usr/bin/python3", "-c",

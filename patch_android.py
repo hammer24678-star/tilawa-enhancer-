@@ -645,8 +645,15 @@ class LocalEngineRunner(
         // of trusting the numpy/ folder's mere existence forever.
         val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
         fun numpyWorks(): Boolean {
+            // S194-E: check system paths first — numpy/scipy may be bundled
+            // via `apk add` in python-env.tar.gz, no pip needed.
+            val sysNpOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+                File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
+            val sysSpOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
+                File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
+            if (sysNpOk && sysSpOk) { numpyVerifiedMarker.writeText("ok"); return true }
             if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) return false
-            val probe = runProot(listOf("/usr/bin/python3", "-c", "import numpy, scipy"), timeoutMin=2)
+            val probe = runProot(listOf("/usr/bin/python3", "-c", "import numpy, scipy; print('ok')"), timeoutMin=2)
             val ok = probe.first == 0
             if (ok) numpyVerifiedMarker.writeText("ok") else numpyVerifiedMarker.delete()
             return ok
