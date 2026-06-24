@@ -1137,12 +1137,6 @@ class _HomeScreenState extends State<HomeScreen>
                         'assets/images/logo.png',
                         fit: BoxFit.cover))),
                     const SizedBox(width: 10),
-                    const Text('محسِّن ',
-                      style: TextStyle(
-                        color: Color(0xFFE2CFA0),
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5)),
                     ShaderMask(
                       shaderCallback: (b) => const LinearGradient(
                         colors: [Color(0xFFD4AF37), Color(0xFFF0CF60),
@@ -1154,6 +1148,15 @@ class _HomeScreenState extends State<HomeScreen>
                           fontSize: 19,
                           fontWeight: FontWeight.w300,
                           letterSpacing: 0.3))),
+                    // S193: was 'محسِّن ' BEFORE the ShaderMask above — in this
+                    // plain LTR Row that put 'محسِّن' on the left/'التلاوة' on the
+                    // right, which an RTL reader reads backwards as "التلاوة محسِّن".
+                    const Text(' محسِّن',
+                      style: TextStyle(
+                        color: Color(0xFFE2CFA0),
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5)),
                   ])),
             ),
             SliverToBoxAdapter(child: _header(s)),

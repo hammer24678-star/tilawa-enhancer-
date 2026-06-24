@@ -55,9 +55,25 @@ class LocalEngineRunner(
                         context, arrayOf(path), null, null)
                     result.success(null)
                 }
+                "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S193
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // S193: lightweight check for callers that only need proot + ffmpeg
+    // (e.g. the audio editor's plain ffmpeg trim/EQ/export) — unlike
+    // isSetupComplete() below, this does NOT require numpy, deep-filter,
+    // or any downloaded restoration engine, none of which plain ffmpeg
+    // filter chains touch.
+    fun isBasicSetupComplete(): Boolean {
+        if (!prootBin.exists()) return false
+        if (!File(alpineDir, "usr/bin/python3").exists()) return false
+        val hasLibPython = File(alpineDir, "usr/lib").listFiles()
+            ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
+        if (!hasLibPython) return false
+        if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
+        return true
     }
 
     fun isSetupComplete(): Boolean {

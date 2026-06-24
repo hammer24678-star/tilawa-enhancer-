@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
+import '../state/lang_provider.dart';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 // S181: re-pointed to the app's shared "Sacred Cosmos" palette (same
@@ -161,16 +162,20 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (_filePath == null) return;
     HapticFeedback.mediumImpact();
     setState(() { _busy = true; _pct = 0.05; _outPath = null; });
+    final ar = LangProvider.strings(context).ar;
     try {
       // S190: runProotCmd assumes the alpine-318 rootfs already exists.
       // If local-engine setup was never completed (or got wiped), proot's
       // -r path is missing and ffmpeg dies with an opaque
       // "can't sanitize binding ... No such file or directory" crash.
       // Check first and fail with a clear, actionable message instead.
-      final setupOk = await _ch.invokeMethod<bool>('isSetupComplete') ?? false;
+      // S193: was isSetupComplete() (full ML-engine check) — the editor only
+      // runs ffmpeg, so the lighter proot/alpine/ffmpeg-only check is enough.
+      final setupOk = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
       if (!setupOk) {
-        throw Exception(
-            'يجب إكمال تجهيز المحرك المحلي أولاً من الإعدادات قبل استخدام محرر الصوت');
+        throw Exception(ar
+            ? 'يجب إكمال تجهيز المحرك المحلي أولاً من الإعدادات قبل استخدام محرر الصوت'
+            : 'Please finish setting up the local engine in Settings before using the audio editor.');
       }
       final dir = await getExternalStorageDirectory() ??
                   await getApplicationDocumentsDirectory();
@@ -247,7 +252,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
               side: const BorderSide(color: _gold, width: 0.7)),
-          content: Text('✓ حُفظ: $out',
+          content: Text(ar ? '✓ حُفظ: $out' : '✓ Saved: $out',
               style: const TextStyle(color: _gold, fontSize: 11)),
           duration: const Duration(seconds: 4),
         ));
@@ -256,7 +261,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       setState(() => _busy = false);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           backgroundColor: _card,
-          content: Text('خطأ: $e',
+          content: Text(ar ? 'خطأ: $e' : 'Error: $e',
               style: const TextStyle(color: _red, fontSize: 12))));
     }
   }
@@ -267,21 +272,23 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // S183 ── show a SnackBar explaining why back is blocked during export
   void _warnBusy() {
     if (!mounted) return;
+    final ar = LangProvider.strings(context).ar;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       backgroundColor: _card,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
           side: const BorderSide(color: _gold, width: 0.7)),
-      content: const Text('جارٍ المعالجة… انتظر حتى تنتهي العملية',
-          style: TextStyle(color: _gold, fontSize: 12)),
+      content: Text(ar ? 'جارٍ المعالجة… انتظر حتى تنتهي العملية'
+          : 'Processing… please wait until it finishes',
+          style: const TextStyle(color: _gold, fontSize: 12)),
       duration: const Duration(seconds: 2),
     ));
   }
 
   @override
   Widget build(BuildContext ctx) => Directionality(
-    textDirection: TextDirection.rtl,
+    textDirection: LangProvider.strings(ctx).ar ? TextDirection.rtl : TextDirection.ltr,
     // S183: PopScope prevents hardware-back + predictive-back while exporting
     child: PopScope(
       canPop: !_busy,
@@ -305,7 +312,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   );
 
   // S183 ── Full-screen processing overlay for audio editor ────────────────
-  Widget _processingOverlay() => AbsorbPointer(
+  Widget _processingOverlay() {
+    final ar = LangProvider.strings(context).ar;
+    return AbsorbPointer(
     child: AnimatedBuilder(
       animation: _glowCtrl,
       builder: (_, __) => Container(
@@ -336,12 +345,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               const Icon(Icons.audio_file_rounded, color: _gold, size: 26),
             ])),
           const SizedBox(height: 24),
-          const Text('جارٍ المعالجة',
-            style: TextStyle(color: _gold, fontSize: 20,
+          Text(ar ? 'جارٍ المعالجة' : 'Processing',
+            style: const TextStyle(color: _gold, fontSize: 20,
               fontWeight: FontWeight.w800, letterSpacing: 0.5)),
           const SizedBox(height: 6),
-          const Text('يُرجى الانتظار — لا تغلق الشاشة',
-            style: TextStyle(color: _textB, fontSize: 13)),
+          Text(ar ? 'يُرجى الانتظار — لا تغلق الشاشة' : "Please wait — don't close the screen",
+            style: const TextStyle(color: _textB, fontSize: 13)),
           const SizedBox(height: 20),
           SizedBox(width: 220,
             child: ClipRRect(
@@ -360,9 +369,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ),
     ),
   );
+  }
 
   // ── App bar ───────────────────────────────────────────────────────────────────
-  Widget _appBar() => Container(
+  Widget _appBar() {
+    final ar = LangProvider.strings(context).ar;
+    return Container(
     decoration: BoxDecoration(
       color: _surface,
       border: Border(bottom: BorderSide(
@@ -377,9 +389,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       Expanded(child: ShaderMask(  // S181: match other screens' gold gradient titles
         shaderCallback: (b) => const LinearGradient(
             colors: [_gold, Color(0xFFF0CF60)]).createShader(b),
-        child: const Text('محرر الصوت',
+        child: Text(ar ? 'محرر الصوت' : 'Audio Editor',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white, fontSize: 17,
+            style: const TextStyle(color: Colors.white, fontSize: 17,
                 fontWeight: FontWeight.w700, letterSpacing: 0.3)))),
       IconButton(  // S180: explain what the editor's tabs/controls do
         icon: const Icon(Icons.info_outline_rounded,
@@ -388,46 +400,59 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       if (_filePath != null)
         TextButton(
           onPressed: _pick,
-          child: const Text('تغيير',
-              style: TextStyle(color: _teal, fontSize: 12,
+          child: Text(ar ? 'تغيير' : 'Change',
+              style: const TextStyle(color: _teal, fontSize: 12,
                   fontWeight: FontWeight.w600)))
       else
         const SizedBox(width: 8),
     ]),
   );
+  }
 
   // S180: quick explanation of the editor — trim/EQ/effects/export.
-  void _showHelp() => showDialog(
+  void _showHelp() {
+    final ar = LangProvider.strings(context).ar;
+    showDialog(
     context: context,
     builder: (_) => Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
       child: AlertDialog(
         backgroundColor: _card,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
             side: const BorderSide(color: _gold, width: 0.7)),
-        title: const Text('عن محرر الصوت',
-            style: TextStyle(color: _gold, fontWeight: FontWeight.w700)),
-        content: const Text(
-          '• القص: اسحب البداية والنهاية لاختيار الجزء المطلوب من التسجيل.\n'
-          '• الموازن (EQ): تحكم بمستوى كل نطاق تردد لتغيير طابع الصوت.\n'
-          '• المؤثرات: تلاشي الدخول/الخروج، طبقة الصوت، السرعة، الصدى، والحجم.\n'
-          '• التصدير: يحفظ نسخة جديدة بصيغة MP3 أو WAV أو M4A بكل التعديلات.\n\n'
-          'يعمل التحرير محليًا على جهازك عبر ffmpeg — لا يحتاج اتصالًا بالإنترنت.\n\n'
-          '⚙️  أثناء التصدير تظلم الشاشة وتُعرض دائرة التقدم — لا تضغط رجوع حتى تنتهي المعالجة.',
-          style: TextStyle(color: _textA, fontSize: 13, height: 1.5),
+        title: Text(ar ? 'عن محرر الصوت' : 'About the Audio Editor',
+            style: const TextStyle(color: _gold, fontWeight: FontWeight.w700)),
+        content: Text(
+          ar
+            ? '• القص: اسحب البداية والنهاية لاختيار الجزء المطلوب من التسجيل.\n'
+              '• الموازن (EQ): تحكم بمستوى كل نطاق تردد لتغيير طابع الصوت.\n'
+              '• المؤثرات: تلاشي الدخول/الخروج، طبقة الصوت، السرعة، الصدى، والحجم.\n'
+              '• التصدير: يحفظ نسخة جديدة بصيغة MP3 أو WAV أو M4A بكل التعديلات.\n\n'
+              'يعمل التحرير محليًا على جهازك عبر ffmpeg — لا يحتاج اتصالًا بالإنترنت.\n\n'
+              '⚙️  أثناء التصدير تظلم الشاشة وتُعرض دائرة التقدم — لا تضغط رجوع حتى تنتهي المعالجة.'
+            : '• Trim: drag the start and end handles to pick the part of the recording you want.\n'
+              '• Equalizer (EQ): adjust each frequency band to shape the sound.\n'
+              '• Effects: fade in/out, pitch, speed, echo, and volume.\n'
+              '• Export: saves a new copy as MP3, WAV, or M4A with all your edits.\n\n'
+              'Editing runs locally on your device via ffmpeg — no internet connection needed.\n\n'
+              "⚙️  The screen dims and shows a progress ring during export — don't press back until it finishes.",
+          style: const TextStyle(color: _textA, fontSize: 13, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('حسنًا', style: TextStyle(color: _teal))),
+            child: Text(ar ? 'حسنًا' : 'OK', style: const TextStyle(color: _teal))),
         ],
       ),
     ),
   );
+  }
 
   // ── Picker view ───────────────────────────────────────────────────────────────
-  Widget _pickerView() => Center(
+  Widget _pickerView() {
+    final ar = LangProvider.strings(context).ar;
+    return Center(
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       AnimatedBuilder(
         animation: _glowCtrl,
@@ -443,8 +468,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                 blurRadius: 36)]),
           child: const Icon(Icons.audio_file_rounded, color: _gold, size: 52))),
       const SizedBox(height: 28),
-      const Text('اختر ملف صوتي',
-          style: TextStyle(color: _textA, fontSize: 20,
+      Text(ar ? 'اختر ملف صوتي' : 'Choose an audio file',
+          style: const TextStyle(color: _textA, fontSize: 20,
               fontWeight: FontWeight.w700)),
       const SizedBox(height: 8),
       const Text('MP3 · WAV · M4A · AAC · OGG · FLAC',
@@ -464,17 +489,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               boxShadow: [BoxShadow(
                   color: _gold.withValues(alpha: 0.2 + 0.15 * _glowCtrl.value),
                   blurRadius: 18, offset: const Offset(0, 4))]),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.folder_open_rounded,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.folder_open_rounded,
                   color: Color(0xFF0A0A00), size: 22),
-              SizedBox(width: 10),
-              Text('فتح ملف', style: TextStyle(
+              const SizedBox(width: 10),
+              Text(ar ? 'فتح ملف' : 'Open File', style: const TextStyle(
                   color: Color(0xFF0A0A00), fontSize: 16,
                   fontWeight: FontWeight.w800)),
             ]),
           ))),
     ]),
   );
+  }
 
   // ── Editor view ───────────────────────────────────────────────────────────────
   Widget _editorView() => Column(children: [
@@ -607,7 +633,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   // ── Tab bar ───────────────────────────────────────────────────────────────────
   Widget _tabBar() {
-    final labels = ['قطع', 'EQ', 'تأثيرات', 'تصدير'];
+    final ar = LangProvider.strings(context).ar;
+    final labels = ar
+        ? ['قطع', 'EQ', 'تأثيرات', 'تصدير']
+        : ['Trim', 'EQ', 'Effects', 'Export'];
     final icons  = [
       Icons.content_cut_rounded,
       Icons.equalizer_rounded,
@@ -660,34 +689,36 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // ═══════════════════════════════════════════════════════════════════════════
   // TRIM TAB
   // ═══════════════════════════════════════════════════════════════════════════
-  Widget _trimTab() => ListView(
+  Widget _trimTab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(
     padding: const EdgeInsets.all(14),
     children: [
-      _card_('نقطة البداية', Icons.align_horizontal_left_rounded, [
+      _card_(ar ? 'نقطة البداية' : 'Start Point', Icons.align_horizontal_left_rounded, [
         Row(children: [
           Text(_fmtTime(_trimStart * _durationSec),
               style: const TextStyle(color: _teal, fontSize: 15,
                   fontWeight: FontWeight.w800, fontFamily: 'monospace')),
           const Spacer(),
-          _chip_('بداية', () => setState(() => _trimStart = 0)),
+          _chip_(ar ? 'بداية' : 'Start', () => setState(() => _trimStart = 0)),
         ]),
         _slider(_trimStart, 0, _trimEnd - 0.005, _teal,
             (v) => setState(() => _trimStart = v)),
       ]),
       const SizedBox(height: 10),
-      _card_('نقطة النهاية', Icons.align_horizontal_right_rounded, [
+      _card_(ar ? 'نقطة النهاية' : 'End Point', Icons.align_horizontal_right_rounded, [
         Row(children: [
           Text(_fmtTime(_trimEnd * _durationSec),
               style: const TextStyle(color: _gold, fontSize: 15,
                   fontWeight: FontWeight.w800, fontFamily: 'monospace')),
           const Spacer(),
-          _chip_('نهاية', () => setState(() => _trimEnd = 1)),
+          _chip_(ar ? 'نهاية' : 'End', () => setState(() => _trimEnd = 1)),
         ]),
         _slider(_trimEnd, _trimStart + 0.005, 1.0, _gold,
             (v) => setState(() => _trimEnd = v)),
       ]),
       const SizedBox(height: 10),
-      _card_('مدة التحديد', Icons.timer_outlined, [
+      _card_(ar ? 'مدة التحديد' : 'Selection Duration', Icons.timer_outlined, [
         Center(child: Text(
           _fmtTime((_trimEnd - _trimStart) * _durationSec),
           style: const TextStyle(color: _gold, fontSize: 30,
@@ -695,24 +726,27 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               fontFamily: 'monospace'))),
         const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          _chip_('اختيار الكل',
+          _chip_(ar ? 'اختيار الكل' : 'Select All',
               () => setState(() { _trimStart = 0; _trimEnd = 1; })),
-          _chip_('النصف الأول',
+          _chip_(ar ? 'النصف الأول' : 'First Half',
               () => setState(() { _trimStart = 0; _trimEnd = 0.5; })),
-          _chip_('النصف الثاني',
+          _chip_(ar ? 'النصف الثاني' : 'Second Half',
               () => setState(() { _trimStart = 0.5; _trimEnd = 1; })),
         ]),
       ]),
     ],
   );
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // EQ TAB
   // ═══════════════════════════════════════════════════════════════════════════
-  Widget _eqTab() => ListView(
+  Widget _eqTab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(
     padding: const EdgeInsets.all(14),
     children: [
-      _card_('منحنى التعديل', Icons.show_chart_rounded, [
+      _card_(ar ? 'منحنى التعديل' : 'EQ Curve', Icons.show_chart_rounded, [
         SizedBox(height: 72,
           child: CustomPaint(
             painter: _EqPainter(values: _eq),
@@ -722,16 +756,16 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(children: [
-            _preset('مسطح', [0,0,0,0,0]),
-            _preset('باس',  [7,4,0,-1,-2]),
-            _preset('صوت',  [-2,0,5,4,2]),
-            _preset('وضوح', [-1,0,2,5,4]),
-            _preset('تلاوة',[3,1,3,2,1]),
-            _preset('ليلة', [4,2,0,-2,-3]),
+            _preset(ar ? 'مسطح'  : 'Flat',       [0,0,0,0,0]),
+            _preset(ar ? 'باس'   : 'Bass',       [7,4,0,-1,-2]),
+            _preset(ar ? 'صوت'   : 'Voice',      [-2,0,5,4,2]),
+            _preset(ar ? 'وضوح'  : 'Clarity',    [-1,0,2,5,4]),
+            _preset(ar ? 'تلاوة' : 'Recitation', [3,1,3,2,1]),
+            _preset(ar ? 'ليلة'  : 'Night',      [4,2,0,-2,-3]),
           ])),
       ]),
       const SizedBox(height: 10),
-      _card_('أحزمة التعديل', Icons.tune_rounded,
+      _card_(ar ? 'أحزمة التعديل' : 'EQ Bands', Icons.tune_rounded,
           List.generate(5, (i) {
             final v = _eq[i];
             final c = v > 0 ? _gold : v < 0 ? _teal : _textDim;
@@ -763,33 +797,36 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           })),
     ],
   );
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // EFFECTS TAB
   // ═══════════════════════════════════════════════════════════════════════════
-  Widget _effectsTab() => ListView(
+  Widget _effectsTab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(
     padding: const EdgeInsets.all(14),
     children: [
-      _card_('الصوت', Icons.volume_up_rounded, [
-        _knob('مستوى الصوت', '${(_vol*100).round()}%',  _vol,  0.5, 2.0,
+      _card_(ar ? 'الصوت' : 'Audio', Icons.volume_up_rounded, [
+        _knob(ar ? 'مستوى الصوت' : 'Volume', '${(_vol*100).round()}%',  _vol,  0.5, 2.0,
             (v)=>setState(()=>_vol=v)),
-        _knob('درجة الصوت', '${_pitch>=0?"+":""}${_pitch.toStringAsFixed(1)} st',
+        _knob(ar ? 'درجة الصوت' : 'Pitch', '${_pitch>=0?"+":""}${_pitch.toStringAsFixed(1)} st',
             _pitch, -12, 12, (v)=>setState(()=>_pitch=v)),
-        _knob('السرعة', '${_tempo.toStringAsFixed(2)}×',
+        _knob(ar ? 'السرعة' : 'Speed', '${_tempo.toStringAsFixed(2)}×',
             _tempo, 0.5, 2.0, (v)=>setState(()=>_tempo=v)),
       ]),
       const SizedBox(height: 10),
-      _card_('تلاشي', Icons.trending_flat_rounded, [
-        _knob('دخول (Fade In)',  '${_fadeIn.toStringAsFixed(1)}s',
+      _card_(ar ? 'تلاشي' : 'Fade', Icons.trending_flat_rounded, [
+        _knob(ar ? 'دخول (Fade In)' : 'Fade In',  '${_fadeIn.toStringAsFixed(1)}s',
             _fadeIn,  0, 10, (v)=>setState(()=>_fadeIn=v)),
-        _knob('خروج (Fade Out)', '${_fadeOut.toStringAsFixed(1)}s',
+        _knob(ar ? 'خروج (Fade Out)' : 'Fade Out', '${_fadeOut.toStringAsFixed(1)}s',
             _fadeOut, 0, 10, (v)=>setState(()=>_fadeOut=v)),
       ]),
       const SizedBox(height: 10),
-      _card_('فضاء صوتي', Icons.surround_sound_rounded, [
-        _knob('صدى (Echo)',    '${_echo.round()}%',   _echo,   0, 100,
+      _card_(ar ? 'فضاء صوتي' : 'Space', Icons.surround_sound_rounded, [
+        _knob(ar ? 'صدى (Echo)' : 'Echo',    '${_echo.round()}%',   _echo,   0, 100,
             (v)=>setState(()=>_echo=v)),
-        _knob('إرجاع (Reverb)','${_reverb.round()}%', _reverb, 0, 100,
+        _knob(ar ? 'إرجاع (Reverb)' : 'Reverb','${_reverb.round()}%', _reverb, 0, 100,
             (v)=>setState(()=>_reverb=v)),
       ]),
       const SizedBox(height: 10),
@@ -806,24 +843,27 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           decoration: BoxDecoration(
             color: _tealDk, borderRadius: BorderRadius.circular(10),
             border: Border.all(color: _teal.withValues(alpha: 0.3))),
-          child: const Center(child: Row(mainAxisSize: MainAxisSize.min,
+          child: Center(child: Row(mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.restart_alt_rounded, color: _teal, size: 17),
-              SizedBox(width: 6),
-              Text('إعادة الضبط',
-                  style: TextStyle(color: _teal, fontSize: 13,
+              const Icon(Icons.restart_alt_rounded, color: _teal, size: 17),
+              const SizedBox(width: 6),
+              Text(ar ? 'إعادة الضبط' : 'Reset',
+                  style: const TextStyle(color: _teal, fontSize: 13,
                       fontWeight: FontWeight.w600)),
             ])))),
     ],
   );
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // EXPORT TAB
   // ═══════════════════════════════════════════════════════════════════════════
-  Widget _exportTab() => ListView(
+  Widget _exportTab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(
     padding: const EdgeInsets.all(14),
     children: [
-      _card_('الصيغة', Icons.file_download_rounded, [
+      _card_(ar ? 'الصيغة' : 'Format', Icons.file_download_rounded, [
         Row(children: ['MP3','WAV','M4A'].map((f) {
           final sel = f == _fmt;
           return Expanded(child: GestureDetector(
@@ -844,19 +884,19 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         }).toList()),
         if (_fmt != 'WAV') ...[
           const SizedBox(height: 16),
-          _knob('جودة البث', '$_kbps kbps', _kbps.toDouble(), 64, 320,
+          _knob(ar ? 'جودة البث' : 'Bitrate', '$_kbps kbps', _kbps.toDouble(), 64, 320,
               (v) => setState(() => _kbps = v.round())),
         ],
       ]),
       const SizedBox(height: 10),
       // Summary
-      _card_('ملخص', Icons.summarize_rounded, [
-        _row('المقطع المحدد',
+      _card_(ar ? 'ملخص' : 'Summary', Icons.summarize_rounded, [
+        _row(ar ? 'المقطع المحدد' : 'Selected Range',
           '${_fmtTime(_trimStart * _durationSec)} ← '
           '${_fmtTime(_trimEnd * _durationSec)}'),
-        _row('المدة',
+        _row(ar ? 'المدة' : 'Duration',
           _fmtTime((_trimEnd - _trimStart) * _durationSec)),
-        _row('التأثيرات المفعّلة', () {
+        _row(ar ? 'التأثيرات المفعّلة' : 'Active Effects', () {
           final a = <String>[];
           if (_fadeIn>0)  a.add('Fade In');
           if (_fadeOut>0) a.add('Fade Out');
@@ -868,7 +908,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           if (_eq.any((v)=>v.abs()>0.5)) a.add('EQ');
           return a.isEmpty ? '—' : a.join(' · ');
         }()),
-        _row('الصيغة',
+        _row(ar ? 'الصيغة' : 'Format',
           '$_fmt${_fmt!="WAV" ? " · $_kbps kbps" : ""}'),
       ]),
       const SizedBox(height: 14),
@@ -884,8 +924,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                 valueColor: const AlwaysStoppedAnimation(_gold),
                 minHeight: 6))),
           const SizedBox(height: 8),
-          const Text('جارٍ المعالجة...',
-              style: TextStyle(color: _textB, fontSize: 12)),
+          Text(ar ? 'جارٍ المعالجة...' : 'Processing...',
+              style: const TextStyle(color: _textB, fontSize: 12)),
         ])
       else
         AnimatedBuilder(
@@ -904,12 +944,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                     color: _gold.withValues(
                         alpha: 0.15 + 0.18 * _glowCtrl.value),
                     blurRadius: 22, offset: const Offset(0,4))]),
-              child: const Center(child: Row(mainAxisSize: MainAxisSize.min,
+              child: Center(child: Row(mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.ios_share_rounded,
+                  const Icon(Icons.ios_share_rounded,
                       color: Color(0xFF050A06), size: 21),
-                  SizedBox(width: 10),
-                  Text('تصدير الملف', style: TextStyle(
+                  const SizedBox(width: 10),
+                  Text(ar ? 'تصدير الملف' : 'Export File', style: const TextStyle(
                       color: Color(0xFF050A06), fontSize: 16,
                       fontWeight: FontWeight.w800)),
                 ])),
@@ -930,6 +970,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ],
     ],
   );
+  }
 
   // ── Shared widgets ────────────────────────────────────────────────────────────
   Widget _card_(String title, IconData icon, List<Widget> body) =>
