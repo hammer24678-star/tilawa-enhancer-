@@ -1086,7 +1086,7 @@ class _HomeScreenState extends State<HomeScreen>
                     painter: _IncensePainter(
                       _particleCtrl.value,
                       _engineTintEnabled ? _engineColor : const Color(0xFF1DB898),
-                      dim: _busy ? 0.35 : (_engineTintEnabled ? 1.0 : 0.45)))))),
+                      dim: _busy ? 0.35 : (_engineTintEnabled ? 1.0 : 0.45))))))),
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: RepaintBoundary(
@@ -3798,7 +3798,6 @@ class _GeoPainter extends CustomPainter {
     path.close();
     canvas.drawPath(path, p);
   }
-  @override bool shouldRepaint(_GeoPainter _) => false;
 }
 
 class _WaveProgressPainter extends CustomPainter {
