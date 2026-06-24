@@ -687,6 +687,7 @@ class _HomeScreenState extends State<HomeScreen>
     await _abPlayer.stop();
     await _abPlayer.play(DeviceFileSource(src.path));
     _abEverPlayed = true; // S140
+    if (!mounted) return; // S189
     setState(() { _abPlaying = true; });
   }
 
@@ -705,6 +706,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
     if (_abPlaying) {
       await _abPlayer.pause();
+      if (!mounted) return; // S189
       setState(() { _abPlaying = false; });
     } else {
       final src = _abIsB ? (_abOutputFile ?? _output) : _file; // S144: use cacheDir path — content:// fails DeviceFileSource
@@ -715,6 +717,7 @@ class _HomeScreenState extends State<HomeScreen>
       } else {
         await _abPlayer.resume();
       }
+      if (!mounted) return; // S189
       setState(() { _abPlaying = true; });
     }
   }
@@ -1053,12 +1056,15 @@ class _HomeScreenState extends State<HomeScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            // S54-BG-GRADIENT: tinted by selected engine — S188-B: punchier + toggleable
+            // S54-BG-GRADIENT: tinted by selected engine — S190: calmer default,
+            // and forced flat-dark while processing regardless of the toggle
             colors: dark
-              ? (_engineTintEnabled
-                  ? [Color.lerp(const Color(0xFF020D0C), _engineColor, 0.16)!,
-                     Color.lerp(const Color(0xFF020D0C), _engineColor, 0.085)!]
-                  : [const Color(0xFF020D0C), const Color(0xFF050F0E)])
+              ? (_busy
+                  ? [const Color(0xFF020D0C), const Color(0xFF030C0B)]
+                  : (_engineTintEnabled
+                      ? [Color.lerp(const Color(0xFF020D0C), _engineColor, 0.10)!,
+                         Color.lerp(const Color(0xFF020D0C), _engineColor, 0.055)!]
+                      : [const Color(0xFF020D0C), const Color(0xFF050F0E)]))
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         // S29: Sacred Cosmos painters Stack
         child: Stack(children: [
@@ -1066,10 +1072,11 @@ class _HomeScreenState extends State<HomeScreen>
             child: IgnorePointer(
               child: RepaintBoundary(
                 child: CustomPaint(
-                  painter: _GeoPainter(),
+                  painter: _GeoPainter(dim: _busy ? 0.45 : 1.0),  // S190
                   isComplex: true,
                   willChange: false)))),
-          // S58: rising particles (engine-tinted incense dots)
+          // S58: rising particles (engine-tinted incense dots) — S190: dimmed/neutral
+          // when tint disabled or while processing
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: RepaintBoundary(
@@ -1077,14 +1084,17 @@ class _HomeScreenState extends State<HomeScreen>
                   animation: _particleCtrl,
                   builder: (_, __) => CustomPaint(
                     painter: _IncensePainter(
-                      _particleCtrl.value, _engineColor)))))),
+                      _particleCtrl.value,
+                      _engineTintEnabled ? _engineColor : const Color(0xFF1DB898),
+                      dim: _busy ? 0.35 : (_engineTintEnabled ? 1.0 : 0.45)))))),
           if (dark) Positioned.fill(
             child: IgnorePointer(
               child: RepaintBoundary(
                 child: AnimatedBuilder(
                   animation: _starCtrl,
                   builder: (_, __) => CustomPaint(
-                    painter: _StarsPainter(_starCtrl.value, _starList),
+                    painter: _StarsPainter(_starCtrl.value, _starList,
+                      dim: _busy ? 0.4 : 1.0),  // S190
                     isComplex: true))))),
           CustomScrollView(controller: _scrollCtrl, slivers: [ // S62b S92-SCROLL
             SliverAppBar( // S61-APPBAR
@@ -3591,7 +3601,8 @@ class _StarParticle {
 class _StarsPainter extends CustomPainter {
   final double t;
   final List<_StarParticle> stars;
-  _StarsPainter(this.t, this.stars);
+  final double dim;  // S190: 1.0 normal, lower while processing
+  _StarsPainter(this.t, this.stars, {this.dim = 1.0});
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0);
@@ -3608,15 +3619,15 @@ class _StarsPainter extends CustomPainter {
           : _gold;
       // Soft bloom
       p.maskFilter = MaskFilter.blur(BlurStyle.normal, sz * 2.5);
-      p.color = sc.withValues(alpha: op * 0.25);
+      p.color = sc.withValues(alpha: op * 0.25 * dim);
       canvas.drawCircle(Offset(x, y), sz * 2.0, p);
       // Sharp core
       p.maskFilter = null;
-      p.color = sc.withValues(alpha: op);
+      p.color = sc.withValues(alpha: op * dim);
       canvas.drawCircle(Offset(x, y), sz, p);
     }
   }
-  @override bool shouldRepaint(_StarsPainter o) => o.t != t;
+  @override bool shouldRepaint(_StarsPainter o) => o.t != t || o.dim != dim;
 }
 
 // S45-MANDALA-CLASS — 8-petal spinning mandala for processing screen
@@ -3721,7 +3732,8 @@ class _IncensePainter extends CustomPainter {
   // S58-PARTICLES — 18 rising dots, engine-tinted, matches JSX Particles()
   final double t;
   final Color engCol;
-  _IncensePainter(this.t, this.engCol);
+  final double dim;  // S190: 1.0 normal, lower while processing/tint-off
+  _IncensePainter(this.t, this.engCol, {this.dim = 1.0});
   static const _xs = [
     0.08, 0.15, 0.22, 0.30, 0.38, 0.45,
     0.52, 0.58, 0.65, 0.72, 0.80, 0.88,
@@ -3742,20 +3754,22 @@ class _IncensePainter extends CustomPainter {
           : phase > 0.72 ? (1.0 - phase) / 0.28 : 0.55;
       final isTeal = i % 5 == 3;
       final baseCol = isTeal ? _teal : engCol;
-      p.color = baseCol.withValues(alpha: op * 0.52);
+      p.color = baseCol.withValues(alpha: op * 0.52 * dim);
       final r = (i % 3 == 0) ? 2.0 : 1.4;
       canvas.drawCircle(Offset(dx, dy), r, p);
     }
   }
   @override bool shouldRepaint(_IncensePainter o) =>
-      o.t != t || o.engCol != engCol;
+      o.t != t || o.engCol != engCol || o.dim != dim;
 }
 
 class _GeoPainter extends CustomPainter {
+  final double dim;  // S190: 1.0 normal, lower while processing
+  const _GeoPainter({this.dim = 1.0});
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()
-      ..color = const Color(0xFFC8A048).withValues(alpha: 0.07)
+      ..color = const Color(0xFFC8A048).withValues(alpha: 0.07 * dim)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
     const cell = 120.0;
@@ -3769,6 +3783,8 @@ class _GeoPainter extends CustomPainter {
       }
     }
   }
+  @override
+  bool shouldRepaint(_GeoPainter o) => o.dim != dim;
   void _star8(Canvas canvas, Offset c, double r, Paint p) {
     final path = Path();
     for (int i = 0; i < 8; i++) {

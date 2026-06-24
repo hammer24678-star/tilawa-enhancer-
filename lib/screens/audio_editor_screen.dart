@@ -162,6 +162,16 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     HapticFeedback.mediumImpact();
     setState(() { _busy = true; _pct = 0.05; _outPath = null; });
     try {
+      // S190: runProotCmd assumes the alpine-318 rootfs already exists.
+      // If local-engine setup was never completed (or got wiped), proot's
+      // -r path is missing and ffmpeg dies with an opaque
+      // "can't sanitize binding ... No such file or directory" crash.
+      // Check first and fail with a clear, actionable message instead.
+      final setupOk = await _ch.invokeMethod<bool>('isSetupComplete') ?? false;
+      if (!setupOk) {
+        throw Exception(
+            'يجب إكمال تجهيز المحرك المحلي أولاً من الإعدادات قبل استخدام محرر الصوت');
+      }
       final dir = await getExternalStorageDirectory() ??
                   await getApplicationDocumentsDirectory();
       final base = _fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
