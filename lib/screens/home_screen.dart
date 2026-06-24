@@ -110,6 +110,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   static const _wakeCh = MethodChannel('com.tilawa.tilawa_enhancer/wake'); // S63
   bool   _localMode  = false;  // S65: run via proot (offline)
+  bool   _engineTintEnabled = true;  // S188-B: engine-color background tint intensity toggle
   bool   _localReady = false;  // S65: setup confirmed complete
   bool   _aggressive = false;  // S173: safaa standard / aggressive mode
   String _localMsg   = '';     // S65: last line from engine stdout
@@ -216,7 +217,10 @@ class _HomeScreenState extends State<HomeScreen>
         vsync: this, duration: const Duration(seconds: 6))
       ..repeat();
     _checkServer();
-    SharedPreferences.getInstance().then((p){if(mounted)setState(()=>_localMode=p.getBool("local_mode")??false);});
+    SharedPreferences.getInstance().then((p){if(mounted)setState((){
+      _localMode=p.getBool("local_mode")??false;
+      _engineTintEnabled=p.getBool("engine_tint_enabled")??true; // S188-B
+    });});
     SharedPreferences.getInstance().then((p){if(mounted)setState(()=>_aggressive=p.getBool("aggressive_mode")??false);});  // S174-B4
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
@@ -1049,10 +1053,12 @@ class _HomeScreenState extends State<HomeScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            // S54-BG-GRADIENT: tinted by selected engine
+            // S54-BG-GRADIENT: tinted by selected engine — S188-B: punchier + toggleable
             colors: dark
-              ? [Color.lerp(const Color(0xFF020D0C), _engineColor, 0.055)!,
-                 Color.lerp(const Color(0xFF020D0C), _engineColor, 0.028)!]
+              ? (_engineTintEnabled
+                  ? [Color.lerp(const Color(0xFF020D0C), _engineColor, 0.16)!,
+                     Color.lerp(const Color(0xFF020D0C), _engineColor, 0.085)!]
+                  : [const Color(0xFF020D0C), const Color(0xFF050F0E)])
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         // S29: Sacred Cosmos painters Stack
         child: Stack(children: [
@@ -1121,6 +1127,12 @@ class _HomeScreenState extends State<HomeScreen>
                         'assets/images/logo.png',
                         fit: BoxFit.cover))),
                     const SizedBox(width: 10),
+                    const Text('محسِّن ',
+                      style: TextStyle(
+                        color: Color(0xFFE2CFA0),
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5)),
                     ShaderMask(
                       shaderCallback: (b) => const LinearGradient(
                         colors: [Color(0xFFD4AF37), Color(0xFFF0CF60),
@@ -1132,18 +1144,13 @@ class _HomeScreenState extends State<HomeScreen>
                           fontSize: 19,
                           fontWeight: FontWeight.w300,
                           letterSpacing: 0.3))),
-                    const Text('محسِّن ',
-                      style: TextStyle(
-                        color: Color(0xFFE2CFA0),
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5)),
                   ])),
             ),
             SliverToBoxAdapter(child: _header(s)),
             if (!_localMode) // S147: hide server banner in local mode
               SliverToBoxAdapter(child: _serverBanner(s)),
             SliverToBoxAdapter(child: _localModeToggle(s)), // S65
+            SliverToBoxAdapter(child: _engineTintToggle(s)), // S188-B
             if (_localMode && _localReady && _engine == 'v11.0')
               SliverToBoxAdapter(child: _aggressiveModeToggle(s)), // S173
             SliverToBoxAdapter(child: _geoSep(s.ar ? 'اختر المحرك' : 'Engine')),
@@ -1616,6 +1623,50 @@ class _HomeScreenState extends State<HomeScreen>
                   }
                 });
               }
+            },
+            activeColor: gold,
+            inactiveThumbColor: textB.withValues(alpha: 0.5),
+            inactiveTrackColor: const Color(0xFF1A2733)),
+        ]),
+      ),
+    );
+  }
+
+  // S188-B: engine-color background tint intensity toggle
+  Widget _engineTintToggle(S s) {
+    const gold  = Color(0xFFC8A048);
+    const textB = Color(0xFF8AACBA);
+    const jade  = Color(0xFF0D2B22);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _engineTintEnabled
+            ? jade.withValues(alpha: 0.5)
+            : const Color(0xFF0A0E12).withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _engineTintEnabled
+              ? gold.withValues(alpha: 0.3)
+              : const Color(0xFF1A2733),
+            width: 1.0)),
+        child: Row(children: [
+          Icon(Icons.palette_outlined,
+            color: _engineTintEnabled ? gold : textB, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Text(
+            s.ar ? 'تظليل الخلفية بلون المحرك' : 'Engine-color background tint',
+            style: TextStyle(
+              color: _engineTintEnabled ? gold : textB,
+              fontSize: 12, fontWeight: FontWeight.w700))),
+          Switch(
+            value: _engineTintEnabled,
+            onChanged: (v) {
+              setState(() => _engineTintEnabled = v);
+              SharedPreferences.getInstance()
+                .then((p) => p.setBool("engine_tint_enabled", v)); // S188-B
             },
             activeColor: gold,
             inactiveThumbColor: textB.withValues(alpha: 0.5),
