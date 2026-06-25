@@ -2,7 +2,7 @@
 // AI enhancement tools — "last resort only" warning + links
 
 import 'package:flutter/material.dart';
-import '../providers/lang_provider.dart'; // S196-BUG-I
+import '../state/lang_provider.dart'; // S196-BUG-I (S198-BUG-1: fixed path)
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 

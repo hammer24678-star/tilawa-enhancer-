@@ -1,6 +1,7 @@
 // audio_editor_screen.dart — S160: Full AudioLab-style editor
 // File pick → Waveform → Trim → EQ → Effects → Export via ffmpeg
 
+import 'dart:async';  // S198-BUG-2: needed for StreamSubscription (S197-BUG-B)
 import 'dart:math' show pi, sin, cos, pow, Random;  // S197-BUG-A: pow for pitch
 import 'dart:io';
 import 'package:flutter/material.dart';
