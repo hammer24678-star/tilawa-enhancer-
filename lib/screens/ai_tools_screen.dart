@@ -2,6 +2,7 @@
 // AI enhancement tools — "last resort only" warning + links
 
 import 'package:flutter/material.dart';
+import '../providers/lang_provider.dart'; // S196-BUG-I
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -57,7 +58,8 @@ class AiToolsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext ctx) => Directionality(
-    textDirection: TextDirection.rtl,
+    // S196-BUG-I: derive direction from app language (not hardcoded RTL)
+    textDirection: LangProvider.of(ctx).value ? TextDirection.rtl : TextDirection.ltr,
     child: Scaffold(
       backgroundColor: _bg,
       body: SafeArea(child: Column(children: [

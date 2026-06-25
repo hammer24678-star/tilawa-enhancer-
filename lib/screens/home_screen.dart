@@ -58,8 +58,11 @@ class _HomeScreenState extends State<HomeScreen>
   File?   _abOutputFile; // S144: cacheDir path for A/B — unaffected by _reDownload()
   // S104: A/B comparison player
   final AudioPlayer _abPlayer  = AudioPlayer();
-  bool _abListenersSet = false;
-  bool _abEverPlayed   = false; // S140: guard resume() on unloaded player
+  // S195-BUG6: store subscriptions; register once in initState, cancel in dispose
+  StreamSubscription<Duration>? _abDurSub;
+  StreamSubscription<Duration>? _abPosSub;
+  StreamSubscription<void>?     _abDoneSub;
+  bool _abEverPlayed   = false; // S140
   bool   _abPlaying   = false;
   bool   _abIsB       = true;   // true=enhanced, false=original
   double _abPos       = 0.0;
@@ -181,7 +184,17 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // S56: lifecycle observer
+    WidgetsBinding.instance.addObserver(this); // S56
+    // S195-BUG6: register AB listeners once here
+    _abDurSub  = _abPlayer.onDurationChanged.listen((d) {
+      if (mounted) setState(() { _abDur = d.inMilliseconds.toDouble().clamp(1, 1e9); });
+    });
+    _abPosSub  = _abPlayer.onPositionChanged.listen((p) {
+      if (mounted) setState(() { _abPos = p.inMilliseconds.toDouble(); });
+    });
+    _abDoneSub = _abPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() { _abPlaying = false; _abPos = 0; });
+    });
     _notif = FlutterLocalNotificationsPlugin();
     _notif.initialize(const InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
@@ -262,6 +275,7 @@ class _HomeScreenState extends State<HomeScreen>
     _audioBarsCtrl.dispose();
     _shimmerSweep.dispose();
     _scoreCtrl.dispose();
+    _abDurSub?.cancel(); _abPosSub?.cancel(); _abDoneSub?.cancel();  // S195-BUG6 (S196-BUG-A: dedup)
     _abPlayer.dispose();
     _glowCtrl.dispose();
     super.dispose();
@@ -672,18 +686,7 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() { _abIsB = !_abIsB; _abPos = 0; _abDur = 1.0; }); // S138: reset dur
     final src = _abIsB ? (_abOutputFile ?? _output) : _file; // S144: use cacheDir path — content:// fails DeviceFileSource
     if (src == null) return;
-    if (!_abListenersSet) { // S138: set listeners before first play
-      _abListenersSet = true;
-      _abPlayer.onDurationChanged.listen((d) {
-        if (mounted) setState(() { _abDur = d.inMilliseconds.toDouble().clamp(1, 1e9); });
-      });
-      _abPlayer.onPositionChanged.listen((p) {
-        if (mounted) setState(() { _abPos = p.inMilliseconds.toDouble(); });
-      });
-      _abPlayer.onPlayerComplete.listen((_) {
-        if (mounted) setState(() { _abPlaying = false; _abPos = 0; });
-      });
-    }
+    // S195-BUG6: listeners in initState
     await _abPlayer.stop();
     await _abPlayer.play(DeviceFileSource(src.path));
     _abEverPlayed = true; // S140
@@ -692,18 +695,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _abTogglePlay() async {
-    if (!_abListenersSet) {
-      _abListenersSet = true;
-      _abPlayer.onDurationChanged.listen((d) {
-        if (mounted) setState(() { _abDur = d.inMilliseconds.toDouble().clamp(1, 1e9); });
-      });
-      _abPlayer.onPositionChanged.listen((p) {
-        if (mounted) setState(() { _abPos = p.inMilliseconds.toDouble(); });
-      });
-      _abPlayer.onPlayerComplete.listen((_) {
-        if (mounted) setState(() { _abPlaying = false; _abPos = 0; });
-      });
-    }
+    // S195-BUG6: listeners in initState
     if (_abPlaying) {
       await _abPlayer.pause();
       if (!mounted) return; // S189

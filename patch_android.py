@@ -328,7 +328,7 @@ MAIN_ACTIVITY_KT = (
 '                    _wl = pm.newWakeLock(\n'
 '                        android.os.PowerManager.PARTIAL_WAKE_LOCK,\n'
 '                        "tilawa:processing"\n'
-'                    ).also { it.acquire(10 * 60 * 1000L) }\n'
+'                    ).also { it.acquire(90 * 60 * 1000L) }  // S195-BUG4: match engine 90-min timeout\n'
 '                    // S191: also force the screen to stay on, not just the CPU\n'
 '                    runOnUiThread { window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }\n'
 '                    result.success(null)\n'
@@ -596,9 +596,13 @@ class LocalEngineRunner(
 
         }
         // S124: detect Python version conflict — wipe if wrong version
-        val py312lib = File(alpineDir, "usr/lib/libpython3.12.so.1.0")
-        val py311lib = File(alpineDir, "usr/lib/python3.11")
-        if (py312lib.exists() && !py311lib.exists()) {
+        // S196-BUG-D: catch any non-3.11 libpython (3.12, 3.13, …)
+        val py311lib  = File(alpineDir, "usr/lib/python3.11")
+        val pyLibDir  = File(alpineDir, "usr/lib")
+        val wrongPyLib = pyLibDir.listFiles { f ->
+            f.name.matches(Regex("libpython3\\.(1[2-9]|[2-9]\\d*)\\.so.*"))
+        }?.isNotEmpty() == true
+        if (wrongPyLib && !py311lib.exists()) {
             progress(11, "Fixing Python version conflict…")
             alpineDir.deleteRecursively()
             alpineDir.mkdirs()
@@ -647,10 +651,13 @@ class LocalEngineRunner(
         fun numpyWorks(): Boolean {
             // S194-E: check system paths first — numpy/scipy may be bundled
             // via `apk add` in python-env.tar.gz, no pip needed.
+            // S196-BUG-B: also check Alpine dist-packages (system apk path)
             val sysNpOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-                File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
+                File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
+                File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
             val sysSpOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
-                File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
+                File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists() ||
+                File(alpineDir, "usr/lib/python3/dist-packages/scipy").exists()
             if (sysNpOk && sysSpOk) { numpyVerifiedMarker.writeText("ok"); return true }
             if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) return false
             val probe = runProot(listOf("/usr/bin/python3", "-c", "import numpy, scipy; print('ok')"), timeoutMin=2)
@@ -765,6 +772,7 @@ class LocalEngineRunner(
                 "v11.0" to "engine_safaa_v4.py",  // S172 // S149
                 "v11.1" to "engine_itiqan_v6_official.py",
                 "v11.2" to "engine_isteidad_v21.py",
+                "v11.3" to "engine_ihya_v3.py",  // S196-BUG-F: الإحياء local
                 // v10.0-v7.0 are server-only — no local engine files // S156
             )[engineId] ?: "engine_safaa_v4.py"  // S172b
 
@@ -967,10 +975,12 @@ class LocalEngineRunner(
             "-r", alpineDir.absolutePath,
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
                         "-w", "/",
-            "--kill-on-exit") + args +
-            if (File(alpineDir, "etc/resolv.conf").exists())
+            // S196-BUG-G: resolv.conf bind flag must precede the program args
+            "--kill-on-exit") +
+            (if (File(alpineDir, "etc/resolv.conf").exists())
                 listOf("-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf")
-            else emptyList()
+            else emptyList()) +
+            args
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -1084,7 +1094,7 @@ class LocalEngineRunner(
         enginesDir.mkdirs()
         listOf("engine_safaa_v4.py","engine_safaa_v3_fixed.py","engine_itiqan_v6_official.py", // S179: v4 is what runEngine() actually invokes (S172) — v3_fixed was never replaced here, so /engines/engine_safaa_v4.py never existed on disk (rc=2)
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","ihyaa_ve.py").forEach { name ->  // S156: v7-v10 are server-only
+               "noor_v5.py","engine_ihya_v3.py").forEach { name ->  // S156 / S196-BUG-E
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88
             try { context.assets.open("flutter_assets/assets/engines/$name").use { inp ->
