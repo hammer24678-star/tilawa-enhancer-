@@ -600,7 +600,7 @@ class LocalEngineRunner(
         val py311lib  = File(alpineDir, "usr/lib/python3.11")
         val pyLibDir  = File(alpineDir, "usr/lib")
         val wrongPyLib = pyLibDir.listFiles { f ->
-            f.name.matches(Regex("libpython3\\.(1[2-9]|[2-9]\\d*)\\.so.*"))
+            f.name.matches(Regex("libpython3\\\\.(1[2-9]|[2-9]\\\\d*)\\\\.so.*"))  // S200: template escape fix
         }?.isNotEmpty() == true
         if (wrongPyLib && !py311lib.exists()) {
             progress(11, "Fixing Python version conflict…")
