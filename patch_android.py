@@ -772,7 +772,7 @@ class LocalEngineRunner(
                 "v11.0" to "engine_safaa_v4.py",  // S172 // S149
                 "v11.1" to "engine_itiqan_v6_official.py",
                 "v11.2" to "engine_isteidad_v21.py",
-                "v11.3" to "engine_ihya_v3.py",  // S196-BUG-F: الإحياء local
+                "v11.3" to "ihyaa_ve.py",  // S199-BUG-5: real bundled filename, not engine_ihya_v3.py
                 // v10.0-v7.0 are server-only — no local engine files // S156
             )[engineId] ?: "engine_safaa_v4.py"  // S172b
 
@@ -1094,7 +1094,7 @@ class LocalEngineRunner(
         enginesDir.mkdirs()
         listOf("engine_safaa_v4.py","engine_safaa_v3_fixed.py","engine_itiqan_v6_official.py", // S179: v4 is what runEngine() actually invokes (S172) — v3_fixed was never replaced here, so /engines/engine_safaa_v4.py never existed on disk (rc=2)
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","engine_ihya_v3.py").forEach { name ->  // S156 / S196-BUG-E
+               "noor_v5.py","ihyaa_ve.py").forEach { name ->  // S156 / S199-BUG-5: real filename
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88
             try { context.assets.open("flutter_assets/assets/engines/$name").use { inp ->

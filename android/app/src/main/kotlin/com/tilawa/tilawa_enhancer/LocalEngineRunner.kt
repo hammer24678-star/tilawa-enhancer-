@@ -359,16 +359,16 @@ class LocalEngineRunner(
         withContext(Dispatchers.IO) {
         try {
             val script = mapOf(
-                "v11.0" to "engine_tajalli_v1.py",
-                "v11.1" to "true_engine_itiqan_v2_fixed.py",
+                "v11.0" to "engine_safaa_v4.py",  // S199-BUG-2: tajalli file never existed
+                "v11.1" to "engine_itiqan_v6_official.py",  // S199-BUG-3: ditto
                 "v11.2" to "engine_isteidad_v21.py",
-                "v11.3" to "engine_ihya_v3.py",  // S195-BUG8: الإحياء local
+                "v11.3" to "ihyaa_ve.py",  // S199-BUG-4: real bundled filename
                 "v10.0" to "engine_v100.py",
                 "v9.0"  to "engine_v90.py",
                 "v8.5"  to "engine_v85.py",
                 "v8.0"  to "engine_v80.py",
                 "v7.0"  to "engine_v70.py",
-            )[engineId] ?: "engine_tajalli_v1.py"
+            )[engineId] ?: "engine_safaa_v4.py"  // S199: match BUG-2 fix
 
             // v11.0 (tajalli) outputs WAV; v11.1/v11.2 output MP3
             val outExt = if (engineId == "v11.0") "wav" else "mp3"
@@ -632,9 +632,9 @@ class LocalEngineRunner(
 
     private fun extractEngines() {
         enginesDir.mkdirs()
-        listOf("engine_tajalli_v1.py","true_engine_itiqan_v2_fixed.py",
+        listOf("engine_safaa_v4.py","engine_itiqan_v6_official.py",  // S199-BUG-1/2/3: fixed names + missing comma
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","engine_ihya_v3.py"  // S195-BUG8,"engine_v100.py","engine_v90.py",
+               "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",  // S199-BUG-4: ihya real filename
                "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88
