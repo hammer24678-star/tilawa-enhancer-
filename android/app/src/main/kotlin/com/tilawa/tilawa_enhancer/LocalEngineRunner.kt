@@ -171,7 +171,7 @@ class LocalEngineRunner(
             } catch (_: Exception) {}
             if (!alpineOk) {
                 progress(12, "Downloading Alpine Linux (~4MB)…")
-                download("https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz", tmp, "Alpine rootfs", 12, 32)
+                download("https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/${archStr}/alpine-minirootfs-3.21.3-${archStr}.tar.gz", tmp, "Alpine rootfs", 12, 32)  // S195-BUG5
             }
             extractTarGz(tmp, alpineDir)
             tmp.delete()
@@ -180,10 +180,13 @@ class LocalEngineRunner(
             for (d in listOf("proc","dev","sys")) File(alpineDir, d).mkdirs()
 
         }
-        // S124: detect Python version conflict — wipe if wrong version
-        val py312lib = File(alpineDir, "usr/lib/libpython3.12.so.1.0")
-        val py311lib = File(alpineDir, "usr/lib/python3.11")
-        if (py312lib.exists() && !py311lib.exists()) {
+        // S195-BUG7: detect any non-3.11 Python so (3.12, 3.13, …)
+        val py311lib  = File(alpineDir, "usr/lib/python3.11")
+        val pyLibDir  = File(alpineDir, "usr/lib")
+        val wrongPyLib = pyLibDir.listFiles { f ->
+            f.name.matches(Regex("libpython3\\.(1[2-9]|[2-9]\\d*)\\.so.*"))
+        }?.isNotEmpty() == true
+        if (wrongPyLib && !py311lib.exists()) {
             progress(11, "Fixing Python version conflict…")
             alpineDir.deleteRecursively()
             alpineDir.mkdirs()
@@ -228,12 +231,15 @@ class LocalEngineRunner(
         val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
         fun numpyWorks(): Boolean {
             // 1. System numpy installed via `apk add` in python-env.tar.gz
+            // S195-BUG10: add dist-packages (Alpine system path) to numpyWorks() check
             val sysNumpyOk =
                 File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-                File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
+                File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
+                File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
             val sysScipyOk =
                 File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
-                File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
+                File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists() ||
+                File(alpineDir, "usr/lib/python3/dist-packages/scipy").exists()
             if (sysNumpyOk && sysScipyOk) {
                 numpyVerifiedMarker.writeText("ok"); return true
             }
@@ -356,6 +362,7 @@ class LocalEngineRunner(
                 "v11.0" to "engine_tajalli_v1.py",
                 "v11.1" to "true_engine_itiqan_v2_fixed.py",
                 "v11.2" to "engine_isteidad_v21.py",
+                "v11.3" to "engine_ihya_v3.py",  // S195-BUG8: الإحياء local
                 "v10.0" to "engine_v100.py",
                 "v9.0"  to "engine_v90.py",
                 "v8.5"  to "engine_v85.py",
@@ -508,10 +515,12 @@ class LocalEngineRunner(
             "-r", alpineDir.absolutePath,
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
                         "-w", "/",
-            "--kill-on-exit") + args +
-            if (File(alpineDir, "etc/resolv.conf").exists())
+            // S195-BUG9: resolv.conf bind must precede args (proot ignores flags after cmd)
+            "--kill-on-exit") +
+            (if (File(alpineDir, "etc/resolv.conf").exists())
                 listOf("-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf")
-            else emptyList()
+            else emptyList()) +
+            args
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -625,7 +634,7 @@ class LocalEngineRunner(
         enginesDir.mkdirs()
         listOf("engine_tajalli_v1.py","true_engine_itiqan_v2_fixed.py",
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",
+               "noor_v5.py","engine_ihya_v3.py"  // S195-BUG8,"engine_v100.py","engine_v90.py",
                "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88

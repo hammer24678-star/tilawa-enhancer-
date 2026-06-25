@@ -1,7 +1,7 @@
 // audio_editor_screen.dart — S160: Full AudioLab-style editor
 // File pick → Waveform → Trim → EQ → Effects → Export via ffmpeg
 
-import 'dart:math' show pi, sin, cos, Random;
+import 'dart:math' show pi, sin, cos, pow, Random;  // S197-BUG-A: pow for pitch
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -46,6 +46,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   // Player
   final _player = AudioPlayer();
+  // S197-BUG-B: store subscriptions so dispose() can cancel them
+  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<Duration>?    _posSub;
+  StreamSubscription<Duration>?    _durSub;
   bool   _playing = false;
   double _positionSec = 0;
 
@@ -92,16 +96,21 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         duration: const Duration(seconds: 3))..repeat();
     _glowCtrl = AnimationController(vsync: this,
         duration: const Duration(seconds: 2))..repeat(reverse: true);
-    _player.onPlayerStateChanged.listen((s) {
+    // S197-BUG-B+C: store subscriptions; also listen for duration
+    _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (mounted) setState(() => _playing = s == PlayerState.playing);
     });
-    _player.onPositionChanged.listen((d) {
+    _posSub = _player.onPositionChanged.listen((d) {
       if (mounted) setState(() => _positionSec = d.inMilliseconds / 1000.0);
+    });
+    _durSub = _player.onDurationChanged.listen((d) {  // S197-BUG-C
+      if (mounted) setState(() => _durationSec = d.inMilliseconds / 1000.0);
     });
   }
 
   @override
   void dispose() {
+    _stateSub?.cancel(); _posSub?.cancel(); _durSub?.cancel();  // S197-BUG-B
     _player.dispose();
     _waveCtrl.dispose();
     _glowCtrl.dispose();
@@ -123,6 +132,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   // ── File pick ────────────────────────────────────────────────────────────────
   Future<void> _pick() async {
+    if (_playing) await _player.stop();  // S197-BUG-H: stop before changing source
     final r = await FilePicker.platform
         .pickFiles(type: FileType.audio, allowMultiple: false);
     if (r == null || r.files.isEmpty || r.files.first.path == null) return;
@@ -133,10 +143,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _durationSec = 0; _positionSec = 0;
       _trimStart = 0; _trimEnd = 1; _outPath = null;
     });
+    // S197-BUG-C: duration arrives via _durSub (onDurationChanged) — no getDuration() needed
     await _player.setSource(DeviceFileSource(f.path!));
-    final dur = await _player.getDuration() ?? Duration.zero;
-    if (mounted && dur != null)
-      setState(() => _durationSec = dur.inMilliseconds / 1000.0);
   }
 
   // ── Playback ─────────────────────────────────────────────────────────────────
@@ -212,6 +220,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       }
       if (_echo   > 0) af.add('aecho=0.8:${(_echo/100).toStringAsFixed(2)}:500:0.5');
       if (_reverb > 0) af.add('aecho=0.8:${(_reverb/100).toStringAsFixed(2)}:80:0.3');
+      // S197-BUG-A: apply pitch shift (asetrate) + tempo compensation before user tempo
+      if (_pitch != 0) {
+        final pitchRate = (pow(2.0, _pitch / 12.0) as double);
+        final pitchCompensate = (1.0 / pitchRate).clamp(0.5, 2.0).toStringAsFixed(6);
+        af.add('asetrate=44100*${pitchRate.toStringAsFixed(6)},aresample=44100,atempo=$pitchCompensate');
+      }
       if (_tempo  != 1.0)
         af.add('atempo=${_tempo.clamp(0.5, 2.0).toStringAsFixed(2)}');
       if (_vol    != 1.0) af.add('volume=${_vol.toStringAsFixed(2)}');
@@ -892,7 +906,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       // Summary
       _card_(ar ? 'ملخص' : 'Summary', Icons.summarize_rounded, [
         _row(ar ? 'المقطع المحدد' : 'Selected Range',
-          '${_fmtTime(_trimStart * _durationSec)} ← '
+          // S197-BUG-F: arrow direction follows locale
+          '${_fmtTime(_trimStart * _durationSec)} ${ar ? '←' : '→'} '
           '${_fmtTime(_trimEnd * _durationSec)}'),
         _row(ar ? 'المدة' : 'Duration',
           _fmtTime((_trimEnd - _trimStart) * _durationSec)),
@@ -1052,7 +1067,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     GestureDetector(
       onTap: () => setState(() { for(int i=0;i<5;i++) _eq[i]=vals[i].toDouble(); }),
       child: Container(
-        margin: const EdgeInsets.only(left: 6),
+        margin: const EdgeInsetsDirectional.only(start: 6),  // S197-BUG-G
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: _card, borderRadius: BorderRadius.circular(8),
@@ -1065,7 +1080,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       child: Row(children: [
         Text(k, style: const TextStyle(color: _textB, fontSize: 12)),
         const Spacer(),
-        Flexible(child: Text(v, textAlign: TextAlign.left,
+        Flexible(child: Text(v, textAlign: TextAlign.start,  // S197-BUG-E
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: _textA, fontSize: 12,
                 fontWeight: FontWeight.w600))),
@@ -1183,5 +1198,12 @@ class _EqPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_EqPainter o) => o.values != values;
+  // S197-BUG-D: compare element-by-element, not list references
+  bool shouldRepaint(_EqPainter o) {
+    if (o.values.length != values.length) return true;
+    for (int i = 0; i < values.length; i++) {
+      if (o.values[i] != values[i]) return true;
+    }
+    return false;
+  }
 }
