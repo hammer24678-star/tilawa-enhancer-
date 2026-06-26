@@ -186,7 +186,13 @@ class LocalEngineRunner(
         val wrongPyLib = pyLibDir.listFiles { f ->
             f.name.matches(Regex("libpython3\\.(1[2-9]|[2-9]\\d*)\\.so.*"))  // S200: fix wrongPyLib escape seqs
         }?.isNotEmpty() == true
-        if (wrongPyLib && !py311lib.exists()) {
+        // S201-BUG1: only wipe if numpy is NOT available for the current Python.
+        // The bundle ships Python 3.12; wiping destroys a working installation.
+        val sysNumpyOk =
+            File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
+        if (wrongPyLib && !py311lib.exists() && !sysNumpyOk) {
             progress(11, "Fixing Python version conflict…")
             alpineDir.deleteRecursively()
             alpineDir.mkdirs()
@@ -435,7 +441,9 @@ class LocalEngineRunner(
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages:/tilawa_numpy" // S141: tilawa_numpy path
                 environment()["TERM"] = "xterm"
-                environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
+                // S201-BUG2: /usr/lib first so numpy/.so deps (libopenblas etc.)
+                // resolve inside Alpine proot; append dataDir for proot-loader.
+                environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
                 val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
