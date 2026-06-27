@@ -846,7 +846,8 @@ class LocalEngineRunner(
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages:/tilawa_numpy" // S141: tilawa_numpy path
                 environment()["TERM"] = "xterm"
-                environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
+                // S202: /usr/lib first for numpy .so deps inside Alpine proot
+                environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
                 val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
@@ -956,7 +957,8 @@ class LocalEngineRunner(
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
             environment()["HOME"] = "/root"; environment()["TERM"] = "xterm"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
+            // S202: /usr/lib first for numpy .so deps inside Alpine proot
+            environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
             environment()["PROOT_TMP_DIR"] = File(dataDir, "proot-tmp").also { it.mkdirs() }.absolutePath
             if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
         }.start()
@@ -985,7 +987,8 @@ class LocalEngineRunner(
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             environment()["TERM"] = "xterm"
-            environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
+            // S202: /usr/lib first for numpy .so deps inside Alpine proot
+            environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
             val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
@@ -1122,10 +1125,18 @@ def _patch_local_engine():
         return
 
     # 1. Write LocalEngineRunner.kt
+    # S202: only write on a true fresh checkout. This file accumulates hand-
+    # applied fixes (S171-S201, S202) directly on disk between patch-script runs;
+    # unconditionally overwriting it from this (much older) embedded template
+    # silently reverted all of them on every `python3 patch_android.py` run,
+    # including the one build.yml runs on every CI build.
     runner_path = _os65.path.join(kt_dir, 'LocalEngineRunner.kt')
-    with open(runner_path, 'w') as f:
-        f.write(_LOCAL_RUNNER_KT)
-    print('  OK  S65: LocalEngineRunner.kt written')
+    if _os65.path.exists(runner_path):
+        print('  --  S65: LocalEngineRunner.kt already exists — skipping template write (S202)')
+    else:
+        with open(runner_path, 'w') as f:
+            f.write(_LOCAL_RUNNER_KT)
+        print('  OK  S65: LocalEngineRunner.kt written')
 
     # 2. Patch MainActivity.kt — add registration after super.configureFlutterEngine
     main_path = _os65.path.join(kt_dir, 'MainActivity.kt')

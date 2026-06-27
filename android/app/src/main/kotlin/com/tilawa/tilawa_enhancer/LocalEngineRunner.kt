@@ -56,6 +56,28 @@ class LocalEngineRunner(
                     result.success(null)
                 }
                 "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S193
+                "runProotCmd" -> {  // S202: was missing entirely — every audio-editor
+                    // export (and any LocalEngineService.runProotCmd caller) fell through
+                    // to notImplemented() below and threw a MissingPluginException in Dart.
+                    val a       = call.arguments as Map<*, *>
+                    val cmd     = (a["cmd"] as? String) ?: ""
+                    val inFile  = (a["inputPath"] as? String) ?: ""
+                    val outFile = (a["outputPath"] as? String) ?: ""
+                    val tmMin   = (a["timeoutMin"] as? Int) ?: 10
+                    scope.launch {
+                        val extra = mutableListOf<String>()
+                        listOf(inFile, outFile).forEach { p ->
+                            if (p.isEmpty()) return@forEach
+                            val dir = File(p).parent ?: return@forEach
+                            extra += listOf("-b", "$dir:$dir")
+                        }
+                        extra += listOf("-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}")
+                        context.getExternalFilesDir(null)?.absolutePath?.let { ed ->
+                            extra += listOf("-b", "$ed:$ed") }
+                        val (rc, out) = runProotWithBinds(listOf("/bin/sh", "-c", cmd), extra, tmMin)
+                        ui { result.success(mapOf("rc" to rc, "out" to out)) }
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -533,7 +555,12 @@ class LocalEngineRunner(
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             environment()["TERM"] = "xterm"
-            environment()["LD_LIBRARY_PATH"] = dataDir.absolutePath
+            // S202: completes S201-BUG2 — this is a second, differently-indented
+            // copy of the same bug (runEngine()'s ProcessBuilder was already fixed,
+            // this one inside runProot() — used by numpyWorks()'s real-import probe
+            // and the site-packages path probe — was not). /usr/lib first so the
+            // probe can actually dlopen libopenblas/libgfortran inside Alpine proot.
+            environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
             val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
@@ -541,6 +568,41 @@ class LocalEngineRunner(
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
         val code = try {
             if (!proc.waitFor(timeoutMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
+            else proc.exitValue()
+        } catch (_: Exception) { proc.destroyForcibly(); -1 }
+        return Pair(code, output)
+    }
+
+    // S202: like runProot() but accepts caller-supplied extra bind mounts — used
+    // by the "runProotCmd" channel case for the audio editor's ffmpeg trim/EQ/
+    // export, whose input/output files live outside alpineDir/cacheDir.
+    private fun runProotWithBinds(args: List<String>, extra: List<String>, tmMin: Int = 10): Pair<Int, String> {
+        val cmd = mutableListOf(prootBin.absolutePath,
+            "--link2symlink",
+            "-0",
+            "-r", alpineDir.absolutePath,
+            "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys") +
+            extra +
+            listOf("-w", "/",
+            // S195-BUG9: resolv.conf bind must precede args (proot ignores flags after cmd)
+            "--kill-on-exit") +
+            (if (File(alpineDir, "etc/resolv.conf").exists())
+                listOf("-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf")
+            else emptyList()) +
+            args
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
+            environment()["HOME"] = "/root"
+            environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            environment()["TERM"] = "xterm"
+            // S202: same /usr/lib fix as runProot()/runEngine() (S201-BUG2)
+            environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
+            val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
+            environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
+        }.start()
+        val output = proc.inputStream.bufferedReader().readText().takeLast(800)
+        val code = try {
+            if (!proc.waitFor(tmMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
             else proc.exitValue()
         } catch (_: Exception) { proc.destroyForcibly(); -1 }
         return Pair(code, output)
