@@ -670,7 +670,7 @@ class LocalEngineRunner(
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
                 "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),
                 timeoutMin=20)
             if (!numpyWorks()) {
                 // S179: one clean retry — wipe whatever partial/broken state pip left behind
@@ -679,7 +679,7 @@ class LocalEngineRunner(
                 numpyTarget.mkdirs()
                 runProot(listOf("/bin/sh", "-c",
                     "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                    "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                    "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),
                     timeoutMin=20)
                 if (!numpyWorks()) {
                     throw IOException("numpy/scipy install failed — check internet connection and retry setup")

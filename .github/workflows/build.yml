@@ -54,6 +54,7 @@ jobs:
             /usr/bin/ffmpeg \
             /usr/lib/libavcodec.so.* /usr/lib/libavformat.so.* \
             /usr/lib/libavutil.so.* /usr/lib/libswresample.so.* \
+            /usr/lib/libavfilter.so.* /usr/lib/libswscale.so.* /usr/lib/libpostproc.so.* \
             /usr/lib/libopenblas.so.* /usr/lib/libgfortran.so.* \
             /usr/lib/libgomp.so.* \
             /usr/lib/lib$PY.so* \
