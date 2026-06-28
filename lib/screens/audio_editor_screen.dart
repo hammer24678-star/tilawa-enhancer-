@@ -1,10 +1,9 @@
-// audio_editor_screen.dart — S203: AudioLab-style full redesign
-// Trim · EQ · Effects · Export via ffmpeg (proot local engine)
-// Aesthetic: deep-red "lab" palette — mirrors AudioLab icon language
-//   (gradient flask/experiment vibe, vibrant coral-red accents)
+// audio_editor_screen.dart — S203b: AudioLab features, Sacred Cosmos theme
+// Trim · Split · 10-band EQ · Effects (Noise Reduce/Compress/Normalize/Reverse)
+// Merge · Set as Ringtone · Export via ffmpeg (proot local engine)
 
 import 'dart:async';
-import 'dart:math' show pi, sin, cos, pow, Random;
+import 'dart:math' show pi, sin, pow, Random;
 import 'dart:ui' as ui;
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -14,22 +13,21 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import '../state/lang_provider.dart';
 
-// ── AudioLab palette ──────────────────────────────────────────────────────────
-const _bg      = Color(0xFF0D0403);   // near-black, red-tinted
-const _surface = Color(0xFF1A0806);   // deep dark red surface
-const _card    = Color(0xFF251109);   // card background
-const _rim     = Color(0xFF3D160D);   // card border / rim
-const _red     = Color(0xFFFF3D1A);   // primary accent — AudioLab orange-red
-const _redDk   = Color(0xFF4D1206);   // dark red for fills
-const _coral   = Color(0xFFFF6B40);   // secondary coral highlight
-const _amber   = Color(0xFFFFAB40);   // warning / bitrate indicator
-const _textA   = Color(0xFFFFF0EC);   // primary text — warm white
-const _textB   = Color(0xFFBBA8A2);   // secondary text
-const _textDim = Color(0xFF5C3328);   // dim / placeholder text
-const _border  = Color(0xFF3D1A12);   // dividers
+// ── Sacred Cosmos palette (unchanged) ────────────────────────────────────────
+const _bg      = Color(0xFF020D17);
+const _surface = Color(0xFF0C1E28);
+const _card    = Color(0xFF0F2420);
+const _gold    = Color(0xFFD4AF37);
+const _goldDim = Color(0xFF3A2B08);
+const _teal    = Color(0xFF1DB898);
+const _tealDk  = Color(0xFF0A3D2A);
+const _red     = Color(0xFFD94040);
+const _textA   = Color(0xFFE2CFA0);
+const _textB   = Color(0xFF8AACBA);
+const _textDim = Color(0xFF3D5A65);
+const _border  = Color(0xFF1A2E20);
 
-// ─────────────────────────────────────────────────────────────────────────────
-enum _Tab { trim, eq, effects, export_ }
+enum _Tab { trim, eq, effects, merge, export_ }
 
 class AudioEditorScreen extends StatefulWidget {
   const AudioEditorScreen({super.key});
@@ -39,12 +37,10 @@ class AudioEditorScreen extends StatefulWidget {
 class _AudioEditorScreenState extends State<AudioEditorScreen>
     with TickerProviderStateMixin {
 
-  // File
   String? _filePath;
   String  _fileName = '';
   double  _durationSec = 0;
 
-  // Player
   final _player = AudioPlayer();
   StreamSubscription<PlayerState>? _stateSub;
   StreamSubscription<Duration>?    _posSub;
@@ -52,49 +48,58 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   bool   _playing = false;
   double _positionSec = 0;
 
-  // Trim (normalised 0-1)
   double _trimStart = 0;
   double _trimEnd   = 1;
 
-  // EQ (5 bands +/-12 dB)
-  final List<double> _eq = [0, 0, 0, 0, 0];
-  static const _bands = ['60Hz', '250Hz', '1kHz', '4kHz', '16kHz'];
-  static const _freqs = [60, 250, 1000, 4000, 16000];
+  // 10-band EQ  31/63/125/250/500/1k/2k/4k/8k/16k Hz
+  final List<double> _eq = List.filled(10, 0);
+  static const _bands = ['31','63','125','250','500','1k','2k','4k','8k','16k'];
+  static const _freqs = [31,63,125,250,500,1000,2000,4000,8000,16000];
 
-  // Effects
-  double _fadeIn  = 0;
-  double _fadeOut = 0;
-  double _pitch   = 0;
-  double _tempo   = 1.0;
-  double _echo    = 0;
-  double _reverb  = 0;
-  double _vol     = 1.0;
+  double _fadeIn    = 0;
+  double _fadeOut   = 0;
+  double _pitch     = 0;
+  double _tempo     = 1.0;
+  double _echo      = 0;
+  double _reverb    = 0;
+  double _vol       = 1.0;
+  double _stereoW   = 1.0;
+  bool   _normalize = false;
+  bool   _reverse   = false;
+  double _noiseReduc = 0;   // 0-100
+  bool   _compress  = false;
+  double _compThresh = -18.0;
+  double _compRatio  = 4.0;
+
+  // Merge
+  String? _mergePath;
+  String  _mergeName = '';
+  bool    _mergeAppend = true;
 
   // Export
   String _fmt      = 'MP3';
   int    _kbps     = 192;
+  bool   _asRingtone = false;
   bool   _busy     = false;
   double _pct      = 0;
   String? _outPath;
+  String  _busyLabel = '';
 
-  // UI
   _Tab _tab = _Tab.trim;
   late AnimationController _waveCtrl;
-  late AnimationController _pulseCtrl;
+  late AnimationController _glowCtrl;
   late List<double> _bars;
 
-  static const _ch =
-      MethodChannel('com.tilawa.tilawa_enhancer/local_engine');
+  static const _ch    = MethodChannel('com.tilawa.tilawa_enhancer/local_engine');
+  static const _media = MethodChannel('com.tilawa.tilawa_enhancer/media');
 
   @override
   void initState() {
     super.initState();
     final rng = Random(42);
     _bars = List.generate(80, (_) => 0.1 + rng.nextDouble() * 0.9);
-    _waveCtrl = AnimationController(vsync: this,
-        duration: const Duration(seconds: 3))..repeat();
-    _pulseCtrl = AnimationController(vsync: this,
-        duration: const Duration(seconds: 2))..repeat(reverse: true);
+    _waveCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
+    _glowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (mounted) setState(() => _playing = s == PlayerState.playing);
     });
@@ -109,52 +114,77 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   @override
   void dispose() {
     _stateSub?.cancel(); _posSub?.cancel(); _durSub?.cancel();
-    _player.dispose();
-    _waveCtrl.dispose();
-    _pulseCtrl.dispose();
+    _player.dispose(); _waveCtrl.dispose(); _glowCtrl.dispose();
     super.dispose();
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   String _fmtTime(double s) {
-    final m = s ~/ 60;
-    final ss = (s % 60).toStringAsFixed(1);
-    return '${m.toString().padLeft(2, '0')}:${ss.padLeft(4, '0')}';
+    final m = s ~/ 60; final ss = (s % 60).toStringAsFixed(1);
+    return '${m.toString().padLeft(2,'0')}:${ss.padLeft(4,'0')}';
   }
 
-  bool get _isDirty =>
-      _trimStart > 0 || _trimEnd < 1 ||
-      _eq.any((v) => v.abs() > 0.1) ||
-      _fadeIn > 0 || _fadeOut > 0 || _pitch != 0 ||
-      _tempo != 1.0 || _echo > 0 || _reverb > 0 || _vol != 1.0;
+  Future<bool> _checkSetup() async {
+    final ok = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
+    if (!ok && mounted) _snack('Please finish local engine setup in Settings first.', color: _red);
+    return ok;
+  }
 
-  // ── File pick ─────────────────────────────────────────────────────────────
+  Future<String> _safeInput(String path) async {
+    final tmp = await getTemporaryDirectory();
+    final ext = path.split('.').last;
+    final safe = File('${tmp.path}/tl_${DateTime.now().millisecondsSinceEpoch}.$ext');
+    await File(path).copy(safe.path); return safe.path;
+  }
+
+  Future<String> _outFile(String suffix, String ext) async {
+    final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
+    final base = _fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+    return '${dir.path}/tilawa_${base}_$suffix.$ext';
+  }
+
+  Future<Map?> _proot(String cmd, String inp, String out, {int timeout = 10}) =>
+    _ch.invokeMethod<Map>('runProotCmd', {
+      'cmd': cmd, 'inputPath': inp, 'outputPath': out, 'timeoutMin': timeout,
+    });
+
+  void _snack(String msg, {Color color = _gold}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: _card, behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: color, width: 0.7)),
+      content: Text(msg, style: TextStyle(color: color, fontSize: 11)),
+      duration: const Duration(seconds: 4)));
+  }
+
+  void _warnBusy() => _snack('Processing… please wait', color: _gold);
+
   Future<void> _pick() async {
     if (_playing) await _player.stop();
-    final r = await FilePicker.platform
-        .pickFiles(type: FileType.audio, allowMultiple: false);
+    final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: false);
     if (r == null || r.files.isEmpty || r.files.first.path == null) return;
     final f = r.files.first;
     if (!mounted) return;
     setState(() {
       _filePath = f.path; _fileName = f.name;
-      _durationSec = 0; _positionSec = 0;
-      _trimStart = 0; _trimEnd = 1; _outPath = null;
+      _durationSec = 0; _positionSec = 0; _trimStart = 0; _trimEnd = 1; _outPath = null;
     });
     await _player.setSource(DeviceFileSource(f.path!));
   }
 
-  // ── Playback ──────────────────────────────────────────────────────────────
+  Future<void> _pickMerge() async {
+    final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: false);
+    if (r == null || r.files.isEmpty || r.files.first.path == null) return;
+    if (!mounted) return;
+    setState(() { _mergePath = r.files.first.path; _mergeName = r.files.first.name; });
+  }
+
   Future<void> _togglePlay() async {
     if (_filePath == null) return;
     HapticFeedback.lightImpact();
-    if (_playing) {
-      await _player.pause();
-    } else {
-      await _player.seek(Duration(
-          milliseconds: (_trimStart * _durationSec * 1000).round()));
-      await _player.resume();
-    }
+    if (_playing) { await _player.pause(); return; }
+    await _player.seek(Duration(milliseconds: (_trimStart * _durationSec * 1000).round()));
+    await _player.resume();
   }
 
   Future<void> _stop() async {
@@ -162,118 +192,129 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
   }
 
-  // ── Export ────────────────────────────────────────────────────────────────
-  Future<void> _export() async {
+  // ── SPLIT ─────────────────────────────────────────────────────────────────
+  Future<void> _split() async {
     if (_filePath == null) return;
+    if (!await _checkSetup()) return;
     HapticFeedback.mediumImpact();
-    setState(() { _busy = true; _pct = 0.05; _outPath = null; });
-    final ar = LangProvider.strings(context).ar;
+    setState(() { _busy = true; _busyLabel = 'Splitting…'; _pct = 0.1; });
     try {
-      final setupOk = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
-      if (!setupOk) {
-        throw Exception(ar
-            ? 'يجب إكمال تجهيز المحرك المحلي أولاً من الإعدادات قبل استخدام محرر الصوت'
-            : 'Please finish setting up the local engine in Settings before using the audio editor.');
-      }
-      final dir = await getExternalStorageDirectory() ??
-                  await getApplicationDocumentsDirectory();
-      final base = _fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
-      final ext  = _fmt.toLowerCase();
-      final out  = '${dir.path}/tilawa_${base}_edited.$ext';
-
-      final tmpDir = await getTemporaryDirectory();
-      final safeInput = File(
-          '${tmpDir.path}/tilawa_edit_input_${DateTime.now().millisecondsSinceEpoch}.${_filePath!.split('.').last}');
-      await File(_filePath!).copy(safeInput.path);
-      final realInput = safeInput.path;
-
-      final ss  = (_trimStart * _durationSec).toStringAsFixed(3);
-      final dur = ((_trimEnd - _trimStart) * _durationSec).toStringAsFixed(3);
-
-      final af = <String>[];
-      if (_fadeIn  > 0) af.add('afade=t=in:d=${_fadeIn.toStringAsFixed(1)}');
-      if (_fadeOut > 0) {
-        final st = ((_trimEnd - _trimStart) * _durationSec - _fadeOut)
-            .clamp(0.0, double.infinity).toStringAsFixed(2);
-        af.add('afade=t=out:st=$st:d=${_fadeOut.toStringAsFixed(1)}');
-      }
-      for (int i = 0; i < 5; i++) {
-        if (_eq[i].abs() > 0.5)
-          af.add('equalizer=f=${_freqs[i]}:g=${_eq[i].toStringAsFixed(1)}');
-      }
-      if (_echo   > 0) af.add('aecho=0.8:${(_echo/100).toStringAsFixed(2)}:500:0.5');
-      if (_reverb > 0) af.add('aecho=0.8:${(_reverb/100).toStringAsFixed(2)}:80:0.3');
-      if (_pitch != 0) {
-        final pitchRate = (pow(2.0, _pitch / 12.0) as double);
-        final pitchCompensate = (1.0 / pitchRate).clamp(0.5, 2.0).toStringAsFixed(6);
-        af.add('asetrate=44100*${pitchRate.toStringAsFixed(6)},aresample=44100,atempo=$pitchCompensate');
-      }
-      if (_tempo  != 1.0)
-        af.add('atempo=${_tempo.clamp(0.5, 2.0).toStringAsFixed(2)}');
-      if (_vol    != 1.0) af.add('volume=${_vol.toStringAsFixed(2)}');
-
-      final afStr = af.isEmpty ? 'anull' : af.join(',');
-      final codec = _fmt == 'WAV' ? 'pcm_s16le'
-                  : _fmt == 'M4A' ? 'aac'
-                  : 'libmp3lame';
-      final bitrateFlag = _fmt == 'WAV' ? '' : '-b:a ${_kbps}k';
-      final cmd = 'ffmpeg -y -ss $ss -i "$realInput" -t $dur '
-          '-af $afStr -acodec $codec $bitrateFlag "$out"';
-
-      setState(() => _pct = 0.2);
-      final r = await _ch.invokeMethod<Map>('runProotCmd', {
-        'cmd':        cmd,
-        'inputPath':  realInput,
-        'outputPath': out,
-        'timeoutMin': 10,
-      });
-      final rc = (r?['rc'] as int?) ?? 0;
-      if (rc != 0) {
-        throw Exception('ffmpeg failed (rc=$rc): ${(r?['out'] as String? ?? '').trim()}');
-      }
-      if (!mounted) return;
-      setState(() { _pct = 1.0; _outPath = out; _busy = false; });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: _card,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-              side: const BorderSide(color: _red, width: 0.8)),
-          content: Text(ar ? '\u2713 \u062d\u064f\u0641\u0638: $out' : '\u2713 Saved: $out',
-              style: const TextStyle(color: _coral, fontSize: 11)),
-          duration: const Duration(seconds: 4),
-        ));
-      }
+      final inp = await _safeInput(_filePath!);
+      final ext = _fmt.toLowerCase();
+      final outA = await _outFile('part1', ext);
+      final outB = await _outFile('part2', ext);
+      final sp   = _positionSec.toStringAsFixed(3);
+      final r1 = await _proot('ffmpeg -y -i "$inp" -t $sp -acodec ${_codec()} ${_br()} "$outA"', inp, outA);
+      if ((r1?['rc'] as int? ?? 1) != 0) throw Exception('Split part1 failed');
+      setState(() => _pct = 0.6);
+      final r2 = await _proot('ffmpeg -y -ss $sp -i "$inp" -acodec ${_codec()} ${_br()} "$outB"', inp, outB);
+      if ((r2?['rc'] as int? ?? 1) != 0) throw Exception('Split part2 failed');
+      setState(() { _pct = 1.0; _busy = false; });
+      _snack('✓ Split: part1.$ext + part2.$ext');
     } catch (e) {
-      setState(() => _busy = false);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: _card,
-          content: Text(ar ? '\u062e\u0637\u0623: $e' : 'Error: $e',
-              style: const TextStyle(color: _amber, fontSize: 12))));
+      setState(() => _busy = false); _snack('Error: $e', color: _red);
     }
   }
 
-  // ── Busy warning ──────────────────────────────────────────────────────────
-  void _warnBusy() {
-    if (!mounted) return;
-    final ar = LangProvider.strings(context).ar;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      backgroundColor: _card,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: _red, width: 0.8)),
-      content: Text(ar ? '\u062c\u0627\u0631\u064d \u0627\u0644\u0645\u0639\u0627\u0644\u062c\u0629\u2026 \u0627\u0646\u062a\u0638\u0631 \u062d\u062a\u0649 \u062a\u0646\u062a\u0647\u064a \u0627\u0644\u0639\u0645\u0644\u064a\u0629'
-          : 'Processing\u2026 please wait until it finishes',
-          style: const TextStyle(color: _coral, fontSize: 12)),
-      duration: const Duration(seconds: 2),
-    ));
+  // ── MERGE ─────────────────────────────────────────────────────────────────
+  Future<void> _merge() async {
+    if (_filePath == null || _mergePath == null) return;
+    if (!await _checkSetup()) return;
+    HapticFeedback.mediumImpact();
+    setState(() { _busy = true; _busyLabel = 'Merging…'; _pct = 0.1; });
+    try {
+      final tmp  = await getTemporaryDirectory();
+      final inpA = await _safeInput(_filePath!);
+      final inpB = await _safeInput(_mergePath!);
+      final wavA = '${tmp.path}/tl_mA.wav'; final wavB = '${tmp.path}/tl_mB.wav';
+      final list = '${tmp.path}/tl_list.txt';
+      final ext  = _fmt.toLowerCase();
+      final out  = await _outFile('merged', ext);
+      await _proot('ffmpeg -y -i "$inpA" -ar 48000 -ac 2 "$wavA"', inpA, wavA);
+      setState(() => _pct = 0.3);
+      await _proot('ffmpeg -y -i "$inpB" -ar 48000 -ac 2 "$wavB"', inpB, wavB);
+      setState(() => _pct = 0.5);
+      final fa = _mergeAppend ? wavA : wavB; final fb = _mergeAppend ? wavB : wavA;
+      File(list).writeAsStringSync("file '$fa'\nfile '$fb'\n");
+      final r = await _proot(
+          'ffmpeg -y -f concat -safe 0 -i "$list" -acodec ${_codec()} ${_br()} "$out"',
+          list, out, timeout: 15);
+      if ((r?['rc'] as int? ?? 1) != 0) throw Exception('Merge failed: ${r?['out']}');
+      setState(() { _pct = 1.0; _busy = false; _outPath = out; });
+      _snack('✓ Merged → $out');
+    } catch (e) {
+      setState(() => _busy = false); _snack('Error: $e', color: _red);
+    }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // BUILD ROOT
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── EXPORT ────────────────────────────────────────────────────────────────
+  String _codec() => _fmt == 'WAV' ? 'pcm_s16le' : _fmt == 'M4A' ? 'aac' : 'libmp3lame';
+  String _br()    => _fmt == 'WAV' ? '' : '-b:a ${_kbps}k';
+
+  List<String> _buildAf() {
+    final af = <String>[];
+    if (_reverse) af.add('areverse');
+    if (_noiseReduc > 0)
+      af.add('afftdn=nr=${(_noiseReduc * 0.97).toStringAsFixed(1)}:nf=-25');
+    if (_fadeIn  > 0) af.add('afade=t=in:d=${_fadeIn.toStringAsFixed(1)}');
+    if (_fadeOut > 0) {
+      final st = ((_trimEnd - _trimStart) * _durationSec - _fadeOut)
+          .clamp(0.0, double.infinity).toStringAsFixed(2);
+      af.add('afade=t=out:st=$st:d=${_fadeOut.toStringAsFixed(1)}');
+    }
+    for (int i = 0; i < 10; i++) {
+      if (_eq[i].abs() > 0.5)
+        af.add('equalizer=f=${_freqs[i]}:g=${_eq[i].toStringAsFixed(1)}');
+    }
+    if (_echo   > 0) af.add('aecho=0.8:${(_echo/100).toStringAsFixed(2)}:500:0.5');
+    if (_reverb > 0) af.add('aecho=0.8:${(_reverb/100).toStringAsFixed(2)}:80:0.3');
+    if (_pitch  != 0) {
+      final r = (pow(2.0, _pitch / 12.0) as double);
+      final co = (1.0 / r).clamp(0.5, 2.0).toStringAsFixed(6);
+      af.add('asetrate=44100*${r.toStringAsFixed(6)},aresample=44100,atempo=$co');
+    }
+    if (_tempo != 1.0) af.add('atempo=${_tempo.clamp(0.5,2.0).toStringAsFixed(2)}');
+    if (_stereoW != 1.0) af.add('stereotools=mlev=${_stereoW.toStringAsFixed(2)}');
+    if (_compress)
+      af.add('acompressor=threshold=${_compThresh.toStringAsFixed(1)}dB'
+          ':ratio=${_compRatio.toStringAsFixed(1)}:attack=20:release=200');
+    if (_normalize) af.add('loudnorm');
+    if (_vol != 1.0) af.add('volume=${_vol.toStringAsFixed(2)}');
+    return af;
+  }
+
+  Future<void> _export() async {
+    if (_filePath == null) return;
+    if (!await _checkSetup()) return;
+    HapticFeedback.mediumImpact();
+    setState(() { _busy = true; _pct = 0.05; _outPath = null; _busyLabel = 'Exporting…'; });
+    try {
+      final inp = await _safeInput(_filePath!);
+      final ext = _fmt.toLowerCase();
+      final out = await _outFile('edited', ext);
+      final ss  = (_trimStart * _durationSec).toStringAsFixed(3);
+      final dur = ((_trimEnd - _trimStart) * _durationSec).toStringAsFixed(3);
+      final af  = _buildAf();
+      final cmd = 'ffmpeg -y -ss $ss -i "$inp" -t $dur '
+          '-af ${af.isEmpty ? "anull" : af.join(",")} -acodec ${_codec()} ${_br()} "$out"';
+      setState(() => _pct = 0.2);
+      final r = await _proot(cmd, inp, out, timeout: 15);
+      final rc = (r?['rc'] as int?) ?? 1;
+      if (rc != 0) throw Exception('ffmpeg rc=$rc: ${r?['out'] ?? ''}');
+      if (!mounted) return;
+      setState(() { _pct = 1.0; _outPath = out; _busy = false; });
+      if (_asRingtone) {
+        try { await _media.invokeMethod('saveToDownloads',
+            {'path': out, 'filename': out.split('/').last}); }
+        catch (_) {}
+      }
+      _snack('✓ Saved: $out');
+    } catch (e) {
+      setState(() => _busy = false); _snack('Error: $e', color: _red);
+    }
+  }
+
+  // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext ctx) => Directionality(
     textDirection: LangProvider.strings(ctx).ar ? TextDirection.rtl : TextDirection.ltr,
@@ -282,113 +323,70 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       onPopInvokedWithResult: (didPop, _) { if (!didPop) _warnBusy(); },
       child: Scaffold(
         backgroundColor: _bg,
-        body: SafeArea(
-          child: Stack(children: [
-            Column(children: [
-              _appBar(),
-              Expanded(child: _filePath == null ? _pickerView() : _editorView()),
-            ]),
-            if (_busy) _processingOverlay(),
+        body: SafeArea(child: Stack(children: [
+          Column(children: [
+            _appBar(),
+            Expanded(child: _filePath == null ? _pickerView() : _editorView()),
           ]),
-        ),
-      ),
-    ),
-  );
+          if (_busy) _processingOverlay(),
+        ])),
+      )));
 
-  // ── Processing overlay ────────────────────────────────────────────────────
-  Widget _processingOverlay() {
-    final ar = LangProvider.strings(context).ar;
-    return AbsorbPointer(
-    child: AnimatedBuilder(
-      animation: _pulseCtrl,
+  Widget _processingOverlay() => AbsorbPointer(
+    child: AnimatedBuilder(animation: _glowCtrl,
       builder: (_, __) => Container(
-        color: Colors.black.withValues(alpha: 0.78),
+        color: Colors.black.withValues(alpha: 0.72),
         alignment: Alignment.center,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          SizedBox(width: 100, height: 100,
+          SizedBox(width: 92, height: 92,
             child: Stack(alignment: Alignment.center, children: [
-              Container(width: 100, height: 100,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: _red.withValues(alpha: 0.15 + 0.30 * _pulseCtrl.value),
-                    width: 1.5),
-                  boxShadow: [BoxShadow(
-                    color: _red.withValues(alpha: 0.06 + 0.18 * _pulseCtrl.value),
-                    blurRadius: 36)])),
-              SizedBox(width: 72, height: 72,
-                child: CircularProgressIndicator(
-                  value: _pct > 0.05 ? _pct : null,
-                  strokeWidth: 3.5, backgroundColor: _rim,
-                  valueColor: AlwaysStoppedAnimation(
-                    Color.lerp(_red, _coral, _pulseCtrl.value)!),
+              Container(width: 92, height: 92, decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _gold.withValues(alpha: 0.18 + 0.30 * _glowCtrl.value), width: 1.4),
+                boxShadow: [BoxShadow(
+                  color: _gold.withValues(alpha: 0.06 + 0.14 * _glowCtrl.value), blurRadius: 28)])),
+              SizedBox(width: 68, height: 68,
+                child: CircularProgressIndicator(value: _pct > 0.05 ? _pct : null,
+                  strokeWidth: 3, backgroundColor: _border,
+                  valueColor: AlwaysStoppedAnimation(Color.lerp(_teal, _gold, _glowCtrl.value)!),
                   strokeCap: StrokeCap.round)),
-              ShaderMask(
-                shaderCallback: (b) => const LinearGradient(
-                  colors: [_coral, _red],
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter).createShader(b),
-                child: const Icon(Icons.science_rounded, color: Colors.white, size: 30)),
+              const Icon(Icons.audio_file_rounded, color: _gold, size: 26),
             ])),
-          const SizedBox(height: 22),
-          ShaderMask(
-            shaderCallback: (b) => const LinearGradient(
-                colors: [_red, _coral]).createShader(b),
-            child: Text(ar ? '\u062c\u0627\u0631\u064d \u0627\u0644\u0645\u0639\u0627\u0644\u062c\u0629' : 'Processing',
-              style: const TextStyle(color: Colors.white, fontSize: 21,
-                fontWeight: FontWeight.w800, letterSpacing: 0.5))),
-          const SizedBox(height: 6),
-          Text(ar ? '\u064a\u064f\u0631\u062c\u0649 \u0627\u0644\u0627\u0646\u062a\u0638\u0627\u0631 \u2014 \u0644\u0627 \u062a\u063a\u0644\u0642 \u0627\u0644\u0634\u0627\u0634\u0629'
-              : "Please wait \u2014 don't close the screen",
-            style: const TextStyle(color: _textB, fontSize: 13)),
-          const SizedBox(height: 22),
-          SizedBox(width: 220, child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: _pct > 0.05 ? _pct : null,
-                backgroundColor: _rim,
-                valueColor: const AlwaysStoppedAnimation(_red),
-                minHeight: 6))),
-          if (_pct > 0.05) ...[ const SizedBox(height: 8),
-            Text('${(_pct * 100).round()}%',
-              style: const TextStyle(color: _textB, fontSize: 12)) ],
-        ]),
-      )));
-  }
+          const SizedBox(height: 18),
+          Text(_busyLabel, style: const TextStyle(color: _gold, fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 5),
+          const Text("Please wait — don't close the screen", style: TextStyle(color: _textB, fontSize: 12)),
+          const SizedBox(height: 18),
+          SizedBox(width: 220, child: ClipRRect(borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(value: _pct > 0.05 ? _pct : null,
+              backgroundColor: _border, valueColor: const AlwaysStoppedAnimation(_gold), minHeight: 5))),
+          if (_pct > 0.05) ...[const SizedBox(height: 8),
+            Text('${(_pct * 100).round()}%', style: const TextStyle(color: _textB, fontSize: 12))],
+        ]))));
 
-  // ── App bar ───────────────────────────────────────────────────────────────
   Widget _appBar() {
     final ar = LangProvider.strings(context).ar;
     return Container(
-    decoration: const BoxDecoration(color: _surface,
-        border: Border(bottom: BorderSide(color: _rim, width: 1))),
-    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-    child: Row(children: [
-      IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: _textB),
-        onPressed: () => _busy ? _warnBusy() : Navigator.pop(context)),
-      Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        ShaderMask(
-          shaderCallback: (b) => const LinearGradient(
-              colors: [_red, _coral]).createShader(b),
-          child: const Icon(Icons.science_rounded, color: Colors.white, size: 18)),
-        const SizedBox(width: 6),
-        ShaderMask(
-          shaderCallback: (b) => const LinearGradient(
-              colors: [_red, _coral]).createShader(b),
-          child: Text(ar ? '\u0645\u062d\u0631\u0631 \u0627\u0644\u0635\u0648\u062a' : 'Audio Lab',
-              style: const TextStyle(color: Colors.white, fontSize: 17,
-                  fontWeight: FontWeight.w800, letterSpacing: 0.5))),
-      ])),
-      IconButton(
-        icon: const Icon(Icons.info_outline_rounded, size: 18, color: _textB),
-        onPressed: _showHelp),
-      if (_filePath != null)
-        TextButton(onPressed: _pick,
-          child: Text(ar ? '\u062a\u063a\u064a\u064a\u0631' : 'Change',
-              style: const TextStyle(color: _coral, fontSize: 12,
-                  fontWeight: FontWeight.w600)))
-      else const SizedBox(width: 8),
-    ]));
+      decoration: BoxDecoration(color: _surface,
+        border: Border(bottom: BorderSide(color: _gold.withValues(alpha: 0.25), width: 1))),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Row(children: [
+        IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: _textB),
+          onPressed: () => _busy ? _warnBusy() : Navigator.pop(context)),
+        Expanded(child: ShaderMask(
+          shaderCallback: (b) => const LinearGradient(colors: [_gold, Color(0xFFF0CF60)]).createShader(b),
+          child: Text(ar ? 'محرر الصوت' : 'Audio Editor',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700)))),
+        IconButton(icon: const Icon(Icons.info_outline_rounded, size: 18, color: _textB),
+          onPressed: _showHelp),
+        if (_filePath != null)
+          TextButton(onPressed: _pick,
+            child: Text(ar ? 'تغيير' : 'Change',
+                style: const TextStyle(color: _teal, fontSize: 12, fontWeight: FontWeight.w600)))
+        else const SizedBox(width: 8),
+      ]));
   }
 
   void _showHelp() {
@@ -398,97 +396,66 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       child: AlertDialog(
         backgroundColor: _card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: _red, width: 0.8)),
-        title: Row(children: [
-          const Icon(Icons.science_rounded, color: _coral, size: 20),
-          const SizedBox(width: 8),
-          Text(ar ? '\u0639\u0646 \u0645\u062d\u0631\u0631 \u0627\u0644\u0635\u0648\u062a' : 'About Audio Lab',
-              style: const TextStyle(color: _coral, fontWeight: FontWeight.w700)),
-        ]),
-        content: Text(
-          ar
-            ? '\u2022 \u0627\u0644\u0642\u0635: \u0627\u0633\u062d\u0628 \u0627\u0644\u0628\u062f\u0627\u064a\u0629 \u0648\u0627\u0644\u0646\u0647\u0627\u064a\u0629 \u0644\u0627\u062e\u062a\u064a\u0627\u0631 \u0627\u0644\u062c\u0632\u0621 \u0627\u0644\u0645\u0637\u0644\u0648\u0628.\n'
-              '\u2022 \u0627\u0644\u0645\u0648\u0627\u0632\u0646 (EQ): \u062a\u062d\u0643\u0645 \u0628\u0645\u0633\u062a\u0648\u0649 \u0643\u0644 \u0646\u0637\u0627\u0642 \u062a\u0631\u062f\u062f.\n'
-              '\u2022 \u0627\u0644\u0645\u0624\u062b\u0631\u0627\u062a: \u062a\u0644\u0627\u0634\u064a \u0648\u062f\u0631\u062c\u0629 \u0635\u0648\u062a \u0648\u0633\u0631\u0639\u0629 \u0648\u0635\u062f\u0649.\n'
-              '\u2022 \u0627\u0644\u062a\u0635\u062f\u064a\u0631: MP3 / WAV / M4A \u0645\u0639 \u062c\u0645\u064a\u0639 \u0627\u0644\u062a\u0639\u062f\u064a\u0644\u0627\u062a.\n\n'
-              '\u26d4  \u0644\u0627 \u064a\u062d\u062a\u0627\u062c \u0627\u062a\u0635\u0627\u0644\u0627\u064b \u0628\u0627\u0644\u0625\u0646\u062a\u0631\u0646\u062a \u2014 \u064a\u0639\u0645\u0644 \u0639\u0628\u0631 ffmpeg \u0645\u062d\u0644\u064a\u0627\u064b.'
-            : '\u2022 Trim: drag start/end handles to select a range.\n'
-              '\u2022 EQ: adjust each frequency band.\n'
-              '\u2022 Effects: fade, pitch, speed, echo, volume.\n'
-              '\u2022 Export: save as MP3, WAV or M4A with all edits.\n\n'
-              '\u26d4  No internet needed \u2014 runs locally via ffmpeg.',
-          style: const TextStyle(color: _textA, fontSize: 13, height: 1.5),
-        ),
+            side: const BorderSide(color: _gold, width: 0.7)),
+        title: Text(ar ? 'عن محرر الصوت' : 'Audio Editor',
+            style: const TextStyle(color: _gold, fontWeight: FontWeight.w700)),
+        content: Text(ar
+            ? '• قص: حدد نطاق البداية والنهاية.\n'
+              '• تقسيم: اضغط ✂️ في التشغيل لتقسيم الملف عند الموضع الحالي.\n'
+              '• موازن 10 أحزمة: 31Hz إلى 16kHz مع إعدادات مسبقة.\n'
+              '• تأثيرات: تلاشي، طبقة صوت، سرعة، صدى، إرجاع، عكس، تقليص ضوضاء، ضغط، تطبيع، عرض ستيريو.\n'
+              '• دمج: جمع ملفين صوتيين.\n'
+              '• تصدير: MP3/WAV/M4A + حفظ كنغمة رنين.\n'
+              '⚙️ محلي بالكامل عبر ffmpeg — بدون إنترنت.'
+            : '• Trim: set start/end range.\n'
+              '• Split: tap ✂️ in transport to split at playhead into two files.\n'
+              '• 10-band EQ: 31Hz–16kHz with presets.\n'
+              '• Effects: fade, pitch, speed, echo, reverb, reverse, noise reduction, compressor, normalize, stereo width.\n'
+              '• Merge: join two audio files.\n'
+              '• Export: MP3/WAV/M4A + Set as Ringtone.\n'
+              '⚙️ Fully local via ffmpeg — no internet needed.',
+          style: const TextStyle(color: _textA, fontSize: 13, height: 1.5)),
         actions: [TextButton(onPressed: () => Navigator.pop(context),
-          child: Text(ar ? '\u062d\u0633\u0646\u064b\u0627' : 'OK',
-              style: const TextStyle(color: _coral)))],
+          child: Text(ar ? 'حسنًا' : 'OK', style: const TextStyle(color: _teal)))],
       )));
   }
 
-  // ── Picker view ───────────────────────────────────────────────────────────
   Widget _pickerView() {
     final ar = LangProvider.strings(context).ar;
-    return Container(
-    decoration: const BoxDecoration(gradient: LinearGradient(
-        colors: [_bg, Color(0xFF1A0806)],
-        begin: Alignment.topCenter, end: Alignment.bottomCenter)),
-    child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      AnimatedBuilder(
-        animation: _pulseCtrl,
-        builder: (_, __) => Container(
-          width: 140, height: 140,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const RadialGradient(
-              colors: [Color(0xFF4D1206), _bg], radius: 0.9),
-            border: Border.all(
-                color: _red.withValues(alpha: 0.20 + 0.30 * _pulseCtrl.value),
-                width: 1.5),
-            boxShadow: [
-              BoxShadow(color: _red.withValues(alpha: 0.08 + 0.16 * _pulseCtrl.value), blurRadius: 50),
-              BoxShadow(color: _coral.withValues(alpha: 0.04 + 0.08 * _pulseCtrl.value), blurRadius: 80),
-            ]),
-          child: ShaderMask(
-            shaderCallback: (b) => const LinearGradient(
-              colors: [_coral, _red],
-              begin: Alignment.topLeft, end: Alignment.bottomRight).createShader(b),
-            child: const Icon(Icons.science_rounded, color: Colors.white, size: 64)))),
-      const SizedBox(height: 28),
-      Text(ar ? '\u0627\u0633\u062a\u062f\u064a\u0648 \u0627\u0644\u0635\u0648\u062a' : 'Audio Lab',
-          style: const TextStyle(color: _textA, fontSize: 24,
-              fontWeight: FontWeight.w900, letterSpacing: 0.3)),
-      const SizedBox(height: 6),
-      Text(ar ? '\u0627\u062e\u062a\u0631 \u0645\u0644\u0641 \u0635\u0648\u062a\u064a \u0644\u0644\u0628\u062f\u0621' : 'Choose an audio file to start',
-          style: const TextStyle(color: _textB, fontSize: 14)),
-      const SizedBox(height: 6),
-      const Text('MP3 \u00b7 WAV \u00b7 M4A \u00b7 AAC \u00b7 OGG \u00b7 FLAC',
-          style: TextStyle(color: _textDim, fontSize: 12)),
-      const SizedBox(height: 36),
-      GestureDetector(
-        onTap: _pick,
-        child: AnimatedBuilder(
-          animation: _pulseCtrl,
+    return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      AnimatedBuilder(animation: _glowCtrl,
+        builder: (_, __) => Container(width: 130, height: 130,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: _card,
+            border: Border.all(color: _gold.withValues(alpha: 0.18 + 0.28 * _glowCtrl.value), width: 1.5),
+            boxShadow: [BoxShadow(color: _gold.withValues(alpha: 0.04 + 0.08 * _glowCtrl.value), blurRadius: 36)]),
+          child: const Icon(Icons.audio_file_rounded, color: _gold, size: 52))),
+      const SizedBox(height: 24),
+      Text(ar ? 'اختر ملف صوتي' : 'Choose an audio file',
+          style: const TextStyle(color: _textA, fontSize: 20, fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      const Text('MP3 · WAV · M4A · AAC · OGG · FLAC',
+          style: TextStyle(color: _textB, fontSize: 13)),
+      const SizedBox(height: 32),
+      GestureDetector(onTap: _pick,
+        child: AnimatedBuilder(animation: _glowCtrl,
           builder: (_, __) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 17),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                  colors: [Color(0xFF8C1C0A), _red],
-                  begin: Alignment.centerLeft, end: Alignment.centerRight),
-              borderRadius: BorderRadius.circular(40),
+              gradient: const LinearGradient(colors: [Color(0xFF6B4F10), _gold],
+                  begin: Alignment.centerRight, end: Alignment.centerLeft),
+              borderRadius: BorderRadius.circular(14),
               boxShadow: [BoxShadow(
-                  color: _red.withValues(alpha: 0.22 + 0.18 * _pulseCtrl.value),
-                  blurRadius: 24, offset: const Offset(0, 6))]),
+                  color: _gold.withValues(alpha: 0.2 + 0.15 * _glowCtrl.value),
+                  blurRadius: 18, offset: const Offset(0, 4))]),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.folder_open_rounded, color: Colors.white, size: 22),
+              const Icon(Icons.folder_open_rounded, color: Color(0xFF0A0A00), size: 22),
               const SizedBox(width: 10),
-              Text(ar ? '\u0641\u062a\u062d \u0645\u0644\u0641' : 'Open File',
-                  style: const TextStyle(color: Colors.white, fontSize: 16,
-                      fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+              Text(ar ? 'فتح ملف' : 'Open File',
+                  style: const TextStyle(color: Color(0xFF0A0A00), fontSize: 16, fontWeight: FontWeight.w800)),
             ])))),
-    ])));
+    ]));
   }
 
-  // ── Editor view ───────────────────────────────────────────────────────────
   Widget _editorView() => Column(children: [
     _fileBar(), _waveformSection(), _transport(), _tabBar(),
     Expanded(child: _tabBody()),
@@ -496,27 +463,19 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _fileBar() => Container(
     color: _surface,
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
     child: Row(children: [
-      ShaderMask(
-        shaderCallback: (b) => const LinearGradient(colors: [_red, _coral]).createShader(b),
-        child: const Icon(Icons.music_note_rounded, color: Colors.white, size: 16)),
+      const Icon(Icons.music_note_rounded, color: _teal, size: 16),
       const SizedBox(width: 8),
-      Expanded(child: Text(_fileName,
-          overflow: TextOverflow.ellipsis,
+      Expanded(child: Text(_fileName, overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: _textA, fontSize: 13, fontWeight: FontWeight.w500))),
       const SizedBox(width: 10),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: _redDk, borderRadius: BorderRadius.circular(6)),
-        child: Text(_fmtTime(_durationSec),
-            style: const TextStyle(color: _coral, fontSize: 11,
-                fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+      Text(_fmtTime(_durationSec),
+          style: const TextStyle(color: _textB, fontSize: 12, fontFamily: 'monospace')),
     ]));
 
   Widget _waveformSection() {
-    final pos = _durationSec > 0
-        ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0.0;
+    final pos = _durationSec > 0 ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0.0;
     return GestureDetector(
       onTapDown: (d) {
         final box = context.findRenderObject() as RenderBox?;
@@ -525,8 +484,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         _player.seek(Duration(milliseconds: (frac * _durationSec * 1000).round()));
         setState(() => _positionSec = frac * _durationSec);
       },
-      child: AnimatedBuilder(
-        animation: _waveCtrl,
+      child: AnimatedBuilder(animation: _waveCtrl,
         builder: (_, __) => SizedBox(height: 96,
           child: CustomPaint(
             painter: _WavePainter(bars: _bars, playPos: pos,
@@ -536,96 +494,78 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   }
 
   Widget _transport() => Container(
-    decoration: const BoxDecoration(color: _surface,
-        border: Border(top: BorderSide(color: _rim, width: 0.5))),
+    color: _surface,
     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
     child: Row(children: [
       _tBtn(Icons.skip_previous_rounded, () async {
-        await _player.seek(Duration(
-            milliseconds: (_trimStart * _durationSec * 1000).round()));
+        await _player.seek(Duration(milliseconds: (_trimStart * _durationSec * 1000).round()));
         if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
       }),
-      const SizedBox(width: 12),
-      AnimatedBuilder(
-        animation: _pulseCtrl,
-        builder: (_, __) => GestureDetector(
-          onTap: _togglePlay,
-          child: Container(
-            width: 54, height: 54,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                  colors: [Color(0xFFCC2C10), _red],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight),
+      const SizedBox(width: 10),
+      AnimatedBuilder(animation: _glowCtrl,
+        builder: (_, __) => GestureDetector(onTap: _togglePlay,
+          child: Container(width: 52, height: 52,
+            decoration: BoxDecoration(shape: BoxShape.circle,
+              gradient: const RadialGradient(colors: [Color(0xFFB8921E), _goldDim]),
               boxShadow: [BoxShadow(
-                  color: _red.withValues(
-                      alpha: _playing ? 0.20 + 0.22 * _pulseCtrl.value : 0.08),
-                  blurRadius: 20)]),
-            child: Icon(
-              _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              color: Colors.white, size: 28)))),
-      const SizedBox(width: 12),
+                  color: _gold.withValues(alpha: _playing ? 0.15 + 0.2 * _glowCtrl.value : 0.05),
+                  blurRadius: 18)]),
+            child: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              color: const Color(0xFF050A06), size: 28)))),
+      const SizedBox(width: 10),
       _tBtn(Icons.stop_rounded, _stop),
-      const SizedBox(width: 14),
-      Expanded(child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(children: [
-            Text(_fmtTime(_positionSec),
-                style: const TextStyle(color: _coral, fontSize: 11,
-                    fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-            const Text(' / ', style: TextStyle(color: _textDim, fontSize: 11)),
-            Text(_fmtTime(_durationSec),
-                style: const TextStyle(color: _textB, fontSize: 11, fontFamily: 'monospace')),
-          ]),
-          const SizedBox(height: 5),
-          ClipRRect(borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: _durationSec > 0
-                  ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0,
-              backgroundColor: _rim,
-              valueColor: const AlwaysStoppedAnimation(_red),
-              minHeight: 4)),
-        ])),
+      const SizedBox(width: 6),
+      Tooltip(message: 'Split at playhead',
+        child: _tBtn(Icons.content_cut_rounded, _split, color: _teal)),
       const SizedBox(width: 12),
-      _tBtn(Icons.loop_rounded, () async {
-        await _player.setReleaseMode(ReleaseMode.loop);
-      }, color: _coral),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          Text(_fmtTime(_positionSec), style: const TextStyle(color: _gold, fontSize: 11,
+              fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+          const Text(' / ', style: TextStyle(color: _textDim, fontSize: 11)),
+          Text(_fmtTime(_durationSec), style: const TextStyle(color: _textB, fontSize: 11, fontFamily: 'monospace')),
+        ]),
+        const SizedBox(height: 4),
+        ClipRRect(borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(
+            value: _durationSec > 0 ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0,
+            backgroundColor: _border, valueColor: const AlwaysStoppedAnimation(_gold), minHeight: 3)),
+      ])),
+      const SizedBox(width: 10),
+      _tBtn(Icons.loop_rounded, () async { await _player.setReleaseMode(ReleaseMode.loop); }, color: _teal),
     ]));
 
   Widget _tBtn(IconData icon, VoidCallback onTap, {Color? color}) =>
-      GestureDetector(onTap: onTap,
-        child: Container(width: 38, height: 38,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: _card,
-              border: Border.all(color: _rim)),
-          child: Icon(icon, color: color ?? _textB, size: 19)));
+    GestureDetector(onTap: onTap,
+      child: Container(width: 38, height: 38,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: _card,
+            border: Border.all(color: _border)),
+        child: Icon(icon, color: color ?? _textB, size: 19)));
 
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
-    final labels = ar ? ['\u0642\u0637\u0639', 'EQ', '\u062a\u0623\u062b\u064a\u0631\u0627\u062a', '\u062a\u0635\u062f\u064a\u0631']
-                      : ['Trim', 'EQ', 'Effects', 'Export'];
-    final icons  = [Icons.content_cut_rounded, Icons.equalizer_rounded,
-                    Icons.auto_fix_high_rounded, Icons.ios_share_rounded];
+    final labels = ar ? ['قص','EQ','تأثيرات','دمج','تصدير']
+                      : ['Trim','EQ','Effects','Merge','Export'];
+    final icons = [Icons.content_cut_rounded, Icons.equalizer_rounded,
+                   Icons.auto_fix_high_rounded, Icons.merge_type_rounded, Icons.ios_share_rounded];
     return Container(
-      decoration: const BoxDecoration(color: _surface,
-          border: Border(bottom: BorderSide(color: _rim, width: 1))),
+      decoration: BoxDecoration(color: _surface, border: Border(bottom: BorderSide(color: _border))),
       child: Row(children: _Tab.values.map((t) {
         final active = t == _tab;
         return Expanded(child: GestureDetector(
           onTap: () { HapticFeedback.selectionClick(); setState(() => _tab = t); },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(vertical: 11),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(
-                  color: active ? _red : Colors.transparent, width: 2.5)),
-              color: active ? _redDk.withValues(alpha: 0.4) : Colors.transparent),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(
+                color: active ? _gold : Colors.transparent, width: 2))),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(icons[t.index], color: active ? _coral : _textDim, size: 20),
+              Icon(icons[t.index], color: active ? _gold : _textDim, size: 19),
               const SizedBox(height: 3),
               Text(labels[t.index], style: TextStyle(
-                  color: active ? _coral : _textDim,
-                  fontSize: 10, fontWeight: FontWeight.w700)),
+                  color: active ? _gold : _textDim,
+                  fontSize: 10, fontWeight: FontWeight.w600)),
             ]))));
       }).toList()));
   }
@@ -635,101 +575,93 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.trim:    return _trimTab();
       case _Tab.eq:      return _eqTab();
       case _Tab.effects: return _effectsTab();
+      case _Tab.merge:   return _mergeTab();
       case _Tab.export_: return _exportTab();
     }
   }
 
-  // ─── TRIM TAB ─────────────────────────────────────────────────────────────
+  // ── TRIM TAB ──────────────────────────────────────────────────────────────
   Widget _trimTab() {
     final ar = LangProvider.strings(context).ar;
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _sectionCard(ar ? '\u0646\u0642\u0637\u0629 \u0627\u0644\u0628\u062f\u0627\u064a\u0629' : 'Start Point',
-          Icons.align_horizontal_left_rounded, [
+      _card_(ar ? 'نقطة البداية' : 'Start Point', Icons.align_horizontal_left_rounded, [
         Row(children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: _redDk, borderRadius: BorderRadius.circular(8)),
-            child: Text(_fmtTime(_trimStart * _durationSec),
-                style: const TextStyle(color: _coral, fontSize: 15,
-                    fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+          Text(_fmtTime(_trimStart * _durationSec),
+              style: const TextStyle(color: _teal, fontSize: 15, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
           const Spacer(),
-          _chip(ar ? '\u0628\u062f\u0627\u064a\u0629' : 'Start', () => setState(() => _trimStart = 0)),
+          _chip_(ar ? 'بداية' : 'Start', () => setState(() => _trimStart = 0)),
         ]),
-        _slider(_trimStart, 0, _trimEnd - 0.005, _red, (v) => setState(() => _trimStart = v)),
+        _slider(_trimStart, 0, _trimEnd - 0.005, _teal, (v) => setState(() => _trimStart = v)),
       ]),
       const SizedBox(height: 10),
-      _sectionCard(ar ? '\u0646\u0642\u0637\u0629 \u0627\u0644\u0646\u0647\u0627\u064a\u0629' : 'End Point',
-          Icons.align_horizontal_right_rounded, [
+      _card_(ar ? 'نقطة النهاية' : 'End Point', Icons.align_horizontal_right_rounded, [
         Row(children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: _redDk, borderRadius: BorderRadius.circular(8)),
-            child: Text(_fmtTime(_trimEnd * _durationSec),
-                style: const TextStyle(color: _amber, fontSize: 15,
-                    fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
+          Text(_fmtTime(_trimEnd * _durationSec),
+              style: const TextStyle(color: _gold, fontSize: 15, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
           const Spacer(),
-          _chip(ar ? '\u0646\u0647\u0627\u064a\u0629' : 'End', () => setState(() => _trimEnd = 1)),
+          _chip_(ar ? 'نهاية' : 'End', () => setState(() => _trimEnd = 1)),
         ]),
-        _slider(_trimEnd, _trimStart + 0.005, 1.0, _amber, (v) => setState(() => _trimEnd = v)),
+        _slider(_trimEnd, _trimStart + 0.005, 1.0, _gold, (v) => setState(() => _trimEnd = v)),
       ]),
       const SizedBox(height: 10),
-      _sectionCard(ar ? '\u0645\u062f\u0629 \u0627\u0644\u062a\u062d\u062f\u064a\u062f' : 'Selection Duration',
-          Icons.timer_outlined, [
-        Center(child: ShaderMask(
-          shaderCallback: (b) => const LinearGradient(colors: [_red, _coral]).createShader(b),
-          child: Text(_fmtTime((_trimEnd - _trimStart) * _durationSec),
-            style: const TextStyle(color: Colors.white, fontSize: 30,
-                fontWeight: FontWeight.w900, letterSpacing: 2.0, fontFamily: 'monospace')))),
-        const SizedBox(height: 14),
+      _card_(ar ? 'مدة التحديد' : 'Selection Duration', Icons.timer_outlined, [
+        Center(child: Text(_fmtTime((_trimEnd - _trimStart) * _durationSec),
+          style: const TextStyle(color: _gold, fontSize: 30, fontWeight: FontWeight.w800,
+              letterSpacing: 1.5, fontFamily: 'monospace'))),
+        const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          _chip(ar ? '\u0627\u062e\u062a\u064a\u0627\u0631 \u0627\u0644\u0643\u0644' : 'Select All',
-              () => setState(() { _trimStart = 0; _trimEnd = 1; })),
-          _chip(ar ? '\u0627\u0644\u0646\u0635\u0641 \u0627\u0644\u0623\u0648\u0644' : 'First Half',
-              () => setState(() { _trimStart = 0; _trimEnd = 0.5; })),
-          _chip(ar ? '\u0627\u0644\u0646\u0635\u0641 \u0627\u0644\u062b\u0627\u0646\u064a' : 'Second Half',
-              () => setState(() { _trimStart = 0.5; _trimEnd = 1; })),
+          _chip_(ar ? 'الكل' : 'All', () => setState(() { _trimStart = 0; _trimEnd = 1; })),
+          _chip_(ar ? 'النصف الأول' : 'First Half', () => setState(() { _trimStart = 0; _trimEnd = 0.5; })),
+          _chip_(ar ? 'النصف الثاني' : 'Second Half', () => setState(() { _trimStart = 0.5; _trimEnd = 1; })),
         ]),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'تقسيم عند موضع التشغيل' : 'Split at Playhead', Icons.call_split_rounded, [
+        Text(ar
+            ? 'اضغط ✂️ في شريط التشغيل لتقسيم الملف إلى جزأين عند الموضع الحالي.'
+            : 'Tap ✂️ in the transport bar to split the file at the current playhead into two files.',
+            style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+        const SizedBox(height: 8),
+        Text('${ar ? "الموضع: " : "Position: "}${_fmtTime(_positionSec)}',
+            style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       ]),
     ]);
   }
 
-  // ─── EQ TAB ───────────────────────────────────────────────────────────────
+  // ── EQ TAB — 10 bands ─────────────────────────────────────────────────────
   Widget _eqTab() {
     final ar = LangProvider.strings(context).ar;
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _sectionCard(ar ? '\u0645\u0646\u062d\u0646\u0649 \u0627\u0644\u062a\u0639\u062f\u064a\u0644' : 'EQ Curve',
-          Icons.show_chart_rounded, [
+      _card_(ar ? 'منحنى التعديل' : 'EQ Curve', Icons.show_chart_rounded, [
         SizedBox(height: 72, child: CustomPaint(painter: _EqPainter(values: _eq),
             size: const Size(double.infinity, 72))),
         const SizedBox(height: 10),
         SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
-          _preset(ar ? '\u0645\u0633\u0637\u062d' : 'Flat',       [0,0,0,0,0]),
-          _preset(ar ? '\u0628\u0627\u0633' : 'Bass',             [7,4,0,-1,-2]),
-          _preset(ar ? '\u0635\u0648\u062a' : 'Voice',            [-2,0,5,4,2]),
-          _preset(ar ? '\u0648\u0636\u0648\u062d' : 'Clarity',    [-1,0,2,5,4]),
-          _preset(ar ? '\u062a\u0644\u0627\u0648\u0629' : 'Recitation', [3,1,3,2,1]),
-          _preset(ar ? '\u0644\u064a\u0644\u0629' : 'Night',      [4,2,0,-2,-3]),
+          _preset(ar ? 'مسطح'   : 'Flat',       List.filled(10, 0.0)),
+          _preset(ar ? 'باس'    : 'Bass',        [6,5,4,1,0,0,-1,-1,-2,-2]),
+          _preset(ar ? 'صوت'    : 'Voice',       [-2,-1,0,1,3,5,4,2,1,0]),
+          _preset(ar ? 'وضوح'   : 'Clarity',     [-1,0,0,0,1,2,4,5,4,3]),
+          _preset(ar ? 'تلاوة'  : 'Recitation',  [3,2,1,1,2,3,3,2,1,1]),
+          _preset(ar ? 'ليلة'   : 'Night',       [4,3,2,2,0,0,-1,-2,-2,-3]),
+          _preset(ar ? 'مسجد'   : 'Mosque',      [2,2,1,0,0,1,2,2,1,0]),
         ])),
       ]),
       const SizedBox(height: 10),
-      _sectionCard(ar ? '\u0623\u062d\u0632\u0645\u0629 \u0627\u0644\u062a\u0639\u062f\u064a\u0644' : 'EQ Bands',
-          Icons.tune_rounded,
-          List.generate(5, (i) {
+      _card_(ar ? 'أحزمة التعديل (10)' : 'EQ Bands (10)', Icons.tune_rounded,
+          List.generate(10, (i) {
             final v = _eq[i];
-            final c = v > 0 ? _red : v < 0 ? _coral : _textDim;
+            final c = v > 0 ? _gold : v < 0 ? _teal : _textDim;
             return Padding(padding: const EdgeInsets.only(bottom: 8),
               child: Row(children: [
-                SizedBox(width: 44, child: Text(_bands[i],
-                    style: const TextStyle(color: _textB, fontSize: 11))),
+                SizedBox(width: 38, child: Text(_bands[i], style: const TextStyle(color: _textB, fontSize: 11))),
                 Expanded(child: Directionality(textDirection: TextDirection.ltr,
-                  child: SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 3,
-                      thumbSize: WidgetStateProperty.all(const Size(14, 14)),
-                      thumbColor: c, activeTrackColor: c.withValues(alpha: 0.80),
-                      inactiveTrackColor: _rim, overlayColor: c.withValues(alpha: 0.12)),
+                  child: SliderTheme(data: SliderThemeData(trackHeight: 3,
+                    thumbSize: WidgetStateProperty.all(const Size(13, 13)),
+                    thumbColor: c, activeTrackColor: c.withValues(alpha: 0.75),
+                    inactiveTrackColor: _border, overlayColor: c.withValues(alpha: 0.12)),
                     child: Slider(value: v, min: -12, max: 12, divisions: 24,
                         onChanged: (val) => setState(() => _eq[i] = val))))),
-                SizedBox(width: 54, child: Text(
-                    '${v >= 0 ? "+" : ""}${v.toStringAsFixed(1)} dB',
+                SizedBox(width: 52, child: Text('${v >= 0 ? "+" : ""}${v.toStringAsFixed(1)}',
                     textAlign: TextAlign.end,
                     style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w600))),
               ]));
@@ -737,139 +669,236 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     ]);
   }
 
-  // ─── EFFECTS TAB ──────────────────────────────────────────────────────────
+  // ── EFFECTS TAB ───────────────────────────────────────────────────────────
   Widget _effectsTab() {
     final ar = LangProvider.strings(context).ar;
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _sectionCard(ar ? '\u0627\u0644\u0635\u0648\u062a' : 'Audio', Icons.volume_up_rounded, [
-        _knob(ar ? '\u0645\u0633\u062a\u0648\u0649 \u0627\u0644\u0635\u0648\u062a' : 'Volume',
-            '${(_vol*100).round()}%', _vol, 0.5, 2.0, (v)=>setState(()=>_vol=v)),
-        _knob(ar ? '\u062f\u0631\u062c\u0629 \u0627\u0644\u0635\u0648\u062a' : 'Pitch',
-            '${_pitch>=0?"+":""}${_pitch.toStringAsFixed(1)} st',
-            _pitch, -12, 12, (v)=>setState(()=>_pitch=v)),
-        _knob(ar ? '\u0627\u0644\u0633\u0631\u0639\u0629' : 'Speed',
-            '${_tempo.toStringAsFixed(2)}\u00d7',
-            _tempo, 0.5, 2.0, (v)=>setState(()=>_tempo=v)),
+      _card_(ar ? 'الصوت' : 'Audio', Icons.volume_up_rounded, [
+        _knob(ar ? 'مستوى الصوت' : 'Volume', '${(_vol*100).round()}%', _vol, 0.5, 2.0, (v) => setState(() => _vol = v)),
+        _knob(ar ? 'درجة الصوت'  : 'Pitch',  '${_pitch>=0?"+":""}${_pitch.toStringAsFixed(1)} st', _pitch, -12, 12, (v) => setState(() => _pitch = v)),
+        _knob(ar ? 'السرعة'       : 'Speed',  '${_tempo.toStringAsFixed(2)}×', _tempo, 0.5, 2.0, (v) => setState(() => _tempo = v)),
+        _knob(ar ? 'عرض الستيريو' : 'Stereo Width', '${(_stereoW*100).round()}%', _stereoW, 0.5, 2.0, (v) => setState(() => _stereoW = v)),
       ]),
       const SizedBox(height: 10),
-      _sectionCard(ar ? '\u062a\u0644\u0627\u0634\u064a' : 'Fade', Icons.trending_flat_rounded, [
-        _knob(ar ? '\u062f\u062e\u0648\u0644 (Fade In)' : 'Fade In',
-            '${_fadeIn.toStringAsFixed(1)}s', _fadeIn, 0, 10, (v)=>setState(()=>_fadeIn=v)),
-        _knob(ar ? '\u062e\u0631\u0648\u062c (Fade Out)' : 'Fade Out',
-            '${_fadeOut.toStringAsFixed(1)}s', _fadeOut, 0, 10, (v)=>setState(()=>_fadeOut=v)),
+      _card_(ar ? 'تلاشي' : 'Fade', Icons.trending_flat_rounded, [
+        _knob(ar ? 'دخول (Fade In)'  : 'Fade In',  '${_fadeIn.toStringAsFixed(1)}s',  _fadeIn,  0, 10, (v) => setState(() => _fadeIn = v)),
+        _knob(ar ? 'خروج (Fade Out)' : 'Fade Out', '${_fadeOut.toStringAsFixed(1)}s', _fadeOut, 0, 10, (v) => setState(() => _fadeOut = v)),
       ]),
       const SizedBox(height: 10),
-      _sectionCard(ar ? '\u0641\u0636\u0627\u0621 \u0635\u0648\u062a\u064a' : 'Space',
-          Icons.surround_sound_rounded, [
-        _knob(ar ? '\u0635\u062f\u0649 (Echo)' : 'Echo',
-            '${_echo.round()}%', _echo, 0, 100, (v)=>setState(()=>_echo=v)),
-        _knob(ar ? '\u0625\u0631\u062c\u0627\u0639 (Reverb)' : 'Reverb',
-            '${_reverb.round()}%', _reverb, 0, 100, (v)=>setState(()=>_reverb=v)),
+      _card_(ar ? 'فضاء صوتي' : 'Space', Icons.surround_sound_rounded, [
+        _knob(ar ? 'صدى (Echo)'      : 'Echo',   '${_echo.round()}%',   _echo,   0, 100, (v) => setState(() => _echo = v)),
+        _knob(ar ? 'إرجاع (Reverb)' : 'Reverb', '${_reverb.round()}%', _reverb, 0, 100, (v) => setState(() => _reverb = v)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'تقليص الضوضاء' : 'Noise Reduction', Icons.noise_aware_rounded, [
+        Text(ar ? 'مرشح afftdn — 0 = معطل' : 'afftdn filter — 0 = disabled',
+            style: const TextStyle(color: _textDim, fontSize: 11)),
+        const SizedBox(height: 8),
+        _knob(ar ? 'قوة التقليص' : 'Strength',
+            _noiseReduc == 0 ? (ar ? 'معطل' : 'Off') : '${_noiseReduc.round()}%',
+            _noiseReduc, 0, 100, (v) => setState(() => _noiseReduc = v)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'ضاغط ديناميكي' : 'Compressor', Icons.compress_rounded, [
+        _toggle(ar ? 'تفعيل الضاغط' : 'Enable Compressor',
+            Icons.compress_rounded, _compress, (v) => setState(() => _compress = v)),
+        if (_compress) ...[const SizedBox(height: 10),
+          _knob(ar ? 'عتبة' : 'Threshold', '${_compThresh.toStringAsFixed(0)} dB',
+              _compThresh, -40, 0, (v) => setState(() => _compThresh = v)),
+          _knob(ar ? 'نسبة' : 'Ratio', '${_compRatio.toStringAsFixed(1)}:1',
+              _compRatio, 1, 20, (v) => setState(() => _compRatio = v)),
+        ],
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'تأثيرات إضافية' : 'Extra', Icons.auto_awesome_rounded, [
+        _toggle(ar ? 'تطبيع (Normalize)' : 'Normalize', Icons.graphic_eq_rounded, _normalize, (v) => setState(() => _normalize = v)),
+        const SizedBox(height: 6),
+        _toggle(ar ? 'عكس (Reverse)'    : 'Reverse',   Icons.swap_horiz_rounded,  _reverse,   (v) => setState(() => _reverse = v)),
       ]),
       const SizedBox(height: 10),
       GestureDetector(
         onTap: () {
           HapticFeedback.mediumImpact();
-          setState(() { _vol=1.0; _pitch=0; _tempo=1.0; _fadeIn=0; _fadeOut=0; _echo=0; _reverb=0; });
+          setState(() {
+            _vol=1.0; _pitch=0; _tempo=1.0; _stereoW=1.0;
+            _fadeIn=0; _fadeOut=0; _echo=0; _reverb=0;
+            _noiseReduc=0; _compress=false; _compThresh=-18; _compRatio=4.0;
+            _normalize=false; _reverse=false;
+          });
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(color: _redDk, borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _red.withValues(alpha: 0.35))),
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _teal.withValues(alpha: 0.3))),
           child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.restart_alt_rounded, color: _coral, size: 18),
-            const SizedBox(width: 8),
-            Text(ar ? '\u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0636\u0628\u0637' : 'Reset All',
-                style: const TextStyle(color: _coral, fontSize: 13, fontWeight: FontWeight.w700)),
+            const Icon(Icons.restart_alt_rounded, color: _teal, size: 17),
+            const SizedBox(width: 6),
+            Text(ar ? 'إعادة ضبط التأثيرات' : 'Reset All Effects',
+                style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w600)),
           ])))),
     ]);
   }
 
-  // ─── EXPORT TAB ───────────────────────────────────────────────────────────
+  // ── MERGE TAB ─────────────────────────────────────────────────────────────
+  Widget _mergeTab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      _card_(ar ? 'الملف الرئيسي' : 'Main File', Icons.audio_file_rounded, [
+        Row(children: [
+          const Icon(Icons.check_circle_rounded, color: _teal, size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Text(_fileName, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _textA, fontSize: 13))),
+        ]),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'الملف الثاني' : 'Second File', Icons.audio_file_outlined, [
+        if (_mergePath == null)
+          GestureDetector(onTap: _pickMerge,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _teal.withValues(alpha: 0.4))),
+              child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.add_rounded, color: _teal, size: 20),
+                const SizedBox(width: 8),
+                Text(ar ? 'اختر الملف الثاني' : 'Pick second file',
+                    style: const TextStyle(color: _teal, fontSize: 14, fontWeight: FontWeight.w600)),
+              ]))))
+        else
+          Row(children: [
+            const Icon(Icons.audio_file_rounded, color: _gold, size: 16),
+            const SizedBox(width: 8),
+            Expanded(child: Text(_mergeName, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _textA, fontSize: 13))),
+            IconButton(icon: const Icon(Icons.close_rounded, color: _red, size: 18),
+              onPressed: () => setState(() { _mergePath = null; _mergeName = ''; })),
+          ]),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'الترتيب' : 'Order', Icons.sort_rounded, [
+        GestureDetector(onTap: () => setState(() => _mergeAppend = true),
+          child: _orderRow(ar ? 'الرئيسي ثم الثاني' : 'Main → Second', _mergeAppend)),
+        const SizedBox(height: 8),
+        GestureDetector(onTap: () => setState(() => _mergeAppend = false),
+          child: _orderRow(ar ? 'الثاني ثم الرئيسي' : 'Second → Main', !_mergeAppend)),
+      ]),
+      const SizedBox(height: 14),
+      if (_mergePath != null)
+        GestureDetector(onTap: _busy ? null : _merge,
+          child: AnimatedBuilder(animation: _glowCtrl,
+            builder: (_, __) => Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Color(0xFF6B4F10), _gold],
+                    begin: Alignment.centerRight, end: Alignment.centerLeft),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: _gold.withValues(alpha: 0.12 + 0.12 * _glowCtrl.value),
+                    blurRadius: 18, offset: const Offset(0, 4))]),
+              child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.merge_type_rounded, color: Color(0xFF0A0A00), size: 20),
+                const SizedBox(width: 10),
+                Text(ar ? 'دمج الملفين' : 'Merge Files',
+                    style: const TextStyle(color: Color(0xFF0A0A00), fontSize: 15, fontWeight: FontWeight.w800)),
+              ]))))),
+    ]);
+  }
+
+  Widget _orderRow(String label, bool sel) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    decoration: BoxDecoration(
+      color: sel ? _goldDim.withValues(alpha: 0.4) : _card,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+    child: Row(children: [
+      Icon(sel ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+          color: sel ? _gold : _textDim, size: 18),
+      const SizedBox(width: 10),
+      Text(label, style: TextStyle(color: sel ? _gold : _textB, fontSize: 13,
+          fontWeight: sel ? FontWeight.w700 : FontWeight.w400)),
+    ]));
+
+  // ── EXPORT TAB ────────────────────────────────────────────────────────────
   Widget _exportTab() {
     final ar = LangProvider.strings(context).ar;
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _sectionCard(ar ? '\u0627\u0644\u0635\u064a\u063a\u0629' : 'Format',
-          Icons.file_download_rounded, [
+      _card_(ar ? 'الصيغة' : 'Format', Icons.file_download_rounded, [
         Row(children: ['MP3','WAV','M4A'].map((f) {
           final sel = f == _fmt;
           return Expanded(child: GestureDetector(
             onTap: () => setState(() => _fmt = f),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
+            child: AnimatedContainer(duration: const Duration(milliseconds: 180),
               margin: const EdgeInsets.symmetric(horizontal: 4),
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              padding: const EdgeInsets.symmetric(vertical: 13),
               decoration: BoxDecoration(
-                gradient: sel ? const LinearGradient(
-                  colors: [Color(0xFF5C1208), Color(0xFF3D0D06)]) : null,
-                color: sel ? null : _card,
+                color: sel ? _goldDim.withValues(alpha: 0.35) : _card,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: sel ? _red : _rim, width: sel ? 1.5 : 1)),
+                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
               child: Center(child: Text(f, style: TextStyle(
-                  color: sel ? _coral : _textB, fontSize: 14,
-                  fontWeight: sel ? FontWeight.w900 : FontWeight.w500))))));
+                  color: sel ? _gold : _textB, fontSize: 14,
+                  fontWeight: sel ? FontWeight.w800 : FontWeight.w500))))));
         }).toList()),
-        if (_fmt != 'WAV') ...[ const SizedBox(height: 16),
-          _knob(ar ? '\u062c\u0648\u062f\u0629 \u0627\u0644\u0628\u062b' : 'Bitrate',
-              '$_kbps kbps', _kbps.toDouble(), 64, 320,
-              (v) => setState(() => _kbps = v.round())) ],
+        if (_fmt != 'WAV') ...[const SizedBox(height: 16),
+          _knob(ar ? 'جودة البث' : 'Bitrate', '$_kbps kbps', _kbps.toDouble(), 64, 320,
+              (v) => setState(() => _kbps = v.round()))],
       ]),
       const SizedBox(height: 10),
-      _sectionCard(ar ? '\u0645\u0644\u062e\u0635' : 'Summary', Icons.summarize_rounded, [
-        _row(ar ? '\u0627\u0644\u0645\u0642\u0637\u0639 \u0627\u0644\u0645\u062d\u062f\u062f' : 'Selected Range',
-          '${_fmtTime(_trimStart * _durationSec)} ${ar ? "\u2190" : "\u2192"} ${_fmtTime(_trimEnd * _durationSec)}'),
-        _row(ar ? '\u0627\u0644\u0645\u062f\u0629' : 'Duration',
-            _fmtTime((_trimEnd - _trimStart) * _durationSec)),
-        _row(ar ? '\u0627\u0644\u0635\u064a\u063a\u0629' : 'Format',
-            '$_fmt${_fmt == "WAV" ? "" : " @ $_kbps kbps"}'),
+      _card_(ar ? 'خيارات' : 'Options', Icons.settings_rounded, [
+        _toggle(ar ? 'حفظ كنغمة رنين (التنزيلات)' : 'Set as Ringtone (saves to Downloads)',
+            Icons.ring_volume_rounded, _asRingtone, (v) => setState(() => _asRingtone = v)),
       ]),
-      if (_outPath != null) ...[ const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: _redDk.withValues(alpha: 0.6),
+      const SizedBox(height: 10),
+      _card_(ar ? 'ملخص' : 'Summary', Icons.summarize_rounded, [
+        _row(ar ? 'النطاق' : 'Range',
+            '${_fmtTime(_trimStart * _durationSec)} → ${_fmtTime(_trimEnd * _durationSec)}'),
+        _row(ar ? 'المدة' : 'Duration', _fmtTime((_trimEnd - _trimStart) * _durationSec)),
+        _row(ar ? 'الصيغة' : 'Format', '$_fmt${_fmt == "WAV" ? "" : " @ $_kbps kbps"}'),
+        if (_noiseReduc > 0) _row('Noise Reduction', '${_noiseReduc.round()}%'),
+        if (_compress) _row('Compressor', '${_compThresh.round()}dB / ${_compRatio.round()}:1'),
+        if (_normalize) _row('Normalize', '✓'),
+        if (_reverse)   _row('Reverse',   '✓'),
+      ]),
+      if (_outPath != null) ...[const SizedBox(height: 10),
+        Container(padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: _tealDk.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _red.withValues(alpha: 0.4))),
+              border: Border.all(color: _teal.withValues(alpha: 0.4))),
           child: Row(children: [
-            const Icon(Icons.check_circle_rounded, color: _coral, size: 20),
+            const Icon(Icons.check_circle_rounded, color: _teal, size: 20),
             const SizedBox(width: 10),
-            Expanded(child: Text('${ar ? "\u062a\u0645 \u0627\u0644\u062d\u0641\u0638: " : "Saved: "}$_outPath',
+            Expanded(child: Text('${ar ? "تم الحفظ: " : "Saved: "}$_outPath',
                 style: const TextStyle(color: _textA, fontSize: 11),
                 overflow: TextOverflow.ellipsis, maxLines: 2)),
-          ])) ],
+          ]))],
       const SizedBox(height: 14),
-      GestureDetector(
-        onTap: _busy ? null : _export,
-        child: AnimatedBuilder(
-          animation: _pulseCtrl,
+      GestureDetector(onTap: _busy ? null : _export,
+        child: AnimatedBuilder(animation: _glowCtrl,
           builder: (_, __) => Container(
             padding: const EdgeInsets.symmetric(vertical: 18),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFAA2008), _red, Color(0xFFFF5733)],
-                begin: Alignment.centerLeft, end: Alignment.centerRight),
+              gradient: const LinearGradient(colors: [Color(0xFF6B4F10), _gold],
+                  begin: Alignment.centerRight, end: Alignment.centerLeft),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [BoxShadow(
-                  color: _red.withValues(alpha: _busy ? 0.05 : 0.18 + 0.14 * _pulseCtrl.value),
-                  blurRadius: 24, offset: const Offset(0, 6))]),
+                  color: _gold.withValues(alpha: _busy ? 0.04 : 0.18 + 0.12 * _glowCtrl.value),
+                  blurRadius: 22, offset: const Offset(0, 5))]),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Icon(Icons.science_rounded, color: Colors.white, size: 22),
+              const Icon(Icons.audio_file_rounded, color: Color(0xFF0A0A00), size: 22),
               const SizedBox(width: 10),
-              Text(ar ? '\u0645\u0639\u0627\u0644\u062c\u0629 \u0648\u062a\u0635\u062f\u064a\u0631' : 'Process & Export',
-                  style: const TextStyle(color: Colors.white, fontSize: 16,
-                      fontWeight: FontWeight.w900, letterSpacing: 0.3)),
+              Text(ar ? 'معالجة وتصدير' : 'Process & Export',
+                  style: const TextStyle(color: Color(0xFF0A0A00), fontSize: 16, fontWeight: FontWeight.w800)),
             ])))),
     ]);
   }
 
-  // ── Shared widget helpers ─────────────────────────────────────────────────
-  Widget _sectionCard(String title, IconData icon, List<Widget> body) =>
-    Container(
-      padding: const EdgeInsets.all(14),
+  // ── Shared helpers ────────────────────────────────────────────────────────
+  Widget _card_(String title, IconData icon, List<Widget> body) =>
+    Container(padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _rim, width: 1)),
+          border: Border.all(color: _border, width: 1)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(icon, color: _coral, size: 16), const SizedBox(width: 7),
+          Icon(icon, color: _teal, size: 15), const SizedBox(width: 7),
           Text(title, style: const TextStyle(color: _textB, fontSize: 12,
               fontWeight: FontWeight.w700, letterSpacing: 0.3)),
         ]),
@@ -877,59 +906,59 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         ...body,
       ]));
 
-  Widget _slider(double val, double min, double max, Color color,
-      ValueChanged<double> onChanged) =>
+  Widget _slider(double val, double min, double max, Color color, ValueChanged<double> onChanged) =>
     Directionality(textDirection: TextDirection.ltr,
-      child: SliderTheme(
-        data: SliderThemeData(trackHeight: 4,
-          thumbSize: WidgetStateProperty.all(const Size(16, 16)),
-          thumbColor: color, activeTrackColor: color.withValues(alpha: 0.85),
-          inactiveTrackColor: _rim, overlayColor: color.withValues(alpha: 0.12)),
+      child: SliderTheme(data: SliderThemeData(trackHeight: 4,
+        thumbSize: WidgetStateProperty.all(const Size(16, 16)),
+        thumbColor: color, activeTrackColor: color.withValues(alpha: 0.85),
+        inactiveTrackColor: _border, overlayColor: color.withValues(alpha: 0.12)),
         child: Slider(value: val, min: min, max: max, onChanged: onChanged)));
 
-  Widget _knob(String label, String valueStr, double val, double min,
-      double max, ValueChanged<double> onChanged) =>
+  Widget _knob(String label, String valueStr, double val, double min, double max,
+      ValueChanged<double> onChanged) =>
     Padding(padding: const EdgeInsets.only(bottom: 10),
       child: Row(children: [
-        SizedBox(width: 90, child: Text(label,
-            style: const TextStyle(color: _textB, fontSize: 12))),
-        Expanded(child: _slider(val, min, max, _red, onChanged)),
+        SizedBox(width: 90, child: Text(label, style: const TextStyle(color: _textB, fontSize: 12))),
+        Expanded(child: _slider(val, min, max, _gold, onChanged)),
         SizedBox(width: 68, child: Text(valueStr, textAlign: TextAlign.end,
-            style: const TextStyle(color: _coral, fontSize: 12, fontWeight: FontWeight.w700))),
+            style: const TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w700))),
       ]));
 
-  Widget _chip(String label, VoidCallback onTap) =>
+  Widget _chip_(String label, VoidCallback onTap) =>
     GestureDetector(onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(color: _redDk, borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _red.withValues(alpha: 0.4))),
-        child: Text(label, style: const TextStyle(
-            color: _coral, fontSize: 11, fontWeight: FontWeight.w700))));
+        decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _teal.withValues(alpha: 0.4))),
+        child: Text(label, style: const TextStyle(color: _teal, fontSize: 11, fontWeight: FontWeight.w700))));
 
   Widget _preset(String label, List<double> vals) =>
-    GestureDetector(onTap: () => setState(() { for (int i=0;i<5;i++) _eq[i]=vals[i]; }),
+    GestureDetector(onTap: () => setState(() { for (int i = 0; i < 10; i++) _eq[i] = vals[i]; }),
       child: Container(
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _rim)),
-        child: Text(label, style: const TextStyle(
-            color: _textB, fontSize: 11, fontWeight: FontWeight.w600))));
+            border: Border.all(color: _border)),
+        child: Text(label, style: const TextStyle(color: _textB, fontSize: 11, fontWeight: FontWeight.w600))));
+
+  Widget _toggle(String label, IconData icon, bool val, ValueChanged<bool> onChanged) =>
+    Row(children: [
+      Icon(icon, color: _textDim, size: 17), const SizedBox(width: 8),
+      Expanded(child: Text(label, style: const TextStyle(color: _textB, fontSize: 13))),
+      Switch(value: val, activeColor: _gold, inactiveThumbColor: _textDim,
+        activeTrackColor: _goldDim, inactiveTrackColor: _border, onChanged: onChanged),
+    ]);
 
   Widget _row(String label, String value) =>
     Padding(padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(children: [
         Text(label, style: const TextStyle(color: _textB, fontSize: 12)),
         const Spacer(),
-        Text(value, style: const TextStyle(color: _coral, fontSize: 12,
-            fontWeight: FontWeight.w600)),
+        Text(value, style: const TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w600)),
       ]));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WAVEFORM PAINTER — AudioLab red gradient style
-// ─────────────────────────────────────────────────────────────────────────────
+// ── WAVEFORM PAINTER ──────────────────────────────────────────────────────────
 class _WavePainter extends CustomPainter {
   final List<double> bars;
   final double playPos, trimStart, trimEnd, animT;
@@ -940,62 +969,47 @@ class _WavePainter extends CustomPainter {
 
   @override
   void paint(Canvas c, Size sz) {
-    final n   = bars.length;
-    final bw  = sz.width / n;
-    final mid = sz.height / 2;
-    final gap = 1.0;
-    final rActive   = Paint()..shader = ui.Gradient.linear(
-        Offset(0, 0), Offset(0, sz.height),
-        [const Color(0xFFFF5733), const Color(0xFF8C1A0A)]);
-    final rInactive = Paint()..shader = ui.Gradient.linear(
-        Offset(0, 0), Offset(0, sz.height), [
-      const Color(0xFF4D1A10).withOpacity(0.6),
-      const Color(0xFF200806).withOpacity(0.4)]);
-    final rTrim = Paint()..color = const Color(0xFF3D0F08).withOpacity(0.55);
-    final rPlay = Paint()..color = const Color(0xFFFF3D1A).withOpacity(0.18);
+    final n = bars.length; final bw = sz.width / n; final mid = sz.height / 2;
+    final rActive   = Paint()..shader = ui.Gradient.linear(Offset(0,0), Offset(0,sz.height),
+        [const Color(0xFF1DB898), const Color(0xFF0A5A3A)]);
+    final rInactive = Paint()..color = const Color(0xFF1A3A30).withOpacity(0.5);
+    final rTrim     = Paint()..color = Colors.black.withOpacity(0.35);
 
-    final x0 = trimStart * sz.width, x1 = trimEnd * sz.width;
-    if (trimStart > 0)
-      c.drawRect(Rect.fromLTWH(0, 0, x0, sz.height), rTrim);
-    if (trimEnd < 1)
-      c.drawRect(Rect.fromLTWH(x1, 0, sz.width - x1, sz.height), rTrim);
+    final x0 = trimStart * sz.width; final x1 = trimEnd * sz.width;
+    if (trimStart > 0) c.drawRect(Rect.fromLTWH(0, 0, x0, sz.height), rTrim);
+    if (trimEnd   < 1) c.drawRect(Rect.fromLTWH(x1, 0, sz.width - x1, sz.height), rTrim);
 
     for (int i = 0; i < n; i++) {
-      final x    = i * bw + gap;
-      final frac = i / n;
+      final x = i * bw + 1.0; final frac = i / n;
       final inTrim = frac >= trimStart && frac < trimEnd;
-      final pulse  = playing ? 0.08 * sin(animT * 2 * pi + i * 0.25) : 0.0;
+      final pulse = playing ? 0.08 * sin(animT * 2 * pi + i * 0.25) : 0.0;
       final h = (bars[i] + pulse).clamp(0.05, 1.0) * mid * 0.88;
-      c.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, mid - h, bw - gap * 2, h * 2),
-          const Radius.circular(2.5)),
-        inTrim ? rActive : rInactive);
+      c.drawRRect(RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, mid - h, bw - 2, h * 2), const Radius.circular(2.5)),
+          inTrim ? rActive : rInactive);
     }
 
     final px = playPos * sz.width;
-    c.drawRect(Rect.fromLTWH(0, 0, px, sz.height), rPlay);
+    c.drawRect(Rect.fromLTWH(0, 0, px, sz.height),
+        Paint()..color = const Color(0xFFD4AF37).withOpacity(0.16));
     c.drawLine(Offset(px, 0), Offset(px, sz.height),
-        Paint()..color = const Color(0xFFFF3D1A)..strokeWidth = 1.5);
-    _handle(c, x0, sz.height, const Color(0xFFFF5733), true);
-    _handle(c, x1, sz.height, const Color(0xFFFFAB40), false);
-  }
+        Paint()..color = const Color(0xFFD4AF37)..strokeWidth = 1.5);
 
-  void _handle(Canvas c, double x, double h, Color col, bool start) {
-    c.drawLine(Offset(x, 0), Offset(x, h),
-        Paint()..color = col..strokeWidth = 1.8);
-    final p = Path();
-    if (start) { p.moveTo(x,0); p.lineTo(x+9,0); p.lineTo(x,10); p.close(); }
-    else        { p.moveTo(x,0); p.lineTo(x-9,0); p.lineTo(x,10); p.close(); }
-    c.drawPath(p, Paint()..color = col);
+    void handle(double x, Color col, bool start) {
+      c.drawLine(Offset(x,0), Offset(x,sz.height), Paint()..color=col..strokeWidth=1.8);
+      final p = Path();
+      if (start) { p.moveTo(x,0); p.lineTo(x+9,0); p.lineTo(x,10); p.close(); }
+      else        { p.moveTo(x,0); p.lineTo(x-9,0); p.lineTo(x,10); p.close(); }
+      c.drawPath(p, Paint()..color=col);
+    }
+    handle(x0, const Color(0xFF1DB898), true);
+    handle(x1, const Color(0xFFD4AF37), false);
   }
 
   @override bool shouldRepaint(_WavePainter o) => true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EQ CURVE PAINTER
-// ─────────────────────────────────────────────────────────────────────────────
+// ── EQ CURVE PAINTER ──────────────────────────────────────────────────────────
 class _EqPainter extends CustomPainter {
   final List<double> values;
   _EqPainter({required this.values});
@@ -1003,35 +1017,29 @@ class _EqPainter extends CustomPainter {
   @override
   void paint(Canvas c, Size sz) {
     if (values.length < 2) return;
-    final n = values.length;
-    final midY = sz.height / 2;
-    final scX  = sz.width / (n - 1);
-    final scY  = midY / 14;
+    final n = values.length; final midY = sz.height / 2;
+    final scX = sz.width / (n - 1); final scY = midY / 14;
 
-    final gridP = Paint()..color = const Color(0xFF3D1A12)..strokeWidth = 0.5;
-    c.drawLine(Offset(0, midY), Offset(sz.width, midY), gridP);
-    for (final y in [midY - 6 * scY, midY + 6 * scY])
-      c.drawLine(Offset(0, y), Offset(sz.width, y),
-          Paint()..color = const Color(0xFF2A0E08)..strokeWidth = 0.5);
+    c.drawLine(Offset(0,midY), Offset(sz.width,midY),
+        Paint()..color=const Color(0xFF1A3A30)..strokeWidth=0.5);
 
     final path = Path();
     for (int i = 0; i < n; i++) {
-      final x = i * scX;
-      final y = midY - values[i] * scY;
+      final x = i * scX; final y = midY - values[i] * scY;
       if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
     }
     c.drawPath(path, Paint()
       ..style = PaintingStyle.stroke..strokeWidth = 2
       ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round
-      ..shader = ui.Gradient.linear(const Offset(0, 0), Offset(sz.width, 0),
-          [const Color(0xFFFF3D1A), const Color(0xFFFF6B40)]));
+      ..shader = ui.Gradient.linear(const Offset(0,0), Offset(0, sz.height),
+          [const Color(0xFF1DB898), const Color(0xFFD4AF37)]));
 
     final fill = Path.from(path);
-    fill.lineTo((n - 1) * scX, midY); fill.lineTo(0, midY); fill.close();
+    fill.lineTo((n-1)*scX, midY); fill.lineTo(0, midY); fill.close();
     c.drawPath(fill, Paint()..shader = ui.Gradient.linear(
-        Offset(0, midY - 14 * scY), Offset(0, midY + 14 * scY), [
-      const Color(0xFFFF3D1A).withOpacity(0.22),
-      const Color(0xFFFF3D1A).withOpacity(0.0)]));
+        Offset(0, midY-14*scY), Offset(0, midY+14*scY), [
+      const Color(0xFF1DB898).withOpacity(0.18),
+      const Color(0xFF1DB898).withOpacity(0.0)]));
   }
 
   @override bool shouldRepaint(_EqPainter o) => values != o.values;
