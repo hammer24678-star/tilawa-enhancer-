@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سياسة الخصوصية — محسِّن التلاوة</title>
+<meta name="robots" content="index, follow">
+<style>
+  :root{
+    --bg: #0b0f1a;
+    --bg-soft: #121829;
+    --ink: #e8e6df;
+    --ink-dim: #9aa3b8;
+    --gold: #c9a55c;
+    --line: rgba(201,165,92,0.18);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,165,92,0.08), transparent),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Tahoma","Segoe UI",system-ui,-apple-system,sans-serif;
+    line-height:1.9;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:760px;
+    margin:0 auto;
+    padding:4rem 1.5rem 6rem;
+  }
+  header.page-head{
+    text-align:center;
+    margin-bottom:3rem;
+    padding-bottom:2.5rem;
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    display:inline-block;
+    font-size:0.78rem;
+    letter-spacing:0.08em;
+    color:var(--gold);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:0.35rem 1rem;
+    margin-bottom:1.4rem;
+  }
+  h1{
+    font-size:clamp(1.7rem, 4vw, 2.4rem);
+    font-weight:700;
+    margin:0 0 0.6rem;
+    color:#f5f1e6;
+  }
+  .updated{
+    color:var(--ink-dim);
+    font-size:0.92rem;
+  }
+  .intro{
+    font-size:1.08rem;
+    color:var(--ink);
+    margin-bottom:0.5rem;
+  }
+  section{
+    margin:2.6rem 0;
+  }
+  h2{
+    font-size:1.15rem;
+    color:var(--gold);
+    margin:0 0 0.7rem;
+    display:flex;
+    align-items:center;
+    gap:0.6rem;
+  }
+  h2::before{
+    content:"";
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    background:var(--gold);
+    flex-shrink:0;
+  }
+  p{
+    margin:0 0 0.9rem;
+    color:#d6d3c9;
+  }
+  .modes{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:1rem;
+    margin-top:1rem;
+  }
+  @media (max-width:560px){
+    .modes{grid-template-columns:1fr;}
+  }
+  .mode-card{
+    background:var(--bg-soft);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:1.2rem 1.3rem;
+  }
+  .mode-card h3{
+    margin:0 0 0.5rem;
+    font-size:0.98rem;
+    color:#f5f1e6;
+  }
+  .mode-card p{
+    font-size:0.92rem;
+    margin:0;
+    color:var(--ink-dim);
+  }
+  .retention{
+    display:inline-block;
+    background:rgba(201,165,92,0.1);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:0.15rem 0.55rem;
+    color:var(--gold);
+    font-size:0.9rem;
+  }
+  footer{
+    margin-top:4rem;
+    padding-top:2rem;
+    border-top:1px solid var(--line);
+    text-align:center;
+    color:var(--ink-dim);
+    font-size:0.9rem;
+  }
+  footer a{
+    color:var(--gold);
+    text-decoration:none;
+  }
+  footer a:hover{
+    text-decoration:underline;
+  }
+  .back{
+    display:inline-block;
+    margin-bottom:2rem;
+    color:var(--ink-dim);
+    text-decoration:none;
+    font-size:0.92rem;
+  }
+  .back:hover{color:var(--gold);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a class="back" href="./">→ العودة إلى الصفحة الرئيسية</a>
+
+  <header class="page-head">
+    <span class="eyebrow">محسِّن التلاوة</span>
+    <h1>سياسة الخصوصية</h1>
+    <div class="updated">آخر تحديث: 28 يونيو 2026</div>
+  </header>
+
+  <p class="intro">
+    محسِّن التلاوة تطبيق مجاني لتحسين جودة الصوت في تسجيلات التلاوة القرآنية،
+    ولا يجمع أي بيانات شخصية للمستخدمين.
+  </p>
+
+  <section>
+    <h2>وضعا المعالجة</h2>
+    <p>يوفر التطبيق طريقتين لتحسين التسجيلات الصوتية، ولكل منهما تعامل مختلف مع ملفك:</p>
+    <div class="modes">
+      <div class="mode-card">
+        <h3>الوضع المحلي (بدون إنترنت)</h3>
+        <p>تتم المعالجة بالكامل على جهازك. لا يُرسل أي ملف صوتي إلى أي خادم خارجي مطلقًا.</p>
+      </div>
+      <div class="mode-card">
+        <h3>وضع الإنترنت</h3>
+        <p>للمعالجة الأقوى، يُرفع الملف مؤقتًا إلى خوادم المعالجة، ثم يُعاد إليك الملف المُحسَّن.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>الاحتفاظ بالملفات في وضع الإنترنت</h2>
+    <p>
+      يُحذف الملف الأصلي الذي رفعته فور انتهاء معالجته.
+      أما الملف الناتج (المُحسَّن) فيُحذف تلقائيًا من الخادم خلال
+      <span class="retention">ساعتين</span> من إنشائه.
+      لا تُستخدم ملفاتك الصوتية لأي غرض آخر، ولا تُشارك مع أي طرف ثالث.
+    </p>
+  </section>
+
+  <section>
+    <h2>عدم وجود حسابات</h2>
+    <p>لا يتطلب التطبيق إنشاء حساب أو تسجيل دخول، ولا يجمع أي معلومات تعريف شخصية.</p>
+  </section>
+
+  <section>
+    <h2>عدم وجود تتبع أو إعلانات</h2>
+    <p>لا يحتوي التطبيق على أدوات تحليل سلوك المستخدم، أو إعلانات، أو مكتبات تتبع من طرف ثالث.</p>
+  </section>
+
+  <section>
+    <h2>التواصل</h2>
+    <p>
+      لأي استفسار يخص هذه السياسة، يمكن التواصل عبر
+      <a href="https://github.com/hammer24678-star/tilawa-enhancer-" style="color:var(--gold)">صفحة المشروع على GitHub</a>.
+    </p>
+  </section>
+
+  <footer>
+    محسِّن التلاوة — صدقة جارية لخدمة كتاب الله ·
+    <a href="./">الصفحة الرئيسية</a>
+  </footer>
+
+</div>
+</body>
+</html>
