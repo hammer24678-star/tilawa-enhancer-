@@ -187,10 +187,19 @@ class LocalEngineRunner(
             val tmp = File(dataDir, "alpine.tar.gz")
             var alpineOk = false
             try {
-                context.assets.open("alpine/alpine-rootfs.tar.gz")
+                context.assets.open("flutter_assets/assets/alpine/alpine-rootfs.tar.gz")
                     .use { it.copyTo(java.io.FileOutputStream(tmp)) }
                 alpineOk = true
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                // S206: fall back to the old (wrong) un-prefixed path just in case —
+                // the prefixed attempt above is the one that actually matches
+                // Flutter's AssetManager namespace and will now succeed.
+                try {
+                    context.assets.open("alpine/alpine-rootfs.tar.gz")
+                        .use { it.copyTo(java.io.FileOutputStream(tmp)) }
+                    alpineOk = true
+                } catch (_: Exception) {}
+            }
             if (!alpineOk) {
                 progress(12, "Downloading Alpine Linux (~4MB)…")
                 download("https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/${archStr}/alpine-minirootfs-3.21.3-${archStr}.tar.gz", tmp, "Alpine rootfs", 12, 32)  // S195-BUG5
@@ -234,10 +243,19 @@ class LocalEngineRunner(
             // Try bundled asset first
             try {
                 progress(38, "Extracting Python + ffmpeg (bundled)…")
-                context.assets.open("alpine/python-env.tar.gz")
+                context.assets.open("flutter_assets/assets/alpine/python-env.tar.gz")
                     .use { it.copyTo(FileOutputStream(tmp2)) }
                 pyOk = true
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                // S206: same missing-prefix bug as alpine-rootfs above — see this
+                // script's header for why this one mattered most (it gates both
+                // isBasicSetupComplete() and isSetupComplete()).
+                try {
+                    context.assets.open("alpine/python-env.tar.gz")
+                        .use { it.copyTo(FileOutputStream(tmp2)) }
+                    pyOk = true
+                } catch (_: Exception) {}
+            }
             // Fallback: download from GitHub Release
             if (!pyOk) {
                 progress(38, "Downloading Python + ffmpeg (~135 MB, one-time)…")

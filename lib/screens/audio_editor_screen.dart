@@ -12,6 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import '../state/lang_provider.dart';
+import 'setup_screen.dart';  // S206: lets the setup-required snackbar launch setup directly
 
 // ── Sacred Cosmos palette (unchanged) ────────────────────────────────────────
 const _bg      = Color(0xFF020D17);
@@ -125,7 +126,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Future<bool> _checkSetup() async {
     final ok = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
-    if (!ok && mounted) _snack('Please finish local engine setup in Settings first.', color: _red);
+    // S206: old message sent users to "Settings" to finish setup, but
+    // settings_screen.dart has no local-engine setup code at all — the only
+    // real entry point was buried in home_screen.dart's local-mode toggle.
+    // Launch SetupScreen directly instead of pointing at a dead end.
+    if (!ok && mounted) {
+      final ar = LangProvider.strings(context).ar;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: _card, behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: _red, width: 0.7)),
+        content: Text(ar ? 'يلزم إعداد المحرك المحلي أولًا' : 'Local engine setup is required first.',
+            style: const TextStyle(color: _red, fontSize: 11)),
+        action: SnackBarAction(label: ar ? 'إعداد الآن' : 'Set Up Now', textColor: _gold,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => SetupScreen(
+                    onDone: () { if (mounted) Navigator.of(context).pop(); },
+                    onSkip: () { if (mounted) Navigator.of(context).pop(); })))),
+        duration: const Duration(seconds: 6)));
+    }
     return ok;
   }
 
