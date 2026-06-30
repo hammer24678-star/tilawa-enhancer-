@@ -451,6 +451,7 @@ class LocalEngineRunner(
         channel!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "isSetupComplete" -> result.success(isSetupComplete())
+                "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S205: was missing — audio editor _checkSetup() threw MissingPluginException
                 "startSetup" -> { result.success(null); scope.launch { safeSetup() } }
                 "runEngine"  -> {
                     result.success(null)
@@ -491,6 +492,20 @@ class LocalEngineRunner(
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // S205: lightweight check for callers that only need proot + ffmpeg
+    // (e.g. the audio editor's plain ffmpeg trim/EQ/export) — unlike
+    // isSetupComplete() below, this does NOT require numpy, deep-filter,
+    // or any downloaded restoration engine.
+    fun isBasicSetupComplete(): Boolean {
+        if (!prootBin.exists()) return false
+        if (!File(alpineDir, "usr/bin/python3").exists()) return false
+        val hasLibPython = File(alpineDir, "usr/lib").listFiles()
+            ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
+        if (!hasLibPython) return false
+        if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
+        return true
     }
 
     fun isSetupComplete(): Boolean {

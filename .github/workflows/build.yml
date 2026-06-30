@@ -38,7 +38,7 @@ jobs:
         run: flutter create --platforms=android --project-name tilawa_enhancer .
 
       - name: Install Pillow for icon generation
-        run: pip install Pillow --quiet
+        run: pip install Pillow --quiet --break-system-packages  # S205
 
       - name: Patch android/ v11
         run: python3 patch_android.py
