@@ -196,154 +196,157 @@ for check, label in [
 
 # ── STEP 7: MainActivity.kt ───────────────────────────────────────────────────
 MAIN_ACTIVITY_KT = (
-'package com.tilawa.tilawa_enhancer\n'
-'\n'
-'import android.content.ContentValues\n'
-'import android.media.MediaScannerConnection\n'
-'import android.os.Build\n'
-'import android.os.Environment\n'
-'import android.provider.MediaStore\n'
-'import android.view.WindowManager\n'
-'import io.flutter.embedding.android.FlutterActivity\n'
-'import io.flutter.embedding.engine.FlutterEngine\n'
-'import io.flutter.plugin.common.MethodChannel\n'
-'\n'
-'class MainActivity : FlutterActivity() {\n'
-'\n'
-'    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {\n'
-'        super.configureFlutterEngine(flutterEngine)\n'
-'        MethodChannel(\n'
-'            flutterEngine.dartExecutor.binaryMessenger,\n'
-'            "com.tilawa.tilawa_enhancer/media"\n'
-'        ).setMethodCallHandler { call, result ->\n'
-'            when (call.method) {\n'
-'                "scanFile" -> {\n'
-'                    val path = call.argument<String>("path")\n'
-'                    if (path != null) {\n'
-'                        MediaScannerConnection.scanFile(\n'
-'                            this, arrayOf(path), arrayOf("audio/mpeg")\n'
-'                        ) { _, _ -> result.success(null) }\n'
-'                    } else {\n'
-'                        result.error("INVALID_PATH", "path is null", null)\n'
-'                    }\n'
-'                }\n'
-'                "saveToDownloads" -> {\n'
-'                    val sourcePath = call.argument<String>("path")\n'
-'                    val fileName   = call.argument<String>("filename")\n'
-'                    val mimeType = if (fileName?.endsWith(".wav") == true) "audio/wav" else "audio/mpeg"  // S157\n'
-'                    if (sourcePath == null || fileName == null) {\n'
-'                        result.error("INVALID_ARGS", "path or filename is null", null)\n'
-'                        return@setMethodCallHandler\n'
-'                    }\n'
-'                    try {\n'
-'                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {\n'
-'                            val resolver = contentResolver\n'
-'                            val values = ContentValues().apply {\n'
-'                                put(MediaStore.Downloads.DISPLAY_NAME, fileName)\n'
-'                                put(MediaStore.Downloads.MIME_TYPE, mimeType)\n'
-'                                put(MediaStore.Downloads.IS_PENDING, 1)\n'
-'                            }\n'
-'                            val collection = MediaStore.Downloads.getContentUri(\n'
-'                                MediaStore.VOLUME_EXTERNAL_PRIMARY\n'
-'                            )\n'
-'                            val itemUri = resolver.insert(collection, values)\n'
-'                            if (itemUri == null) {\n'
-'                                result.error("INSERT_FAILED", "MediaStore insert returned null", null)\n'
-'                                return@setMethodCallHandler\n'
-'                            }\n'
-'                            // RC2 FIX: explicit null check prevents phantom 0-byte MediaStore entry\n'
-'                            val outputStream = resolver.openOutputStream(itemUri)\n'
-'                            if (outputStream == null) {\n'
-'                                resolver.delete(itemUri, null, null)\n'
-'                                result.error("STREAM_FAILED", "MediaStore openOutputStream returned null", null)\n'
-'                                return@setMethodCallHandler\n'
-'                            }\n'
-'                            outputStream.use { out ->\n'
-'                                java.io.File(sourcePath).inputStream().use { input -> input.copyTo(out) }\n'
-'                            }\n'
-'                            values.clear()\n'
-'                            values.put(MediaStore.Downloads.IS_PENDING, 0)\n'
-'                            resolver.update(itemUri, values, null, null)\n'
-'                            result.success(itemUri.toString())\n'
-'                        } else {\n'
-'                            // RC1 FIX: background Thread prevents ANR on large files\n'
-'                            Thread {\n'
-'                                try {\n'
-'                                    val downloadsDir = Environment.getExternalStoragePublicDirectory(\n'
-'                                        Environment.DIRECTORY_DOWNLOADS\n'
-'                                    )\n'
-'                                    downloadsDir.mkdirs()\n'
-'                                    val dest = java.io.File(downloadsDir, fileName)\n'
-'                                    java.io.File(sourcePath).copyTo(dest, overwrite = true)\n'
-'                                    MediaScannerConnection.scanFile(\n'
-'                                        this@MainActivity,\n'
-'                                        arrayOf(dest.absolutePath),\n'
-'                                        arrayOf(mimeType)\n'
-'                                    ) { _, _ -> result.success(dest.absolutePath) }\n'
-'                                } catch (e: Exception) {\n'
-'                                    android.os.Handler(android.os.Looper.getMainLooper()).post {\n'
-'                                        result.error("SAVE_FAILED", e.message, null)\n'
-'                                    }\n'
-'                                }\n'
-'                            }.start()\n'
-'                        }\n'
-'                    } catch (e: Exception) {\n'
-'                        result.error("SAVE_FAILED", e.message, null)\n'
-'                    }\n'
-'                }\n'
-'                "shareFile" -> {\n'
-'                    val uriString = call.argument<String>("uri")\n'
-'                    if (uriString != null) {\n'
-'                        try {\n'
-'                            val shareUri = android.net.Uri.parse(uriString)\n'
-'                            val shareMime = if (uriString.endsWith(".wav")) "audio/wav" else "audio/mpeg"  // S157\n'
-'                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {\n'
-'                                type = shareMime\n'
-'                                putExtra(android.content.Intent.EXTRA_STREAM, shareUri)\n'
-'                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)\n'
-'                            }\n'
-'                            startActivity(android.content.Intent.createChooser(intent, "Share"))\n'
-'                            result.success(null)\n'
-'                        } catch (e: Exception) {\n'
-'                            result.error("SHARE_FAILED", e.message, null)\n'
-'                        }\n'
-'                    } else {\n'
-'                        result.error("INVALID_ARGS", "uri is null", null)\n'
-'                    }\n'
-'                }\n'
-'                else -> result.notImplemented()\n'
-'            }\n'
-'        }\n'
-'\n'
-'        // S63: CPU wake lock — keeps polling alive with screen off\n'
-'        var _wl: android.os.PowerManager.WakeLock? = null\n'
-'        MethodChannel(\n'
-'            flutterEngine.dartExecutor.binaryMessenger,\n'
-'            "com.tilawa.tilawa_enhancer/wake"\n'
-'        ).setMethodCallHandler { call, result ->\n'
-'            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager\n'
-'            when (call.method) {\n'
-'                "acquire" -> {\n'
-'                    _wl?.let { if (it.isHeld) it.release() }\n'
-'                    _wl = pm.newWakeLock(\n'
-'                        android.os.PowerManager.PARTIAL_WAKE_LOCK,\n'
-'                        "tilawa:processing"\n'
-'                    ).also { it.acquire(90 * 60 * 1000L) }  // S195-BUG4: match engine 90-min timeout\n'
-'                    // S191: also force the screen to stay on, not just the CPU\n'
-'                    runOnUiThread { window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }\n'
-'                    result.success(null)\n'
-'                }\n'
-'                "release" -> {\n'
-'                    _wl?.let { if (it.isHeld) it.release() }\n'
-'                    _wl = null\n'
-'                    runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }  // S191\n'
-'                    result.success(null)\n'
-'                }\n'
-'                else -> result.notImplemented()\n'
-'            }\n'
-'        }\n'
-'    }\n'
-'}\n'
+r"""package com.tilawa.tilawa_enhancer
+
+import android.content.ContentValues
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.view.WindowManager
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity : FlutterActivity() {
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+    LocalEngineRunner(this, applicationContext).registerWith(flutterEngine) // S65
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.tilawa.tilawa_enhancer/media"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "scanFile" -> {
+                    val path = call.argument<String>("path")
+                    if (path != null) {
+                        MediaScannerConnection.scanFile(
+                            this, arrayOf(path), arrayOf("audio/mpeg")
+                        ) { _, _ -> result.success(null) }
+                    } else {
+                        result.error("INVALID_PATH", "path is null", null)
+                    }
+                }
+                "saveToDownloads" -> {
+                    val sourcePath = call.argument<String>("path")
+                    val fileName   = call.argument<String>("filename")
+                    if (sourcePath == null || fileName == null) {
+                        result.error("INVALID_ARGS", "path or filename is null", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val resolver = contentResolver
+                            val values = ContentValues().apply {
+                                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                                put(MediaStore.Downloads.MIME_TYPE, "audio/mpeg")
+                                put(MediaStore.Downloads.IS_PENDING, 1)
+                            }
+                            val collection = MediaStore.Downloads.getContentUri(
+                                MediaStore.VOLUME_EXTERNAL_PRIMARY
+                            )
+                            val itemUri = resolver.insert(collection, values)
+                            if (itemUri == null) {
+                                result.error("INSERT_FAILED", "MediaStore insert returned null", null)
+                                return@setMethodCallHandler
+                            }
+                            // RC2 FIX: explicit null check prevents phantom 0-byte MediaStore entry
+                            val outputStream = resolver.openOutputStream(itemUri)
+                            if (outputStream == null) {
+                                resolver.delete(itemUri, null, null)
+                                result.error("STREAM_FAILED", "MediaStore openOutputStream returned null", null)
+                                return@setMethodCallHandler
+                            }
+                            outputStream.use { out ->
+                                java.io.File(sourcePath).inputStream().use { input -> input.copyTo(out) }
+                            }
+                            values.clear()
+                            values.put(MediaStore.Downloads.IS_PENDING, 0)
+                            resolver.update(itemUri, values, null, null)
+                            result.success(itemUri.toString())
+                        } else {
+                            // RC1 FIX: background Thread prevents ANR on large files
+                            Thread {
+                                try {
+                                    val downloadsDir = Environment.getExternalStoragePublicDirectory(
+                                        Environment.DIRECTORY_DOWNLOADS
+                                    )
+                                    downloadsDir.mkdirs()
+                                    val dest = java.io.File(downloadsDir, fileName)
+                                    java.io.File(sourcePath).copyTo(dest, overwrite = true)
+                                    MediaScannerConnection.scanFile(
+                                        this@MainActivity,
+                                        arrayOf(dest.absolutePath),
+                                        arrayOf("audio/mpeg")
+                                    ) { _, _ -> result.success(dest.absolutePath) }
+                                } catch (e: Exception) {
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        result.error("SAVE_FAILED", e.message, null)
+                                    }
+                                }
+                            }.start()
+                        }
+                    } catch (e: Exception) {
+                        result.error("SAVE_FAILED", e.message, null)
+                    }
+                }
+                "shareFile" -> {
+                    val uriString = call.argument<String>("uri")
+                    if (uriString != null) {
+                        try {
+                            val shareUri = android.net.Uri.parse(uriString)
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "audio/mpeg"
+                                putExtra(android.content.Intent.EXTRA_STREAM, shareUri)
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivity(android.content.Intent.createChooser(intent, "Share"))
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("SHARE_FAILED", e.message, null)
+                        }
+                    } else {
+                        result.error("INVALID_ARGS", "uri is null", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // S63: CPU wake lock — keeps polling alive with screen off
+        var _wl: android.os.PowerManager.WakeLock? = null
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.tilawa.tilawa_enhancer/wake"
+        ).setMethodCallHandler { call, result ->
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            when (call.method) {
+                "acquire" -> {
+                    _wl?.let { if (it.isHeld) it.release() }
+                    _wl = pm.newWakeLock(
+                        android.os.PowerManager.PARTIAL_WAKE_LOCK,
+                        "tilawa:processing"
+                    ).also { it.acquire(90 * 60 * 1000L) }  // S207: was 10min — too short for LocalEngineRunner's own 90-min
+                    // engine timeout; the device could doze mid-run on long/degraded files
+                    // S191: PARTIAL_WAKE_LOCK alone only keeps the CPU running —
+                    // it does nothing for the display, so the screen could still
+                    // time out/lock during processing. Force it to stay on too.
+                    runOnUiThread { window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+                    result.success(null)
+                }
+                "release" -> {
+                    _wl?.let { if (it.isHeld) it.release() }
+                    _wl = null
+                    runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }  // S191
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+}
+"""
 )
 
 kt_dir = APP / "src" / "main" / "kotlin" / "com" / "tilawa" / "tilawa_enhancer"
@@ -410,7 +413,7 @@ print("patch_android.py v12: DONE (DF3-ARCH fix + local engine progress)")
 
 import os as _os65
 
-_LOCAL_RUNNER_KT = """package com.tilawa.tilawa_enhancer
+_LOCAL_RUNNER_KT = r"""package com.tilawa.tilawa_enhancer
 
 import android.app.Activity
 import android.content.Context
@@ -451,7 +454,6 @@ class LocalEngineRunner(
         channel!!.setMethodCallHandler { call, result ->
             when (call.method) {
                 "isSetupComplete" -> result.success(isSetupComplete())
-                "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S205: was missing — audio editor _checkSetup() threw MissingPluginException
                 "startSetup" -> { result.success(null); scope.launch { safeSetup() } }
                 "runEngine"  -> {
                     result.success(null)
@@ -468,7 +470,10 @@ class LocalEngineRunner(
                         context, arrayOf(path), null, null)
                     result.success(null)
                 }
-                "runProotCmd" -> {  // S172b+S174-B2: returns real rc/out via result.success
+                "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S193
+                "runProotCmd" -> {  // S202: was missing entirely — every audio-editor
+                    // export (and any LocalEngineService.runProotCmd caller) fell through
+                    // to notImplemented() below and threw a MissingPluginException in Dart.
                     val a       = call.arguments as Map<*, *>
                     val cmd     = (a["cmd"] as? String) ?: ""
                     val inFile  = (a["inputPath"] as? String) ?: ""
@@ -477,16 +482,15 @@ class LocalEngineRunner(
                     scope.launch {
                         val extra = mutableListOf<String>()
                         listOf(inFile, outFile).forEach { p ->
-                            if (p.isNotEmpty()) {
-                                val dir = File(p).parent ?: return@forEach
-                                extra += listOf("-b", "$dir:$dir")
-                            }
+                            if (p.isEmpty()) return@forEach
+                            val dir = File(p).parent ?: return@forEach
+                            extra += listOf("-b", "$dir:$dir")
                         }
                         extra += listOf("-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}")
                         context.getExternalFilesDir(null)?.absolutePath?.let { ed ->
                             extra += listOf("-b", "$ed:$ed") }
                         val (rc, out) = runProotWithBinds(listOf("/bin/sh", "-c", cmd), extra, tmMin)
-                        ui { result.success(mapOf("rc" to rc, "out" to out)) }  // S174-B2
+                        ui { result.success(mapOf("rc" to rc, "out" to out)) }
                     }
                 }
                 else -> result.notImplemented()
@@ -494,10 +498,11 @@ class LocalEngineRunner(
         }
     }
 
-    // S205: lightweight check for callers that only need proot + ffmpeg
+    // S193: lightweight check for callers that only need proot + ffmpeg
     // (e.g. the audio editor's plain ffmpeg trim/EQ/export) — unlike
     // isSetupComplete() below, this does NOT require numpy, deep-filter,
-    // or any downloaded restoration engine.
+    // or any downloaded restoration engine, none of which plain ffmpeg
+    // filter chains touch.
     fun isBasicSetupComplete(): Boolean {
         if (!prootBin.exists()) return false
         if (!File(alpineDir, "usr/bin/python3").exists()) return false
@@ -518,16 +523,18 @@ class LocalEngineRunner(
             ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
         if (!hasLibPython) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
-        // S182: a system-site-packages numpy (rare, bundled-in-image case) is
-        // still trusted by existence — only the tilawa_numpy/ pip-installed
-        // path is the one that can end up partially-written, so only that
-        // path needs the stronger .numpy_verified marker check (S179/S182).
-        val numpySystemOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+        // S194: check both numpy AND scipy; also accept .numpy_verified marker
+        // written by numpyWorks() so a verified system install never re-runs pip.
+        val numpySystemOk =
+            File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
             File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
-        val numpyOk = numpySystemOk || File(alpineDir, ".numpy_verified").exists()
-        val scipySystemOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
+        val numpyOk = numpySystemOk || File(alpineDir, ".numpy_verified").exists() ||
+            File(alpineDir, "tilawa_numpy/numpy").exists()
+        val scipySystemOk =
+            File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
             File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
-        val scipyOk = scipySystemOk || File(alpineDir, ".numpy_verified").exists()
+        val scipyOk = scipySystemOk || File(alpineDir, ".numpy_verified").exists() ||
+            File(alpineDir, "tilawa_numpy/scipy").exists()
         if (!numpyOk || !scipyOk) return false  // S148: scipy required by v11.2
         val df = File(alpineDir, "usr/local/bin/deep-filter")
         if (!df.exists() || df.length() < 1_000_000L) return false
@@ -610,23 +617,28 @@ class LocalEngineRunner(
             }
             if (!alpineOk) {
                 progress(12, "Downloading Alpine Linux (~4MB)…")
-                download("https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz", tmp, "Alpine rootfs", 12, 32)
+                download("https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/${archStr}/alpine-minirootfs-3.21.3-${archStr}.tar.gz", tmp, "Alpine rootfs", 12, 32)  // S195-BUG5
             }
             extractTarGz(tmp, alpineDir)
             tmp.delete()
             File(alpineDir, "etc/resolv.conf")
-                .writeText("nameserver 8.8.8.8\\nnameserver 1.1.1.1\\n")
+                .writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
             for (d in listOf("proc","dev","sys")) File(alpineDir, d).mkdirs()
 
         }
-        // S124: detect Python version conflict — wipe if wrong version
-        // S196-BUG-D: catch any non-3.11 libpython (3.12, 3.13, …)
+        // S195-BUG7: detect any non-3.11 Python so (3.12, 3.13, …)
         val py311lib  = File(alpineDir, "usr/lib/python3.11")
         val pyLibDir  = File(alpineDir, "usr/lib")
         val wrongPyLib = pyLibDir.listFiles { f ->
-            f.name.matches(Regex("libpython3\\\\.(1[2-9]|[2-9]\\\\d*)\\\\.so.*"))  // S200: template escape fix
+            f.name.matches(Regex("libpython3\\.(1[2-9]|[2-9]\\d*)\\.so.*"))  // S200: fix wrongPyLib escape seqs
         }?.isNotEmpty() == true
-        if (wrongPyLib && !py311lib.exists()) {
+        // S201-BUG1: only wipe if numpy is NOT available for the current Python.
+        // The bundle ships Python 3.12; wiping destroys a working installation.
+        val sysNumpyOk =
+            File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
+            File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
+        if (wrongPyLib && !py311lib.exists() && !sysNumpyOk) {
             progress(11, "Fixing Python version conflict…")
             alpineDir.deleteRecursively()
             alpineDir.mkdirs()
@@ -671,30 +683,35 @@ class LocalEngineRunner(
             extractTarGz(tmp2, alpineDir)
             tmp2.delete()
         }
-                // S106: install numpy/scipy to fixed known path
+                // S194: numpy/scipy install — check system paths FIRST (bundled via
+        // `apk add` in the APK build), then pip target, then verify with a
+        // real proot import.  BUG-A: old code only checked tilawa_numpy/ and
+        // never looked at system site-packages, so pip always ran even when
+        // numpy was already present, causing failures on offline devices.
         val numpyTarget = File(alpineDir, "tilawa_numpy")
-        // S179: a dir existing doesn't mean the install is good — pip can fail
-        // partway (no network, interrupted) and leave a broken numpy/ folder
-        // that "exists" forever after, so it's never retried and every engine
-        // run hits a half-written package ("import numpy from its source
-        // directory" ImportError). Probe with a real import, not just exists().
-        // S182: marker isSetupComplete() can check cheaply (no proot) instead
-        // of trusting the numpy/ folder's mere existence forever.
         val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
         fun numpyWorks(): Boolean {
-            // S194-E: check system paths first — numpy/scipy may be bundled
-            // via `apk add` in python-env.tar.gz, no pip needed.
-            // S196-BUG-B: also check Alpine dist-packages (system apk path)
-            val sysNpOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
+            // 1. System numpy installed via `apk add` in python-env.tar.gz
+            // S195-BUG10: add dist-packages (Alpine system path) to numpyWorks() check
+            val sysNumpyOk =
+                File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
                 File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
                 File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
-            val sysSpOk = File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
+            val sysScipyOk =
+                File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
                 File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists() ||
                 File(alpineDir, "usr/lib/python3/dist-packages/scipy").exists()
-            if (sysNpOk && sysSpOk) { numpyVerifiedMarker.writeText("ok"); return true }
-            if (!File(numpyTarget, "numpy").exists() || !File(numpyTarget, "scipy").exists()) return false
-            val probe = runProot(listOf("/usr/bin/python3", "-c", "import numpy, scipy; print('ok')"), timeoutMin=2)
-            val ok = probe.first == 0
+            if (sysNumpyOk && sysScipyOk) {
+                numpyVerifiedMarker.writeText("ok"); return true
+            }
+            // 2. Pip-installed target — must have BOTH packages
+            if (!File(numpyTarget, "numpy").exists() ||
+                !File(numpyTarget, "scipy").exists()) return false
+            // 3. Verify with real proot import (catches half-written installs)
+            val probe = runProot(
+                listOf("/usr/bin/python3", "-c", "import numpy, scipy; print('ok')"),
+                timeoutMin = 2)
+            val ok = probe.first == 0 && probe.second.contains("ok")
             if (ok) numpyVerifiedMarker.writeText("ok") else numpyVerifiedMarker.delete()
             return ok
         }
@@ -703,19 +720,20 @@ class LocalEngineRunner(
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
                 "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),
-                timeoutMin=20)
+                "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                timeoutMin = 20)
             if (!numpyWorks()) {
-                // S179: one clean retry — wipe whatever partial/broken state pip left behind
-                progress(79, "Retrying numpy + scipy install (previous attempt was broken)…")
+                // BUG-C fix: wipe broken/partial install and retry once
+                progress(79, "Retrying numpy + scipy install (cleaning previous attempt)…")
                 numpyTarget.deleteRecursively()
                 numpyTarget.mkdirs()
                 runProot(listOf("/bin/sh", "-c",
                     "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                    "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),
-                    timeoutMin=20)
+                    "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                    timeoutMin = 20)
                 if (!numpyWorks()) {
-                    throw IOException("numpy/scipy install failed — check internet connection and retry setup")
+                    throw IOException(
+                        "numpy/scipy install failed — check internet connection and retry setup")
                 }
             }
         }
@@ -798,18 +816,22 @@ class LocalEngineRunner(
     }
 
     private suspend fun runEngine(engineId: String, inputPath: String,
-            aggressive: Boolean = false) =  // S173
+        aggressive: Boolean = false) =  // S173
         withContext(Dispatchers.IO) {
         try {
             val script = mapOf(
-                "v11.0" to "engine_safaa_v4.py",  // S172 // S149
-                "v11.1" to "engine_itiqan_v6_official.py",
+                "v11.0" to "engine_safaa_v4.py",  // S199-BUG-2: tajalli file never existed
+                "v11.1" to "engine_itiqan_v6_official.py",  // S199-BUG-3: ditto
                 "v11.2" to "engine_isteidad_v21.py",
-                "v11.3" to "ihyaa_ve.py",  // S199-BUG-5: real bundled filename, not engine_ihya_v3.py
-                // v10.0-v7.0 are server-only — no local engine files // S156
-            )[engineId] ?: "engine_safaa_v4.py"  // S172b
+                "v11.3" to "ihyaa_ve.py",  // S199-BUG-4: real bundled filename
+                "v10.0" to "engine_v100.py",
+                "v9.0"  to "engine_v90.py",
+                "v8.5"  to "engine_v85.py",
+                "v8.0"  to "engine_v80.py",
+                "v7.0"  to "engine_v70.py",
+            )[engineId] ?: "engine_safaa_v4.py"  // S199: match BUG-2 fix
 
-            // v11.0 (safaa) outputs WAV; v11.1/v11.2 output MP3 // S149
+            // v11.0 (tajalli) outputs WAV; v11.1/v11.2 output MP3
             val outExt = if (engineId == "v11.0") "wav" else "mp3"
             val outputPath = "${cacheDir.absolutePath}/tilawa_${engineId.replace('.','_')}_${System.currentTimeMillis()}.$outExt"
             refAudioDir.mkdirs()
@@ -839,7 +861,8 @@ class LocalEngineRunner(
                 }
             }
             val actualInput = if (safeInput.exists() && safeInput.length() > 0) safeInput.absolutePath else inputPath
-            val inParent  = cacheDir.absolutePath  // S174-B5: removed dead refMp3 var
+            val refMp3 = File(refAudioDir, "ref_araf_1425h.mp3")
+            val inParent  = cacheDir.absolutePath
             File(inParent).mkdirs()
 
             val cmd = mutableListOf(
@@ -854,19 +877,13 @@ class LocalEngineRunner(
                 "-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}",
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
-                // S172b: safaa v4 = positional; others = -i/-o
-                *( if (script.startsWith("engine_safaa_v4"))
-                    arrayOf(actualInput, outputPath)
-                else
-                    arrayOf("-i", actualInput, "-o", outputPath, "--iterations", "3")),
+                "-i", actualInput, "-o", outputPath,
+                "--iterations", "3",
             )
-            // F8: engine_safaa_v4 argparse has no --ref flag — crash if ref files exist
-            if (!script.startsWith("engine_safaa_v4")) {
-                // S118: pass all 3 reference files
-                listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
-                    val refFile = File(refAudioDir, rf)
-                    if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
-                }
+            // S118: pass all 3 reference files
+            listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
+                val refFile = File(refAudioDir, rf)
+                if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
             }
 
             // S173: --aggressive flag for الصفاء v4 only
@@ -879,7 +896,8 @@ class LocalEngineRunner(
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
                 environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages:/tilawa_numpy" // S141: tilawa_numpy path
                 environment()["TERM"] = "xterm"
-                // S202: /usr/lib first for numpy .so deps inside Alpine proot
+                // S201-BUG2: /usr/lib first so numpy/.so deps (libopenblas etc.)
+                // resolve inside Alpine proot; append dataDir for proot-loader.
                 environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
                 val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
                 environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
@@ -896,12 +914,10 @@ class LocalEngineRunner(
                 val l = line!!.trim(); if (l.isEmpty()) continue
                 lastLine = l
                 allOutput.appendLine(l)
-                // F9b: also detect safaa_v4 compact JSON (drr_before/drr_gain keys)
-                if (l.startsWith("{") && (l.contains("score") || l.contains("version")
-                        || l.contains("drr_before") || l.contains("drr_gain"))) lastJson = l
+                if (l.startsWith("{") && (l.contains("score") || l.contains("version"))) lastJson = l
                 if (lastJson == null && l.contains("/100")) {
                     val sc = Regex("([0-9]+[.][0-9]+)/100").findAll(l).lastOrNull()?.groupValues?.getOrNull(1)
-                    if (sc != null) lastJson = "{\\"score\\": $sc, \\"lufs\\": 0.0, \\"rms\\": 0.0, \\"crest\\": 0.0, \\"lra\\": 0.0}"
+                    if (sc != null) lastJson = "{\"score\": $sc, \"lufs\": 0.0, \"rms\": 0.0, \"crest\": 0.0, \"lra\": 0.0}"
                 }
                 // S-PROGRESS: map engine phase-tag prefix to progress pct
                 // Phases A→L correspond to the DSP pipeline stages in الإتقان/الاسترداد.
@@ -921,33 +937,7 @@ class LocalEngineRunner(
                     l.startsWith("[J")  -> 84
                     l.startsWith("[K")  -> 90
                     l.startsWith("[L")  -> 94
-    // S154: itiqan v6 emits ── phase_X ── tags; map to progress pct
-                    l.contains("── phase_A5") || l.contains("── phase_A5_adaptive") -> 8
-                    l.contains("── phase_A") -> 5
-                    l.contains("── phase_B") -> 16
-                    l.contains("── phase_C") -> 22
-                    l.contains("── phase_D5") -> 34
-                    l.contains("── phase_D") -> 30
-                    l.contains("── phase_E") -> 38
-                    l.contains("── phase_F") -> 46
-                    l.contains("── phase_G5_sadaa") -> 62
-                    l.contains("── phase_G5_crest") -> 65
-                    l.contains("── phase_G6") -> 70
-                    l.contains("── phase_G") -> 58
-                    l.contains("── phase_H") -> 76
-                    l.contains("── phase_I") -> 84
-                    l.contains("── phase_J") -> 90
                     l.contains("score") && l.contains("/100") -> 96
-                    // F9: engine_safaa_v4 stage tags → progress
-                    l.startsWith("[S1]")                                              -> 10
-                    l.startsWith("[S2-LF]")                                           -> 20
-                    l.startsWith("[S3-WPE]")                                          -> 30
-                    l.startsWith("[S4-ADF]") || l.startsWith("[S4-DF3]")              -> 45
-                    l.startsWith("[S5-JALAA]")                                        -> 60
-                    l.startsWith("[S6-tailNR]")                                       -> 72
-                    l.startsWith("[S6.5-WIND]")                                       -> 82
-                    l.startsWith("[S7-PASS]") || l.startsWith("[S7-WARN]") || l.startsWith("[S7]") -> 90
-                    l == "[REPORT]"                                                   -> 96
                     else -> -1
                 }
                 ui { channel?.invokeMethod("engineProgress", mapOf("pct" to linePct, "msg" to l)) }
@@ -981,28 +971,6 @@ class LocalEngineRunner(
         } finally { engineProc = null }
     }
 
-    private fun runProotWithBinds(args: List<String>, extra: List<String>, tmMin: Int = 10): Pair<Int, String> {  // S172b
-        val cmd = mutableListOf(prootBin.absolutePath,
-            "--link2symlink", "-0",
-            "-r", alpineDir.absolutePath,
-            "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys") + extra +
-            listOf("-w", "/", "--kill-on-exit") + args
-        val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
-            environment()["HOME"] = "/root"; environment()["TERM"] = "xterm"
-            environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            // S202: /usr/lib first for numpy .so deps inside Alpine proot
-            environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
-            environment()["PROOT_TMP_DIR"] = File(dataDir, "proot-tmp").also { it.mkdirs() }.absolutePath
-            if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
-        }.start()
-        val output = proc.inputStream.bufferedReader().readText().takeLast(800)
-        val code = try {
-            if (!proc.waitFor(tmMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
-            else proc.exitValue()
-        } catch (_: Exception) { proc.destroyForcibly(); -1 }
-        return Pair(code, output)
-}
-
     private fun runProot(args: List<String>, timeoutMin: Int = 35): Pair<Int, String> {
         val cmd = mutableListOf(prootBin.absolutePath,
             "--link2symlink",
@@ -1010,7 +978,7 @@ class LocalEngineRunner(
             "-r", alpineDir.absolutePath,
             "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys",
                         "-w", "/",
-            // S196-BUG-G: resolv.conf bind flag must precede the program args
+            // S195-BUG9: resolv.conf bind must precede args (proot ignores flags after cmd)
             "--kill-on-exit") +
             (if (File(alpineDir, "etc/resolv.conf").exists())
                 listOf("-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf")
@@ -1020,7 +988,11 @@ class LocalEngineRunner(
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             environment()["TERM"] = "xterm"
-            // S202: /usr/lib first for numpy .so deps inside Alpine proot
+            // S202: completes S201-BUG2 — this is a second, differently-indented
+            // copy of the same bug (runEngine()'s ProcessBuilder was already fixed,
+            // this one inside runProot() — used by numpyWorks()'s real-import probe
+            // and the site-packages path probe — was not). /usr/lib first so the
+            // probe can actually dlopen libopenblas/libgfortran inside Alpine proot.
             environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
             val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
@@ -1029,6 +1001,41 @@ class LocalEngineRunner(
         val output = proc.inputStream.bufferedReader().readText().takeLast(800)
         val code = try {
             if (!proc.waitFor(timeoutMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
+            else proc.exitValue()
+        } catch (_: Exception) { proc.destroyForcibly(); -1 }
+        return Pair(code, output)
+    }
+
+    // S202: like runProot() but accepts caller-supplied extra bind mounts — used
+    // by the "runProotCmd" channel case for the audio editor's ffmpeg trim/EQ/
+    // export, whose input/output files live outside alpineDir/cacheDir.
+    private fun runProotWithBinds(args: List<String>, extra: List<String>, tmMin: Int = 10): Pair<Int, String> {
+        val cmd = mutableListOf(prootBin.absolutePath,
+            "--link2symlink",
+            "-0",
+            "-r", alpineDir.absolutePath,
+            "-b", "/proc:/proc", "-b", "/dev:/dev", "-b", "/sys:/sys") +
+            extra +
+            listOf("-w", "/",
+            // S195-BUG9: resolv.conf bind must precede args (proot ignores flags after cmd)
+            "--kill-on-exit") +
+            (if (File(alpineDir, "etc/resolv.conf").exists())
+                listOf("-b", "${alpineDir.absolutePath}/etc/resolv.conf:/etc/resolv.conf")
+            else emptyList()) +
+            args
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
+            environment()["HOME"] = "/root"
+            environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            environment()["TERM"] = "xterm"
+            // S202: same /usr/lib fix as runProot()/runEngine() (S201-BUG2)
+            environment()["LD_LIBRARY_PATH"] = "/usr/lib:${dataDir.absolutePath}"
+            val prootTmp = File(dataDir, "proot-tmp").also { it.mkdirs() }  // S106
+            environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            if (prootLoader.exists()) environment()["PROOT_LOADER"] = prootLoader.absolutePath
+        }.start()
+        val output = proc.inputStream.bufferedReader().readText().takeLast(800)
+        val code = try {
+            if (!proc.waitFor(tmMin.toLong(), TimeUnit.MINUTES)) { proc.destroyForcibly(); -1 }
             else proc.exitValue()
         } catch (_: Exception) { proc.destroyForcibly(); -1 }
         return Pair(code, output)
@@ -1128,9 +1135,10 @@ class LocalEngineRunner(
 
     private fun extractEngines() {
         enginesDir.mkdirs()
-        listOf("engine_safaa_v4.py","engine_safaa_v3_fixed.py","engine_itiqan_v6_official.py", // S179: v4 is what runEngine() actually invokes (S172) — v3_fixed was never replaced here, so /engines/engine_safaa_v4.py never existed on disk (rc=2)
+        listOf("engine_safaa_v4.py","engine_itiqan_v6_official.py",  // S199-BUG-1/2/3: fixed names + missing comma
                "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","ihyaa_ve.py").forEach { name ->  // S156 / S199-BUG-5: real filename
+               "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",  // S199-BUG-4: ihya real filename
+               "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88
             try { context.assets.open("flutter_assets/assets/engines/$name").use { inp ->
