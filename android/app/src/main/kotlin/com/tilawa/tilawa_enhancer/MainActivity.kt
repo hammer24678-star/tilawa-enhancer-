@@ -33,6 +33,10 @@ class MainActivity : FlutterActivity() {
                 "saveToDownloads" -> {
                     val sourcePath = call.argument<String>("path")
                     val fileName   = call.argument<String>("filename")
+                    // S208: restores a fix (orig. S157) lost in S207 template resync —
+                    // v11.0/الصفاء and WAV audio-editor exports are actually WAV, not MP3;
+                    // tagging them "audio/mpeg" mislabels the MediaStore/share-intent MIME.
+                    val mimeType = if (fileName?.endsWith(".wav") == true) "audio/wav" else "audio/mpeg"
                     if (sourcePath == null || fileName == null) {
                         result.error("INVALID_ARGS", "path or filename is null", null)
                         return@setMethodCallHandler
@@ -42,7 +46,7 @@ class MainActivity : FlutterActivity() {
                             val resolver = contentResolver
                             val values = ContentValues().apply {
                                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                                put(MediaStore.Downloads.MIME_TYPE, "audio/mpeg")
+                                put(MediaStore.Downloads.MIME_TYPE, mimeType)  // S208
                                 put(MediaStore.Downloads.IS_PENDING, 1)
                             }
                             val collection = MediaStore.Downloads.getContentUri(
@@ -80,7 +84,7 @@ class MainActivity : FlutterActivity() {
                                     MediaScannerConnection.scanFile(
                                         this@MainActivity,
                                         arrayOf(dest.absolutePath),
-                                        arrayOf("audio/mpeg")
+                                        arrayOf(mimeType)  // S208
                                     ) { _, _ -> result.success(dest.absolutePath) }
                                 } catch (e: Exception) {
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -98,8 +102,10 @@ class MainActivity : FlutterActivity() {
                     if (uriString != null) {
                         try {
                             val shareUri = android.net.Uri.parse(uriString)
+                            // S208: same WAV-vs-MP3 fix as saveToDownloads above, for the share Intent
+                            val shareMime = if (uriString.endsWith(".wav")) "audio/wav" else "audio/mpeg"
                             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "audio/mpeg"
+                                type = shareMime
                                 putExtra(android.content.Intent.EXTRA_STREAM, shareUri)
                                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
