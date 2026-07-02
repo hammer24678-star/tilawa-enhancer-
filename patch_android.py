@@ -452,6 +452,27 @@ class LocalEngineRunner(
     private val prootLoader get() = File(context.applicationInfo.nativeLibraryDir, "libprootloader.so")
     private val cacheDir    = context.cacheDir.canonicalFile
 
+    // S212: dynamic Python-version detection. Alpine bumps its default
+    // Python minor version over time (3.11 → 3.12 → 3.14 observed so far);
+    // hardcoding "python3.11"/"python3.12" caused numpy/scipy detection to
+    // silently fail — and PYTHONPATH to omit the real site-packages dir —
+    // the moment a freshly-built python-env.tar.gz shipped a newer Python.
+    private fun pySiteVersionDirs(): List<File> =
+        File(alpineDir, "usr/lib").listFiles { f ->
+            f.isDirectory && f.name.matches(Regex("python3\\.\\d+")) &&
+                File(f, "site-packages").exists()
+        }?.toList() ?: emptyList()
+
+    private fun hasPySysPackage(name: String): Boolean {
+        if (pySiteVersionDirs().any { File(it, "site-packages/$name").exists() }) return true
+        return File(alpineDir, "usr/lib/python3/dist-packages/$name").exists()
+    }
+
+    private fun pythonPathForProot(): String {
+        val versioned = pySiteVersionDirs().map { "/usr/lib/${it.name}/site-packages" }
+        return (versioned + listOf("/usr/lib/python3/dist-packages", "/tilawa_numpy")).joinToString(":")
+    }
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var engineProc: Process? = null
     private var channel: MethodChannel? = null
@@ -532,14 +553,10 @@ class LocalEngineRunner(
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
         // S194: check both numpy AND scipy; also accept .numpy_verified marker
         // written by numpyWorks() so a verified system install never re-runs pip.
-        val numpySystemOk =
-            File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists()
+        val numpySystemOk = hasPySysPackage("numpy")  // S212: was hardcoded 3.11/3.12
         val numpyOk = numpySystemOk || File(alpineDir, ".numpy_verified").exists() ||
             File(alpineDir, "tilawa_numpy/numpy").exists()
-        val scipySystemOk =
-            File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists()
+        val scipySystemOk = hasPySysPackage("scipy")  // S212: was hardcoded 3.11/3.12
         val scipyOk = scipySystemOk || File(alpineDir, ".numpy_verified").exists() ||
             File(alpineDir, "tilawa_numpy/scipy").exists()
         if (!numpyOk || !scipyOk) return false  // S148: scipy required by v11.2
@@ -641,10 +658,10 @@ class LocalEngineRunner(
         }?.isNotEmpty() == true
         // S201-BUG1: only wipe if numpy is NOT available for the current Python.
         // The bundle ships Python 3.12; wiping destroys a working installation.
-        val sysNumpyOk =
-            File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
+        val sysNumpyOk = hasPySysPackage("numpy")  // S212: was hardcoded 3.11/3.12 —
+            // false-triggered a full alpine rootfs wipe on every setup() run
+            // once python-env.tar.gz shipped Python 3.14 (S211's fixed ffmpeg
+            // bundle was being silently deleted by this exact check).
         if (wrongPyLib && !py311lib.exists() && !sysNumpyOk) {
             progress(11, "Fixing Python version conflict…")
             alpineDir.deleteRecursively()
@@ -655,9 +672,7 @@ class LocalEngineRunner(
         progress(35, "Alpine ready")
 
         // 3. Python + ffmpeg — try bundled asset, else download from release  // S89-PYENV
-        val numpyOk = File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
-            File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists() ||
+        val numpyOk = hasPySysPackage("numpy") ||  // S212: was hardcoded 3.11/3.12
             File(alpineDir, "tilawa_numpy/numpy").exists()  // S142: match isSetupComplete()
         if (!File(alpineDir, "usr/bin/python3").exists() || !numpyOk) {  // S115: re-extract if numpy missing
             val tmp2 = File(dataDir, "python-env.tar.gz")
@@ -700,14 +715,8 @@ class LocalEngineRunner(
         fun numpyWorks(): Boolean {
             // 1. System numpy installed via `apk add` in python-env.tar.gz
             // S195-BUG10: add dist-packages (Alpine system path) to numpyWorks() check
-            val sysNumpyOk =
-                File(alpineDir, "usr/lib/python3.11/site-packages/numpy").exists() ||
-                File(alpineDir, "usr/lib/python3.12/site-packages/numpy").exists() ||
-                File(alpineDir, "usr/lib/python3/dist-packages/numpy").exists()
-            val sysScipyOk =
-                File(alpineDir, "usr/lib/python3.11/site-packages/scipy").exists() ||
-                File(alpineDir, "usr/lib/python3.12/site-packages/scipy").exists() ||
-                File(alpineDir, "usr/lib/python3/dist-packages/scipy").exists()
+            val sysNumpyOk = hasPySysPackage("numpy")  // S212: was hardcoded 3.11/3.12
+            val sysScipyOk = hasPySysPackage("scipy")  // S212: was hardcoded 3.11/3.12
             if (sysNumpyOk && sysScipyOk) {
                 numpyVerifiedMarker.writeText("ok"); return true
             }
@@ -901,7 +910,7 @@ class LocalEngineRunner(
             val proc = ProcessBuilder(cmd).redirectErrorStream(true).apply {
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                environment()["PYTHONPATH"] = "/usr/lib/python3.11/site-packages:/usr/lib/python3.12/site-packages:/usr/lib/python3/dist-packages:/tilawa_numpy" // S141: tilawa_numpy path
+                environment()["PYTHONPATH"] = pythonPathForProot() // S212: dynamic (was hardcoded 3.11/3.12)
                 environment()["TERM"] = "xterm"
                 // S201-BUG2: /usr/lib first so numpy/.so deps (libopenblas etc.)
                 // resolve inside Alpine proot; append dataDir for proot-loader.
