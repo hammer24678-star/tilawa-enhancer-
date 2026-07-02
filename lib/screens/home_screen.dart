@@ -17,6 +17,7 @@ import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 import 'history_screen.dart';
 import 'audio_editor_screen.dart';
+import 'game_screen.dart'; // S209
 import 'ai_tools_screen.dart'; // S184 // S152-B13: home_screen is already in lib/screens/
 import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
@@ -1272,6 +1273,32 @@ class _HomeScreenState extends State<HomeScreen>
                 color: Color(0xFF6B9EAE)),
               label: const Text('إلغاء',
                 style: TextStyle(color: Color(0xFF6B9EAE), fontSize: 13)))),
+          const SizedBox(height: 12),
+          // S209: processing continues in the background (owned by this
+          // State object, not disposed by pushing another route) — this is
+          // the primary "play while you wait" entry point.
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [_teal, _gold]),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [BoxShadow(
+                color: _gold.withValues(alpha: 0.20 + 0.15 * _glowCtrl.value),
+                blurRadius: 16)]),
+            child: TextButton.icon(
+              onPressed: () => Navigator.push(context,
+                PageRouteBuilder(
+                  pageBuilder: (_, __, ___) => const GameScreen(),
+                  transitionsBuilder: (_, anim, __, child) =>
+                    FadeTransition(opacity: anim, child: child),
+                  transitionDuration: const Duration(milliseconds: 220))),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                minimumSize: Size.zero),
+              icon: const Icon(Icons.sports_esports_rounded, size: 17,
+                color: Colors.black),
+              label: Text(LangProvider.strings(context).playWhileWait,
+                style: const TextStyle(color: Colors.black, fontSize: 13,
+                  fontWeight: FontWeight.w700)))),
         ]),
       ),
     );
@@ -1375,6 +1402,14 @@ class _HomeScreenState extends State<HomeScreen>
       Positioned(top: 16, right: 16,
         child: Row(children: [
           _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
+          const SizedBox(width: 8),
+          // S209: persistent entry point to the mini-game, always available
+          _iconBtn(Icons.sports_esports_rounded, () => Navigator.push(context,
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const GameScreen(),
+              transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 220)))),
           const SizedBox(width: 8),
           _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
             PageRouteBuilder(

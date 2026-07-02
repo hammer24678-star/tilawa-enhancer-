@@ -91,6 +91,13 @@ class S {
   String get target         =>
     ar ? 'الهدف: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19'
        : 'Target: LUFS=-6.29 · RMS=-10.01 · Crest=10.25 · LRA=4.19';
+
+  // S209: Nova Drift mini-game ("play while you wait")
+  String get playWhileWait => ar ? 'العب أثناء الانتظار' : 'Play while you wait';
+  String get gameEntryHint => ar ? 'نوفا درِفت'          : 'Nova Drift';
+  String get gameLoadError =>
+    ar ? 'تعذّر تحميل اللعبة'
+       : "Couldn't load the game";
 }
 
 /// InheritedWidget — wraps entire app, ALL screens auto-rebuild on lang change
