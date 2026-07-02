@@ -314,7 +314,7 @@ class LocalEngineRunner(
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
                 "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"  // S213),
                 timeoutMin = 20)
             if (!numpyWorks()) {
                 // BUG-C fix: wipe broken/partial install and retry once
@@ -323,7 +323,7 @@ class LocalEngineRunner(
                 numpyTarget.mkdirs()
                 runProot(listOf("/bin/sh", "-c",
                     "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                    "pip install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1"),
+                    "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"  // S213),
                     timeoutMin = 20)
                 if (!numpyWorks()) {
                     throw IOException(
@@ -471,13 +471,19 @@ class LocalEngineRunner(
                 "-b", "${cacheDir.absolutePath}:${cacheDir.absolutePath}",
                 "-w", "/", "--kill-on-exit",
                 "/usr/bin/python3", "/engines/$script",
-                "-i", actualInput, "-o", outputPath,
-                "--iterations", "3",
+                // S213 (was S204-BUG-1, never applied to the live file): Safaa's
+                // argparse takes positional `input output`, not -i/-o/--iterations/--ref.
+                *( if (script.startsWith("engine_safaa"))
+                    arrayOf(actualInput, outputPath)
+                else
+                    arrayOf("-i", actualInput, "-o", outputPath, "--iterations", "3")),
             )
-            // S118: pass all 3 reference files
-            listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
-                val refFile = File(refAudioDir, rf)
-                if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
+            // S118/S213: safaa has no --ref flag — skip for safaa engines
+            if (!script.startsWith("engine_safaa")) {
+                listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
+                    val refFile = File(refAudioDir, rf)
+                    if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
+                }
             }
 
             // S173: --aggressive flag for الصفاء v4 only
