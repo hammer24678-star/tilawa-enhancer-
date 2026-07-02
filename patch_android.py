@@ -736,7 +736,7 @@ class LocalEngineRunner(
             numpyTarget.mkdirs()
             runProot(listOf("/bin/sh", "-c",
                 "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"  // S213),
+                "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
                 timeoutMin = 20)
             if (!numpyWorks()) {
                 // BUG-C fix: wipe broken/partial install and retry once
@@ -745,7 +745,7 @@ class LocalEngineRunner(
                 numpyTarget.mkdirs()
                 runProot(listOf("/bin/sh", "-c",
                     "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                    "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"  // S213),
+                    "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
                     timeoutMin = 20)
                 if (!numpyWorks()) {
                     throw IOException(

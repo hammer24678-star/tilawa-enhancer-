@@ -145,6 +145,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ]));
     if (ok == true && mounted) {
       await ApiService.clearAllJobRecords();
+      if (!mounted) return; // S189
       setState(() => _jobs.clear());
     }
   }
