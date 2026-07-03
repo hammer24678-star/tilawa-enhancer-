@@ -31,7 +31,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     defaultConfig {
-        applicationId "com.tilawa.tilawa_enhancer"
+        applicationId "com.tilawaenhancer"
         minSdk 21
         targetSdk 36
         versionCode 9
