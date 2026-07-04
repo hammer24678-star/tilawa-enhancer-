@@ -66,13 +66,30 @@ warnings.filterwarnings('ignore')
 
 _TMP = tempfile.gettempdir()
 
+# S225: NUMPY_OK must depend ONLY on numpy importing. It was previously set
+# in the same try block as scipy.fft/scipy.optimize, so ANY scipy import
+# failure (partial pip install, missing .so symlink, apk giving numpy but not
+# scipy, etc.) silently set NUMPY_OK = False too — disabling ~60 functions
+# across this file that only need numpy and were already numpy-only internally.
+# rfft/rfftfreq are pure-math functions with an exact numpy.fft equivalent, so
+# they now fall back to numpy instead of being a hard scipy dependency.
 try:
     import numpy as np
-    from scipy.fft import rfft, rfftfreq
-    from scipy.optimize import minimize
-    NUMPY_OK = SCIPY_OK = True
+    NUMPY_OK = True
 except ImportError:
-    NUMPY_OK = SCIPY_OK = False
+    NUMPY_OK = False
+
+try:
+    from scipy.fft import rfft, rfftfreq
+except ImportError:
+    if NUMPY_OK:
+        rfft, rfftfreq = np.fft.rfft, np.fft.rfftfreq  # S225: pure-numpy fallback
+
+try:
+    from scipy.optimize import minimize
+    SCIPY_OK = True
+except ImportError:
+    SCIPY_OK = False
 
 try:
     from scipy.interpolate import PchipInterpolator

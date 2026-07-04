@@ -59,12 +59,28 @@ _MODULE = 'ihyaa_ve'
 
 try:
     import numpy as np
-    from scipy.fft import rfft, rfftfreq, irfft
-    from scipy.signal import lfilter, butter
-    from scipy.interpolate import PchipInterpolator
     NUMPY_OK = True
 except ImportError:
     NUMPY_OK = False
+
+# S225: rfft/rfftfreq/irfft fall back to their numpy.fft equivalents when
+# scipy.fft is unavailable, so a missing/broken scipy no longer disables this
+# whole numpy-only engine (see engine_itiqan_v6_official.py for full rationale).
+try:
+    from scipy.fft import rfft, rfftfreq, irfft
+except ImportError:
+    if NUMPY_OK:
+        rfft, rfftfreq, irfft = np.fft.rfft, np.fft.rfftfreq, np.fft.irfft  # S225
+
+try:
+    from scipy.signal import lfilter, butter
+except ImportError:
+    pass
+
+try:
+    from scipy.interpolate import PchipInterpolator
+except ImportError:
+    pass
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CONSTANTS
@@ -133,6 +149,48 @@ _IH5_AIR_DB       = 1.0    # 8+ kHz air shelf
 # IH-6 dynamic expansion
 _IH6_EXPANSION_RATIO = 1.3   # upward expansion ratio for crushed dynamics
 _IH6_EXPAND_THRESH_P = 20    # percentile of frame RMS used as expansion threshold
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  LPC (pure numpy — S225)
+# ══════════════════════════════════════════════════════════════════════════════
+#  BUG FOUND: IH-2 Formant Enhancement called `from scipy.signal import lpc`,
+#  wrapped in try/except ImportError. scipy.signal has never shipped a public
+#  `lpc` function (LPC lives in librosa, not scipy), so that import raised
+#  ImportError on every single call, on every machine, regardless of whether
+#  scipy was installed. `_lpc_formants()` therefore always returned `[]` and
+#  the entire IH-2 formant-restoration stage was silently dead code. Fixed by
+#  replacing it with a standard autocorrelation + Levinson-Durbin LPC solve,
+#  which only needs numpy and needs no scipy at all.
+def _levinson_durbin_lpc(frame: 'np.ndarray', order: int) -> 'np.ndarray':
+    """
+    Estimate LPC coefficients via autocorrelation + Levinson-Durbin recursion.
+    Returns an (order+1)-length array `a` with a[0] == 1.0 — the same
+    convention/shape a `scipy.signal.lpc`-style call would have returned.
+    """
+    x = np.asarray(frame, dtype=np.float64)
+    n = len(x)
+    a = np.zeros(order + 1)
+    a[0] = 1.0
+    if n <= order:
+        return a
+    r_full = np.correlate(x, x, mode='full')
+    mid = n - 1
+    r = r_full[mid: mid + order + 1]
+    if r[0] == 0:
+        return a
+    e = r[0]
+    for i in range(1, order + 1):
+        acc = r[i] + np.dot(a[1:i], r[i - 1:0:-1])
+        k = -acc / e if e != 0 else 0.0
+        a_new = a.copy()
+        a_new[1:i] = a[1:i] + k * a[i - 1:0:-1]
+        a_new[i] = k
+        a = a_new
+        e *= (1 - k * k)
+        if e <= 0:
+            break
+    return a
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -501,9 +559,7 @@ def _lpc_formants(frame: 'np.ndarray', order: int = 14) -> List[float]:
     Returns list of formant frequencies sorted ascending.
     (KB §21.3 — LPC background)
     """
-    try:
-        from scipy.signal import lpc as scipy_lpc
-    except ImportError:
+    if not NUMPY_OK:
         return []
 
     N = len(frame)
@@ -511,7 +567,7 @@ def _lpc_formants(frame: 'np.ndarray', order: int = 14) -> List[float]:
         return []
 
     try:
-        a = scipy_lpc(frame.astype(np.float64), order=order)
+        a = _levinson_durbin_lpc(frame.astype(np.float64), order)  # S225: was scipy.signal.lpc (doesn't exist)
     except Exception:
         return []
 
@@ -549,9 +605,18 @@ def _ih2_formant_enhance(
 
     Result: voice clarity and identity restored without altering pitch or timing.
     """
-    try:
-        from scipy.signal import lpc as scipy_lpc, sosfilt, butter as sci_butter
-    except ImportError:
+    # S225 BUG FIX: this function used to open with
+    #   try: from scipy.signal import lpc as scipy_lpc, sosfilt, butter as sci_butter
+    #   except ImportError: return audio.copy()
+    # scipy.signal has never shipped a public `lpc` function, so that import
+    # raised ImportError on every call, on every machine — the entire IH-2
+    # formant-enhancement stage below always short-circuited to a no-op
+    # `return audio.copy()` before it ever ran. None of scipy_lpc/sosfilt/
+    # sci_butter were actually referenced anywhere else in this function
+    # (formant detection goes through `_lpc_formants()`, which now uses the
+    # pure-numpy Levinson-Durbin implementation above), so the import is
+    # removed rather than fixed.
+    if not NUMPY_OK:
         return audio.copy()
 
     frame_n = int(0.032 * SR)   # 32ms LPC frames

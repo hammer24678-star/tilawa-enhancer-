@@ -296,13 +296,26 @@ warnings.filterwarnings('ignore')
 
 _TMP = tempfile.gettempdir()
 
+# S225: NUMPY_OK must depend ONLY on numpy importing — see the matching
+# fix in engine_itiqan_v6_official.py for the full rationale. rfft/rfftfreq
+# fall back to their exact numpy.fft equivalents when scipy.fft is missing.
 try:
     import numpy as np
-    from scipy.fft import rfft, rfftfreq
-    from scipy.optimize import minimize
-    NUMPY_OK = SCIPY_OK = True
+    NUMPY_OK = True
 except ImportError:
-    NUMPY_OK = SCIPY_OK = False
+    NUMPY_OK = False
+
+try:
+    from scipy.fft import rfft, rfftfreq
+except ImportError:
+    if NUMPY_OK:
+        rfft, rfftfreq = np.fft.rfft, np.fft.rfftfreq  # S225: pure-numpy fallback
+
+try:
+    from scipy.optimize import minimize
+    SCIPY_OK = True
+except ImportError:
+    SCIPY_OK = False
 
 try:
     from scipy.interpolate import PchipInterpolator
@@ -8100,11 +8113,47 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from numpy.fft import rfft, irfft, rfftfreq
 
+# S225 BUG FIX: this used to be one `from scipy.signal import lfilter, lpc as
+# _scipy_lpc` — scipy.signal has never shipped a public `lpc` function, so
+# that import raised ImportError unconditionally (regardless of whether
+# scipy itself was installed), which set _SCIPY_SIGNAL_OK = False on every
+# machine and permanently disabled _mprm_enhance() (the Makhraj Pharyngeal
+# Resonance Model stage) even though `lfilter` — the part it actually
+# needs from scipy — is a completely real, working function. `_scipy_lpc`
+# is replaced with a pure-numpy Levinson-Durbin LPC solve so this no longer
+# needs scipy.signal.lpc at all.
 try:
-    from scipy.signal import lfilter, lpc as _scipy_lpc
+    from scipy.signal import lfilter
     _SCIPY_SIGNAL_OK = True
 except ImportError:
     _SCIPY_SIGNAL_OK = False
+
+
+def _scipy_lpc(frame: np.ndarray, order: int) -> np.ndarray:
+    """Pure-numpy LPC via autocorrelation + Levinson-Durbin (S225)."""
+    x = np.asarray(frame, dtype=np.float64)
+    n = len(x)
+    a = np.zeros(order + 1)
+    a[0] = 1.0
+    if n <= order:
+        return a
+    r_full = np.correlate(x, x, mode='full')
+    mid = n - 1
+    r = r_full[mid: mid + order + 1]
+    if r[0] == 0:
+        return a
+    e = r[0]
+    for i in range(1, order + 1):
+        acc = r[i] + np.dot(a[1:i], r[i - 1:0:-1])
+        k = -acc / e if e != 0 else 0.0
+        a_new = a.copy()
+        a_new[1:i] = a[1:i] + k * a[i - 1:0:-1]
+        a_new[i] = k
+        a = a_new
+        e *= (1 - k * k)
+        if e <= 0:
+            break
+    return a
 
 log = logging.getLogger("sidrah")
 
@@ -11292,7 +11341,12 @@ def _jalal_formant_resonator(audio: np.ndarray, sr: int,
     not imposing external colouration.  The result is presence and warmth
     without the plasticity of over-EQ'd audio.
     """
-    if not _SCIPY_SIGNAL_OK or not NUMPY_OK:
+    # S225 BUG FIX: this only ever needed LPC (no lfilter), but was gated on
+    # _SCIPY_SIGNAL_OK — and its inner `from scipy.signal import lpc` always
+    # raised ImportError (see the S225 note above `_scipy_lpc()`), so this
+    # whole J-3 stage silently did nothing on every run. Now gated on
+    # NUMPY_OK only, using the pure-numpy `_scipy_lpc()` LPC solve.
+    if not NUMPY_OK:
         return audio
     if len(audio) < sr * 0.5:
         return audio
@@ -11323,8 +11377,7 @@ def _jalal_formant_resonator(audio: np.ndarray, sr: int,
 
         formant_f = 0.0
         try:
-            from scipy.signal import lpc as _lpc_fn
-            a_coef    = _lpc_fn(frame * win, order=12)
+            a_coef    = _scipy_lpc(frame * win, order=12)  # S225: pure-numpy LPC
             n_lpc     = 256
             lpc_freqs = rfftfreq(n_lpc, 1.0 / sr)
             lpc_spec  = np.abs(1.0 / (rfft(a_coef, n=n_lpc) + 1e-30))

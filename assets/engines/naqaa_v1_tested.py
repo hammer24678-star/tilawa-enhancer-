@@ -98,18 +98,38 @@ _TMP = Path(tempfile.gettempdir())
 SR   = 48_000
 
 # ── optional numpy/scipy ────────────────────────────────────────────────────
+# S225: NUMPY_OK now depends ONLY on numpy — previously coupled with every
+# scipy submodule import in one try block, so any single missing/broken scipy
+# submodule silently disabled numpy-only functionality too (basic LUFS/FFT
+# triage). rfft/irfft/rfftfreq fall back to numpy.fft equivalents; the full
+# 8-phase DSP pipeline (scipy.signal/ndimage/linalg/interpolate) still needs
+# real scipy and is gated separately via SCIPY_OK below.
 try:
     import numpy as np
-    from scipy.fft    import rfft, irfft, rfftfreq
+    NUMPY_OK = True
+except ImportError:
+    NUMPY_OK = False
+    print('[النقاء] WARNING: numpy not found — DSP modules disabled')
+
+try:
+    from scipy.fft import rfft, irfft, rfftfreq
+except ImportError:
+    if NUMPY_OK:
+        rfft, irfft, rfftfreq = np.fft.rfft, np.fft.irfft, np.fft.rfftfreq  # S225
+
+try:
     from scipy.signal import (stft, istft, butter, sosfiltfilt, lfilter,
                                correlate, find_peaks)
     from scipy.ndimage import median_filter, uniform_filter1d
     from scipy.linalg  import solve_toeplitz
     from scipy.interpolate import PchipInterpolator
-    NUMPY_OK = True
+    SCIPY_OK = True
 except ImportError:
-    NUMPY_OK = False
-    print('[النقاء] WARNING: numpy/scipy not found — DSP modules disabled')
+    SCIPY_OK = False
+    if NUMPY_OK:
+        correlate = np.correlate  # S225: numpy fallback for simple autocorrelation use
+        print('[النقاء] WARNING: scipy not found — full DSP pipeline disabled, '
+              'basic numpy-only analysis still available')
 
 # ── DeepFilterNet optional ──────────────────────────────────────────────────
 DF3_BIN = None
@@ -1443,9 +1463,12 @@ def restore(
     if r.returncode != 0:
         _log('  ERROR: Cannot convert input to WAV'); return res
 
-    # ── NUMPY available check for DSP phases ──────────────────────────────
-    if not NUMPY_OK:
-        _log('  numpy unavailable — skipping DSP phases 1-8')
+    # ── NUMPY/SCIPY available check for DSP phases ─────────────────────────
+    # S225: phases 1-8 use scipy.signal/ndimage/linalg/interpolate heavily,
+    # so this gate must check SCIPY_OK too, not just NUMPY_OK (see import
+    # block at top of file).
+    if not NUMPY_OK or not SCIPY_OK:
+        _log('  numpy/scipy unavailable — skipping DSP phases 1-8')
         _log('  Running LUFS normalization only...')
         cur_wav = _phase9_lufs(cur_wav, triage, res, _log)
     else:

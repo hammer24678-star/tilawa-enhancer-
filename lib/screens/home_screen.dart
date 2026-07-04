@@ -2617,6 +2617,44 @@ class _HomeScreenState extends State<HomeScreen>
                       const Icon(Icons.open_in_new_rounded,
                         color: Color(0xFF484F58), size: 16),
                     ]))),
+                _infoSectionLabel(s.ar ? '🌐 الموقع الإلكتروني' : '🌐 Website'),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://hammer24678-star.github.io/tilawa-enhancer-/'),
+                    mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A140A),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFD4AF37).withValues(alpha: 0.35))),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFD4AF37), Color(0xFFB8860B)]),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.language_rounded,
+                          color: Colors.white, size: 22)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(s.ar ? 'الموقع الإلكتروني الرسمي' : 'Official Website',
+                          style: const TextStyle(
+                            color: Color(0xFFC9D1D9),
+                            fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 2),
+                        const Text('hammer24678-star.github.io/tilawa-enhancer-',
+                          style: TextStyle(
+                            color: Color(0xFF8B949E), fontSize: 11)),
+                      ])),
+                      const Icon(Icons.open_in_new_rounded,
+                        color: Color(0xFF484F58), size: 16),
+                    ]))),
                 _infoSectionLabel(s.ar ? '🎯 المرجع الصوتي' : '🎯 Reference Standard'),
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),

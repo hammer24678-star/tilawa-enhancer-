@@ -51,13 +51,26 @@ SR   = 48000    # engine sample rate
 #  Optional heavy imports — fail gracefully so the rest of the engine runs
 # ──────────────────────────────────────────────────────────────────────────────
 
+# S225: _NP_OK now depends ONLY on numpy — see engine_itiqan_v6_official.py
+# for the full rationale (any scipy failure was silently disabling the whole
+# numpy-only pipeline here too). rfft/rfftfreq fall back to numpy's own
+# equivalents when scipy.fft is unavailable.
 try:
     import numpy as np
-    from scipy.fft import rfft, rfftfreq
-    from scipy.signal import sosfiltfilt, butter
     _NP_OK = True
 except ImportError:
     _NP_OK = False
+
+try:
+    from scipy.fft import rfft, rfftfreq
+except ImportError:
+    if _NP_OK:
+        rfft, rfftfreq = np.fft.rfft, np.fft.rfftfreq  # S225: pure-numpy fallback
+
+try:
+    from scipy.signal import sosfiltfilt, butter
+except ImportError:
+    pass
 
 # ── Primary neural enhancer: Resemble Enhance ────────────────────────────────
 try:

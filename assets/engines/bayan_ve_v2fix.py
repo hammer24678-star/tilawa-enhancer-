@@ -77,10 +77,18 @@ SR   = 48_000
 
 try:
     import numpy as np
-    from scipy.fft import rfft, rfftfreq
     NUMPY_OK = True
 except ImportError:
     NUMPY_OK = False
+
+# S225: rfft/rfftfreq fall back to numpy's own equivalents when scipy.fft is
+# unavailable, so a missing/broken scipy no longer disables this whole
+# numpy-only engine (see engine_itiqan_v6_official.py for full rationale).
+try:
+    from scipy.fft import rfft, rfftfreq
+except ImportError:
+    if NUMPY_OK:
+        rfft, rfftfreq = np.fft.rfft, np.fft.rfftfreq  # S225: pure-numpy fallback
 
 # ── Public trigger constant ───────────────────────────────────────────────────
 BAYAN_TRIGGER_VQS = 82.0
