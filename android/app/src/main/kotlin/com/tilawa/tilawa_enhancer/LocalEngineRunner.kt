@@ -129,15 +129,13 @@ class LocalEngineRunner(
             ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
         if (!hasLibPython) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
-        // S194: check both numpy AND scipy; also accept .numpy_verified marker
-        // written by numpyWorks() so a verified system install never re-runs pip.
-        val numpySystemOk = hasPySysPackage("numpy")  // S212: was hardcoded 3.11/3.12
-        val numpyOk = numpySystemOk || File(alpineDir, ".numpy_verified").exists() ||
-            File(alpineDir, "tilawa_numpy/numpy").exists()
-        val scipySystemOk = hasPySysPackage("scipy")  // S212: was hardcoded 3.11/3.12
-        val scipyOk = scipySystemOk || File(alpineDir, ".numpy_verified").exists() ||
-            File(alpineDir, "tilawa_numpy/scipy").exists()
-        if (!numpyOk || !scipyOk) return false  // S148: scipy required by v11.2
+        // S223: gate on .numpy_verified ONLY. That marker is now written by
+        // numpyWorks() strictly after a real proot import probe passes (see
+        // S223 fix above) — a directory existing is no longer enough, since
+        // a dropped shared-library symlink can leave numpy's folder present
+        // but the module unimportable. This is what actually gates whether
+        // the setup screen is allowed to say "ready".
+        if (!File(alpineDir, ".numpy_verified").exists()) return false  // S148/S223
         val df = File(alpineDir, "usr/local/bin/deep-filter")
         if (!df.exists() || df.length() < 1_000_000L) return false
         // S-DF3ARCH: reject if binary is not aarch64 — x86_64 runs setup but
@@ -283,51 +281,60 @@ class LocalEngineRunner(
             extractTarGz(tmp2, alpineDir)
             tmp2.delete()
         }
-                // S194: numpy/scipy install — check system paths FIRST (bundled via
-        // `apk add` in the APK build), then pip target, then verify with a
-        // real proot import.  BUG-A: old code only checked tilawa_numpy/ and
-        // never looked at system site-packages, so pip always ran even when
-        // numpy was already present, causing failures on offline devices.
+        // S223: numpyWorks() now ALWAYS runs a real proot import probe —
+        // trusting bare directory existence for the "system" path let a
+        // rootfs with a present-but-unimportable numpy/scipy (e.g. a
+        // shared-library symlink dropped by extractTarGz — see S223 fix
+        // below) report setup as permanently "complete". Install order is
+        // apk (Alpine's own prebuilt musl binaries — free, no compiler
+        // needed) → pip → pip retry-after-wipe, and a final failure now
+        // surfaces the real apk/pip/import output instead of a generic
+        // "check internet connection" message.
         val numpyTarget = File(alpineDir, "tilawa_numpy")
         val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
+        var lastNumpyProbe = ""
         fun numpyWorks(): Boolean {
-            // 1. System numpy installed via `apk add` in python-env.tar.gz
-            // S195-BUG10: add dist-packages (Alpine system path) to numpyWorks() check
-            val sysNumpyOk = hasPySysPackage("numpy")  // S212: was hardcoded 3.11/3.12
-            val sysScipyOk = hasPySysPackage("scipy")  // S212: was hardcoded 3.11/3.12
-            if (sysNumpyOk && sysScipyOk) {
-                numpyVerifiedMarker.writeText("ok"); return true
-            }
-            // 2. Pip-installed target — must have BOTH packages
-            if (!File(numpyTarget, "numpy").exists() ||
-                !File(numpyTarget, "scipy").exists()) return false
-            // 3. Verify with real proot import (catches half-written installs)
             val probe = runProot(
-                listOf("/usr/bin/python3", "-c", "import numpy, scipy; print('ok')"),
+                listOf("/usr/bin/python3", "-c",
+                    "import numpy, scipy; import numpy.core._multiarray_umath as _m; " +
+                    "import scipy.linalg as _l; print('ok')"),
                 timeoutMin = 2)
+            lastNumpyProbe = probe.second
             val ok = probe.first == 0 && probe.second.contains("ok")
             if (ok) numpyVerifiedMarker.writeText("ok") else numpyVerifiedMarker.delete()
             return ok
         }
         if (!numpyWorks()) {
-            progress(79, "Installing numpy + scipy (one-time ~2 min)…")
-            numpyTarget.mkdirs()
-            runProot(listOf("/bin/sh", "-c",
-                "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
-                timeoutMin = 20)
+            progress(79, "Installing numpy + scipy (apk, one-time)…")
+            val apkResult = runProot(listOf("/bin/sh", "-c",
+                "apk update --no-progress 2>&1 | tail -3 && " +
+                "apk add --no-progress --no-cache py3-numpy py3-scipy 2>&1 | tail -8"),
+                timeoutMin = 10)
             if (!numpyWorks()) {
-                // BUG-C fix: wipe broken/partial install and retry once
-                progress(79, "Retrying numpy + scipy install (cleaning previous attempt)…")
-                numpyTarget.deleteRecursively()
+                progress(79, "apk unavailable — installing via pip (one-time ~2 min)…")
                 numpyTarget.mkdirs()
-                runProot(listOf("/bin/sh", "-c",
+                val pip1 = runProot(listOf("/bin/sh", "-c",
                     "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
                     "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
                     timeoutMin = 20)
                 if (!numpyWorks()) {
-                    throw IOException(
-                        "numpy/scipy install failed — check internet connection and retry setup")
+                    // BUG-C fix: wipe broken/partial install and retry once
+                    progress(79, "Retrying numpy + scipy install (cleaning previous attempt)…")
+                    numpyTarget.deleteRecursively()
+                    numpyTarget.mkdirs()
+                    val pip2 = runProot(listOf("/bin/sh", "-c",
+                        "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
+                        "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
+                        timeoutMin = 20)
+                    if (!numpyWorks()) {
+                        // S223: real cause, not a generic message — this was the
+                        // actual "fails silently" bug.
+                        throw IOException(
+                            "numpy/scipy install failed.\n" +
+                            "apk: " + apkResult.second.takeLast(400) + "\n" +
+                            "pip: " + pip1.second.takeLast(200) + " / " + pip2.second.takeLast(400) + "\n" +
+                            "import probe: " + lastNumpyProbe.takeLast(300))
+                    }
                 }
             }
         }
@@ -669,6 +676,14 @@ class LocalEngineRunner(
 
     private fun extractTarGz(tarGz: File, destDir: File) {
         destDir.mkdirs()
+        // S223: symlink() can fail silently (see the '2' case below) and used
+        // to just be dropped, leaving critical .so version-symlinks — e.g.
+        // libopenblas.so -> libopenblas.so.0, libgfortran.so -> libgfortran.so.5
+        // — missing. numpy/scipy's compiled extensions dlopen those at import
+        // time, so site-packages looked complete while numpy was actually
+        // unimportable. Failed links are queued here and resolved in a
+        // second pass once every real file has been extracted.
+        val pendingSymlinks = mutableListOf<Pair<File, String>>()
         java.util.zip.GZIPInputStream(tarGz.inputStream().buffered(65536)).use { gz ->
             val hdr = ByteArray(512)
             fun readFull(buf: ByteArray): Boolean {
@@ -722,13 +737,35 @@ class LocalEngineRunner(
                     }
                     '2' -> {
                         dest.parentFile?.mkdirs(); dest.delete()
-                        try { android.system.Os.symlink(linkName, dest.absolutePath) } catch (_: Exception) {}
+                        var linked = false
+                        try { android.system.Os.symlink(linkName, dest.absolutePath); linked = true }
+                        catch (_: Exception) { /* queued below instead of silently dropped — S223 */ }
+                        if (!linked) pendingSymlinks.add(dest to linkName)
                         skipPadded(size)
                     }
                     '5' -> { dest.mkdirs(); skipPadded(size) }
                     else -> skipPadded(size)
                 }
                 } catch (_: Exception) { /* skip bad entry, continue */ }
+            }
+            // S223: second pass — resolve symlinks that failed above now that
+            // every regular file in the archive has been written. Retry the
+            // real symlink first (order-independent once extraction is done);
+            // if the OS still refuses, copy the target's bytes so the path at
+            // least resolves to real content instead of silently vanishing.
+            for ((dest, linkName) in pendingSymlinks) {
+                try {
+                    dest.parentFile?.mkdirs(); dest.delete()
+                    android.system.Os.symlink(linkName, dest.absolutePath)
+                    continue
+                } catch (_: Exception) {}
+                try {
+                    val target = File(dest.parentFile, linkName)
+                    if (target.exists() && target.isFile) {
+                        target.copyTo(dest, overwrite = true)
+                        if (target.canExecute()) dest.setExecutable(true, false)
+                    }
+                } catch (_: Exception) {}
             }
         }
     }
