@@ -1061,5 +1061,18 @@ class _EqPainter extends CustomPainter {
       const Color(0xFF1DB898).withOpacity(0.0)]));
   }
 
-  @override bool shouldRepaint(_EqPainter o) => values != o.values;
+  // S227 BUG FIX: this used to be `values != o.values`. _eq is a `final`
+  // List<double> that every slider/preset mutates IN PLACE, so the old and
+  // new _EqPainter always pointed at the exact same list object — List has
+  // no `==` override, so `!=` fell back to reference identity, which is
+  // never true for the same object. shouldRepaint() therefore always
+  // returned false and the EQ curve graph never redrew when a slider moved
+  // or a preset was tapped. Compare contents instead of identity.
+  @override bool shouldRepaint(_EqPainter o) {
+    if (o.values.length != values.length) return true;
+    for (int i = 0; i < values.length; i++) {
+      if (o.values[i] != values[i]) return true;
+    }
+    return false;
+  }
 }
