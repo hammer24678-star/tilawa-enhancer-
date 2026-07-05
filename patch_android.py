@@ -714,32 +714,48 @@ class LocalEngineRunner(
         // "check internet connection" message.
         val numpyTarget = File(alpineDir, "tilawa_numpy")
         val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
+        val scipyVerifiedMarker = File(alpineDir, ".scipy_verified")  // S226
         var lastNumpyProbe = ""
+        // S226 BUG FIX: this used to be ONE probe — `import numpy, scipy; ... import
+        // scipy.linalg` — so a scipy-only failure (very common on-device: scipy has no
+        // prebuilt pip wheel for most Android aarch64 targets and needs a Fortran/BLAS
+        // toolchain to build from source, unlike numpy which installs from a wheel
+        // almost everywhere) permanently failed setup and deleted .numpy_verified, even
+        // though S225 already made every local engine run fine on numpy alone. numpy
+        // and scipy are now probed and gated completely independently.
         fun numpyWorks(): Boolean {
             val probe = runProot(
                 listOf("/usr/bin/python3", "-c",
-                    "import numpy, scipy; import numpy.core._multiarray_umath as _m; " +
-                    "import scipy.linalg as _l; print('ok')"),
+                    "import numpy; import numpy.core._multiarray_umath as _m; print('ok')"),
                 timeoutMin = 2)
             lastNumpyProbe = probe.second
             val ok = probe.first == 0 && probe.second.contains("ok")
             if (ok) numpyVerifiedMarker.writeText("ok") else numpyVerifiedMarker.delete()
             return ok
         }
-        if (!numpyWorks()) {
+        fun scipyWorks(): Boolean {
+            val probe = runProot(
+                listOf("/usr/bin/python3", "-c",
+                    "import scipy.linalg as _l; print('ok')"),
+                timeoutMin = 2)
+            val ok = probe.first == 0 && probe.second.contains("ok")
+            if (ok) scipyVerifiedMarker.writeText("ok") else scipyVerifiedMarker.delete()
+            return ok
+        }
+        if (!numpyWorks() || !scipyWorks()) {
             progress(79, "Installing numpy + scipy (apk, one-time)…")
             val apkResult = runProot(listOf("/bin/sh", "-c",
                 "apk update --no-progress 2>&1 | tail -3 && " +
                 "apk add --no-progress --no-cache py3-numpy py3-scipy 2>&1 | tail -8"),
                 timeoutMin = 10)
-            if (!numpyWorks()) {
+            if (!numpyWorks() || !scipyWorks()) {
                 progress(79, "apk unavailable — installing via pip (one-time ~2 min)…")
                 numpyTarget.mkdirs()
                 val pip1 = runProot(listOf("/bin/sh", "-c",
                     "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
                     "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
                     timeoutMin = 20)
-                if (!numpyWorks()) {
+                if (!numpyWorks() || !scipyWorks()) {
                     // BUG-C fix: wipe broken/partial install and retry once
                     progress(79, "Retrying numpy + scipy install (cleaning previous attempt)…")
                     numpyTarget.deleteRecursively()
@@ -748,11 +764,14 @@ class LocalEngineRunner(
                         "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
                         "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
                         timeoutMin = 20)
-                    if (!numpyWorks()) {
-                        // S223: real cause, not a generic message — this was the
-                        // actual "fails silently" bug.
+                    numpyWorks(); scipyWorks()  // S226: refresh both markers after final attempt
+                    if (!numpyVerifiedMarker.exists()) {
+                        // S226 (was S223): only numpy failing to import is fatal now —
+                        // every local engine (S225) runs fine on numpy alone. A scipy
+                        // shortfall just disables naqaa's full 8-phase DSP path, which
+                        // already falls back to numpy-only analysis on its own.
                         throw IOException(
-                            "numpy/scipy install failed.\n" +
+                            "numpy install failed.\n" +
                             "apk: " + apkResult.second.takeLast(400) + "\n" +
                             "pip: " + pip1.second.takeLast(200) + " / " + pip2.second.takeLast(400) + "\n" +
                             "import probe: " + lastNumpyProbe.takeLast(300))
