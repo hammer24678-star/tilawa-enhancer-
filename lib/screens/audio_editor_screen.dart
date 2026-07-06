@@ -1,8 +1,14 @@
 // audio_editor_screen.dart — S203b: AudioLab features, Sacred Cosmos theme
+// S228: Studio Engine — numpy/scipy general-purpose DSP (separate from the
+// الصفاء/الإتقان restoration engines) with real parametric EQ, spectral noise
+// reduction, declick, convolution reverb, phase-vocoder pitch/tempo, and
+// LUFS-ish loudness normalize + true-peak limiting. Falls back to the plain
+// ffmpeg filter chain below if the Studio Engine is unavailable/fails.
 // Trim · Split · 10-band EQ · Effects (Noise Reduce/Compress/Normalize/Reverse)
 // Merge · Set as Ringtone · Export via ffmpeg (proot local engine)
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' show pi, sin, pow, Random;
 import 'dart:ui' as ui;
 import 'dart:io';
@@ -28,7 +34,7 @@ const _textB   = Color(0xFF8AACBA);
 const _textDim = Color(0xFF3D5A65);
 const _border  = Color(0xFF1A2E20);
 
-enum _Tab { trim, eq, effects, merge, export_ }
+enum _Tab { trim, eq, effects, studio, merge, export_ }
 
 class AudioEditorScreen extends StatefulWidget {
   const AudioEditorScreen({super.key});
@@ -65,12 +71,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   double _reverb    = 0;
   double _vol       = 1.0;
   double _stereoW   = 1.0;
-  bool   _normalize = false;
   bool   _reverse   = false;
   double _noiseReduc = 0;   // 0-100
   bool   _compress  = false;
   double _compThresh = -18.0;
   double _compRatio  = 4.0;
+
+  // S228 — Studio Engine (numpy/scipy) advanced settings
+  double _eqQ            = 1.4;      // parametric EQ per-band Q (bandwidth)
+  bool   _declick         = false;
+  double _declickSens     = 50;      // 0-100
+  String _reverbType      = 'Room';  // Room / Hall / Plate / Cathedral
+  double _compAttack      = 20;      // ms
+  double _compRelease     = 200;     // ms
+  double _compMakeup      = 0;       // dB
+  String _loudnessTarget  = 'Off';   // Off / -14 LUFS (Streaming) / -16 LUFS (Mobile) / -23 LUFS (Broadcast)
+  bool   _truePeakLimiter = true;
+  String _fadeCurve       = 'Equal Power'; // Linear / Equal Power / Exponential
+  bool   _dspBusy         = false;   // preview-only busy flag (separate from export _busy)
+  String? _dspScriptPath;           // cached copy of the bundled Studio Engine script
 
   // Merge
   String? _mergePath;
@@ -297,9 +316,112 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (_compress)
       af.add('acompressor=threshold=${_compThresh.toStringAsFixed(1)}dB'
           ':ratio=${_compRatio.toStringAsFixed(1)}:attack=20:release=200');
-    if (_normalize) af.add('loudnorm');
+    if (_loudnessTarget != 'Off') af.add('loudnorm');  // S228: legacy fallback — blunt vs the Studio Engine's real LUFS normalize
     if (_vol != 1.0) af.add('volume=${_vol.toStringAsFixed(2)}');
     return af;
+  }
+
+  // ── S228: STUDIO ENGINE (numpy/scipy) ───────────────────────────────────
+  // Bundled as a Flutter asset (assets/dsp/tilawa_dsp_studio.py), copied once
+  // to the same temp/cache dir _safeInput() already uses (bind-mounted into
+  // proot by runProotCmd for every call), then invoked as a plain `python3`
+  // command through the existing generic proot shell channel. No new native/
+  // Kotlin code needed — and nothing here touches the restoration engines.
+  Future<String> _ensureDspScript() async {
+    if (_dspScriptPath != null && File(_dspScriptPath!).existsSync()) return _dspScriptPath!;
+    final dir  = await getTemporaryDirectory();
+    final dst  = File('${dir.path}/tilawa_dsp_studio_v1.py');
+    final data = await rootBundle.load('assets/dsp/tilawa_dsp_studio.py');
+    await dst.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), flush: true);
+    _dspScriptPath = dst.path;
+    return dst.path;
+  }
+
+  Map<String, dynamic> _buildDspParams({double? previewStart, double? previewDur}) {
+    final isPreview = previewStart != null;
+    final ss  = isPreview ? previewStart! : (_trimStart * _durationSec);
+    final dur = isPreview ? (previewDur ?? 0) : ((_trimEnd - _trimStart) * _durationSec);
+    double? lufs;
+    switch (_loudnessTarget) {
+      case '-14 LUFS (Streaming)': lufs = -14; break;
+      case '-16 LUFS (Mobile)':    lufs = -16; break;
+      case '-23 LUFS (Broadcast)': lufs = -23; break;
+      default: lufs = null;
+    }
+    return {
+      'sr': 48000,
+      'trim_start': ss,
+      'trim_dur': dur,
+      'reverse': isPreview ? false : _reverse,
+      'eq_freqs': _freqs,
+      'eq_gains': _eq,
+      'eq_q': _eqQ,
+      'declick': {'enabled': _declick, 'sensitivity': _declickSens},
+      'noise_reduction': {'strength': _noiseReduc},
+      'fade_in': isPreview ? 0.0 : _fadeIn,
+      'fade_out': isPreview ? 0.0 : _fadeOut,
+      'fade_curve': _fadeCurve,
+      'pitch_semitones': _pitch,
+      'tempo': _tempo,
+      'echo': {'mix': _echo},
+      'reverb': {'mix': _reverb, 'type': _reverbType},
+      'compressor': {
+        'enabled': _compress, 'threshold_db': _compThresh, 'ratio': _compRatio,
+        'attack_ms': _compAttack, 'release_ms': _compRelease, 'makeup_db': _compMakeup,
+      },
+      'stereo_width': _stereoW,
+      'volume': _vol,
+      'loudness': {'target_lufs': lufs, 'true_peak_limit_db': -1.0, 'limiter': _truePeakLimiter},
+      'output': {'format': isPreview ? 'WAV' : _fmt, 'kbps': _kbps},
+    };
+  }
+
+  Future<Map<String, dynamic>> _runDspEngine(
+      String inp, String out, Map<String, dynamic> params) async {
+    final script = await _ensureDspScript();
+    final tmp = await getTemporaryDirectory();
+    final paramsFile = File('${tmp.path}/tl_dsp_params_${DateTime.now().millisecondsSinceEpoch}.json');
+    await paramsFile.writeAsString(jsonEncode(params));
+    final cmd = 'python3 "$script" "$inp" "$out" "${paramsFile.path}"';
+    final r = await _proot(cmd, inp, out, timeout: 20);
+    try { await paramsFile.delete(); } catch (_) {}
+    return Map<String, dynamic>.from(r ?? {'rc': -1, 'out': 'no result'});
+  }
+
+  /// Renders a short slice (current playhead, or trim start) through the
+  /// Studio Engine with the live settings, so the user can audition before
+  /// committing to a full export. "Preview" = quick audition, not a visual.
+  Future<void> _previewDsp() async {
+    if (_filePath == null) return;
+    if (!await _checkSetup()) return;
+    if (_dspBusy) return;
+    HapticFeedback.selectionClick();
+    setState(() => _dspBusy = true);
+    try {
+      if (_playing) await _player.stop();
+      final inp = await _safeInput(_filePath!);
+      final tmp = await getTemporaryDirectory();
+      final out = '${tmp.path}/tl_preview_${DateTime.now().millisecondsSinceEpoch}.wav';
+      final rangeEnd   = _trimEnd * _durationSec;
+      final rangeStart = _trimStart * _durationSec;
+      final start = (_positionSec >= rangeStart && _positionSec < rangeEnd)
+          ? _positionSec : rangeStart;
+      final remain = (rangeEnd - start).clamp(0.2, double.infinity);
+      final dur = remain > 8.0 ? 8.0 : remain;
+      final params = _buildDspParams(previewStart: start, previewDur: dur);
+      final r = await _runDspEngine(inp, out, params);
+      final rc = (r['rc'] as int?) ?? -1;
+      if (rc != 0 || !File(out).existsSync()) {
+        throw Exception(r['out'] ?? 'Studio Engine preview failed');
+      }
+      await _player.setSource(DeviceFileSource(out));
+      await _player.resume();
+      _snack('▶ Previewing ${dur.toStringAsFixed(1)}s with current settings', color: _teal);
+    } catch (e) {
+      _snack('Preview error: $e', color: _red);
+    } finally {
+      if (mounted) setState(() => _dspBusy = false);
+    }
   }
 
   Future<void> _export() async {
@@ -311,15 +433,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       final inp = await _safeInput(_filePath!);
       final ext = _fmt.toLowerCase();
       final out = await _outFile('edited', ext);
-      final ss  = (_trimStart * _durationSec).toStringAsFixed(3);
-      final dur = ((_trimEnd - _trimStart) * _durationSec).toStringAsFixed(3);
-      final af  = _buildAf();
-      final cmd = 'ffmpeg -y -ss $ss -i "$inp" -t $dur '
-          '-af ${af.isEmpty ? "anull" : af.join(",")} -acodec ${_codec()} ${_br()} "$out"';
-      setState(() => _pct = 0.2);
-      final r = await _proot(cmd, inp, out, timeout: 15);
-      final rc = (r?['rc'] as int?) ?? 1;
-      if (rc != 0) throw Exception('ffmpeg rc=$rc: ${r?['out'] ?? ''}');
+      setState(() => _pct = 0.15);
+      final params = _buildDspParams();
+      final r = await _runDspEngine(inp, out, params);
+      final rc = (r['rc'] as int?) ?? -1;
+      if (rc != 0 || !File(out).existsSync()) {
+        // S228: Studio Engine unavailable/failed (e.g. numpy/scipy missing
+        // inside proot) — fall back to the plain ffmpeg filter chain so
+        // export still works, just without the advanced DSP.
+        final ss  = (_trimStart * _durationSec).toStringAsFixed(3);
+        final dur = ((_trimEnd - _trimStart) * _durationSec).toStringAsFixed(3);
+        final af  = _buildAf();
+        final cmd = 'ffmpeg -y -ss $ss -i "$inp" -t $dur '
+            '-af ${af.isEmpty ? "anull" : af.join(",")} -acodec ${_codec()} ${_br()} "$out"';
+        final r2 = await _proot(cmd, inp, out, timeout: 15);
+        final rc2 = (r2?['rc'] as int?) ?? 1;
+        if (rc2 != 0) {
+          throw Exception('Export failed — studio: ${r['out']} · ffmpeg: ${r2?['out'] ?? ''}');
+        }
+      }
       if (!mounted) return;
       setState(() { _pct = 1.0; _outPath = out; _busy = false; });
       if (_asRingtone) {
@@ -421,18 +553,22 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         content: Text(ar
             ? '• قص: حدد نطاق البداية والنهاية.\n'
               '• تقسيم: اضغط ✂️ في التشغيل لتقسيم الملف عند الموضع الحالي.\n'
-              '• موازن 10 أحزمة: 31Hz إلى 16kHz مع إعدادات مسبقة.\n'
-              '• تأثيرات: تلاشي، طبقة صوت، سرعة، صدى، إرجاع، عكس، تقليص ضوضاء، ضغط، تطبيع، عرض ستيريو.\n'
+              '• موازن 10 أحزمة: موازن معلمي حقيقي (numpy/scipy) بدقة Q قابلة للضبط.\n'
+              '• تأثيرات: تلاشي، طبقة صوت، سرعة، صدى، إرجاع، عكس، تقليص ضوضاء طيفي، ضغط.\n'
+              '• استوديو: إزالة طقطقة، نوع الصدى، ديناميكية الضاغط، تطبيع الصوت LUFS.\n'
+              '• معاينة: استمع لـ٨ ثوانٍ بالإعدادات الحالية قبل التصدير الكامل.\n'
               '• دمج: جمع ملفين صوتيين.\n'
               '• تصدير: MP3/WAV/M4A + حفظ كنغمة رنين.\n'
-              '⚙️ محلي بالكامل عبر ffmpeg — بدون إنترنت.'
+              '⚙️ محلي بالكامل — محرك الاستوديو (numpy/scipy) مع رجوع تلقائي لـ ffmpeg — بدون إنترنت.'
             : '• Trim: set start/end range.\n'
               '• Split: tap ✂️ in transport to split at playhead into two files.\n'
-              '• 10-band EQ: 31Hz–16kHz with presets.\n'
-              '• Effects: fade, pitch, speed, echo, reverb, reverse, noise reduction, compressor, normalize, stereo width.\n'
+              '• 10-band EQ: real parametric EQ (numpy/scipy) with adjustable Q.\n'
+              '• Effects: fade, pitch, speed, echo, reverb, reverse, spectral noise reduction, compressor.\n'
+              '• Studio: declick, reverb type, compressor dynamics, LUFS loudness normalize.\n'
+              '• Preview: audition 8s with your current settings before a full export.\n'
               '• Merge: join two audio files.\n'
               '• Export: MP3/WAV/M4A + Set as Ringtone.\n'
-              '⚙️ Fully local via ffmpeg — no internet needed.',
+              '⚙️ Fully local — Studio Engine (numpy/scipy) with automatic ffmpeg fallback, no internet needed.',
           style: const TextStyle(color: _textA, fontSize: 13, height: 1.5)),
         actions: [TextButton(onPressed: () => Navigator.pop(context),
           child: Text(ar ? 'حسنًا' : 'OK', style: const TextStyle(color: _teal)))],
@@ -477,8 +613,57 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _editorView() => Column(children: [
     _fileBar(), _waveformSection(), _transport(), _tabBar(),
+    if (_tab == _Tab.eq || _tab == _Tab.effects || _tab == _Tab.studio) _previewBar(),
     Expanded(child: _tabBody()),
   ]);
+
+  // S228: quick-audition bar for the Studio Engine — shown on the tabs whose
+  // settings actually feed the DSP pipeline (EQ / Effects / Studio).
+  Widget _previewBar() {
+    final ar = LangProvider.strings(context).ar;
+    return Container(
+      color: _surface,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(children: [
+        const Icon(Icons.science_rounded, color: _teal, size: 15),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            ar ? 'محرك الاستوديو (numpy/scipy)' : 'Studio Engine (numpy/scipy)',
+            style: const TextStyle(color: _textB, fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+        ),
+        GestureDetector(
+          onTap: _dspBusy ? null : _previewDsp,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: _tealDk,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _teal.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_dspBusy)
+                  const SizedBox(
+                    width: 12, height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: _teal),
+                  )
+                else
+                  const Icon(Icons.headphones_rounded, color: _teal, size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  ar ? 'معاينة (٨ث)' : 'Preview (8s)',
+                  style: const TextStyle(color: _teal, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
 
   Widget _fileBar() => Container(
     color: _surface,
@@ -564,10 +749,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
-    final labels = ar ? ['قص','EQ','تأثيرات','دمج','تصدير']
-                      : ['Trim','EQ','Effects','Merge','Export'];
+    final labels = ar ? ['قص','EQ','تأثيرات','استوديو','دمج','تصدير']
+                      : ['Trim','EQ','Effects','Studio','Merge','Export'];
     final icons = [Icons.content_cut_rounded, Icons.equalizer_rounded,
-                   Icons.auto_fix_high_rounded, Icons.merge_type_rounded, Icons.ios_share_rounded];
+                   Icons.auto_fix_high_rounded, Icons.science_rounded,
+                   Icons.merge_type_rounded, Icons.ios_share_rounded];
     return Container(
       decoration: BoxDecoration(color: _surface, border: Border(bottom: BorderSide(color: _border))),
       child: Row(children: _Tab.values.map((t) {
@@ -594,6 +780,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.trim:    return _trimTab();
       case _Tab.eq:      return _eqTab();
       case _Tab.effects: return _effectsTab();
+      case _Tab.studio:  return _studioTab();
       case _Tab.merge:   return _mergeTab();
       case _Tab.export_: return _exportTab();
     }
@@ -710,7 +897,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ]),
       const SizedBox(height: 10),
       _card_(ar ? 'تقليص الضوضاء' : 'Noise Reduction', Icons.noise_aware_rounded, [
-        Text(ar ? 'مرشح afftdn — 0 = معطل' : 'afftdn filter — 0 = disabled',
+        Text(ar ? 'تقليل ضوضاء طيفي (STFT) — 0 = معطل' : 'Spectral (STFT) noise reduction — 0 = disabled',
             style: const TextStyle(color: _textDim, fontSize: 11)),
         const SizedBox(height: 8),
         _knob(ar ? 'قوة التقليص' : 'Strength',
@@ -730,9 +917,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ]),
       const SizedBox(height: 10),
       _card_(ar ? 'تأثيرات إضافية' : 'Extra', Icons.auto_awesome_rounded, [
-        _toggle(ar ? 'تطبيع (Normalize)' : 'Normalize', Icons.graphic_eq_rounded, _normalize, (v) => setState(() => _normalize = v)),
-        const SizedBox(height: 6),
         _toggle(ar ? 'عكس (Reverse)'    : 'Reverse',   Icons.swap_horiz_rounded,  _reverse,   (v) => setState(() => _reverse = v)),
+        const SizedBox(height: 8),
+        Text(ar ? 'تطبيع الصوت (LUFS) انتقل الآن لتبويب ‘استوديو’ ←'
+                : 'Loudness Normalize (LUFS) moved to the Studio tab →',
+            style: const TextStyle(color: _textDim, fontSize: 11)),
       ]),
       const SizedBox(height: 10),
       GestureDetector(
@@ -742,7 +931,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             _vol=1.0; _pitch=0; _tempo=1.0; _stereoW=1.0;
             _fadeIn=0; _fadeOut=0; _echo=0; _reverb=0;
             _noiseReduc=0; _compress=false; _compThresh=-18; _compRatio=4.0;
-            _normalize=false; _reverse=false;
+            _reverse=false;
+            // S228 — Studio Engine settings
+            _eqQ=1.4; _declick=false; _declickSens=50; _reverbType='Room';
+            _compAttack=20; _compRelease=200; _compMakeup=0;
+            _loudnessTarget='Off'; _truePeakLimiter=true; _fadeCurve='Equal Power';
           });
         },
         child: Container(
@@ -755,6 +948,99 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             Text(ar ? 'إعادة ضبط التأثيرات' : 'Reset All Effects',
                 style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w600)),
           ])))),
+    ]);
+  }
+
+  // ── STUDIO TAB — S228 advanced Studio Engine settings ───────────────────
+  Widget _studioTab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      _card_(ar ? 'محرك الاستوديو' : 'Studio Engine', Icons.science_rounded, [
+        Text(ar
+            ? 'معالجة حقيقية بواسطة numpy/scipy تعمل بالكامل على الجهاز: موازن معلمي حقيقي، تقليل ضوضاء طيفي، إزالة الطقطقة، صدى تلافيفي، وتطبيع صوت (LUFS) مع محدد ذروة حقيقية. عند فشل المحرك يتم الرجوع تلقائيًا لسلسلة مرشحات ffmpeg.'
+            : 'Real numpy/scipy DSP running fully on-device: true parametric EQ, spectral noise reduction, declicking, convolution reverb, and LUFS-ish loudness normalize with a true-peak limiter. Falls back automatically to the plain ffmpeg filter chain if unavailable.',
+            style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'دقة الموازن (Q)' : 'EQ Sharpness (Q)', Icons.tune_rounded, [
+        _knob(ar ? 'حدة النطاق' : 'Band Q', _eqQ.toStringAsFixed(2), _eqQ, 0.4, 4.0,
+            (v) => setState(() => _eqQ = v)),
+        Text(ar ? 'قيم أعلى = نطاقات أضيق وأكثر دقة' : 'Higher = narrower, more surgical bands',
+            style: const TextStyle(color: _textDim, fontSize: 11)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'إزالة الطقطقة' : 'Declick', Icons.grain_rounded, [
+        _toggle(ar ? 'تفعيل إزالة الطقطقة' : 'Enable Declick', Icons.grain_rounded,
+            _declick, (v) => setState(() => _declick = v)),
+        if (_declick) ...[const SizedBox(height: 8),
+          _knob(ar ? 'الحساسية' : 'Sensitivity', '${_declickSens.round()}%',
+              _declickSens, 10, 100, (v) => setState(() => _declickSens = v))],
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'نوع الصدى (Reverb)' : 'Reverb Type', Icons.surround_sound_rounded, [
+        Wrap(spacing: 8, runSpacing: 8, children: ['Room','Hall','Plate','Cathedral'].map((t) {
+          final sel = t == _reverbType;
+          return GestureDetector(onTap: () => setState(() => _reverbType = t),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: sel ? _goldDim.withValues(alpha: 0.4) : _card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+              child: Text(t, style: TextStyle(color: sel ? _gold : _textB, fontSize: 12,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
+        }).toList()),
+        const SizedBox(height: 8),
+        Text(ar ? 'استخدم شريط ‘إرجاع’ في تبويب التأثيرات لضبط نسبة المزج'
+                : 'Use the Reverb slider in the Effects tab to set the wet/dry mix',
+            style: const TextStyle(color: _textDim, fontSize: 11)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'ديناميكية الضاغط' : 'Compressor Dynamics', Icons.speed_rounded, [
+        _knob(ar ? 'هجوم (Attack)' : 'Attack', '${_compAttack.round()} ms',
+            _compAttack, 1, 200, (v) => setState(() => _compAttack = v)),
+        _knob(ar ? 'تحرير (Release)' : 'Release', '${_compRelease.round()} ms',
+            _compRelease, 20, 1000, (v) => setState(() => _compRelease = v)),
+        _knob(ar ? 'تعويض (Makeup)' : 'Makeup Gain',
+            '${_compMakeup >= 0 ? "+" : ""}${_compMakeup.toStringAsFixed(1)} dB',
+            _compMakeup, 0, 24, (v) => setState(() => _compMakeup = v)),
+        Text(ar ? 'تُطبَّق فقط عند تفعيل الضاغط في تبويب التأثيرات' : 'Only applied when Compressor is enabled in the Effects tab',
+            style: const TextStyle(color: _textDim, fontSize: 11)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'تطبيع الصوت (LUFS)' : 'Loudness Normalize (LUFS)', Icons.graphic_eq_rounded, [
+        Wrap(spacing: 8, runSpacing: 8,
+          children: ['Off','-14 LUFS (Streaming)','-16 LUFS (Mobile)','-23 LUFS (Broadcast)'].map((t) {
+          final sel = t == _loudnessTarget;
+          return GestureDetector(onTap: () => setState(() => _loudnessTarget = t),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: sel ? _goldDim.withValues(alpha: 0.4) : _card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+              child: Text(t, style: TextStyle(color: sel ? _gold : _textB, fontSize: 11,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
+        }).toList()),
+        if (_loudnessTarget != 'Off') ...[const SizedBox(height: 10),
+          _toggle(ar ? 'محدد الذروة الحقيقية (True Peak Limiter)' : 'True Peak Limiter',
+              Icons.security_rounded, _truePeakLimiter, (v) => setState(() => _truePeakLimiter = v))],
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'منحنى التلاشي' : 'Fade Curve', Icons.trending_flat_rounded, [
+        Wrap(spacing: 8, runSpacing: 8, children: ['Linear','Equal Power','Exponential'].map((t) {
+          final sel = t == _fadeCurve;
+          return GestureDetector(onTap: () => setState(() => _fadeCurve = t),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: sel ? _goldDim.withValues(alpha: 0.4) : _card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+              child: Text(t, style: TextStyle(color: sel ? _gold : _textB, fontSize: 11,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
+        }).toList()),
+      ]),
     ]);
   }
 
@@ -874,8 +1160,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         _row(ar ? 'الصيغة' : 'Format', '$_fmt${_fmt == "WAV" ? "" : " @ $_kbps kbps"}'),
         if (_noiseReduc > 0) _row('Noise Reduction', '${_noiseReduc.round()}%'),
         if (_compress) _row('Compressor', '${_compThresh.round()}dB / ${_compRatio.round()}:1'),
-        if (_normalize) _row('Normalize', '✓'),
-        if (_reverse)   _row('Reverse',   '✓'),
+        if (_loudnessTarget != 'Off') _row('Loudness', _loudnessTarget),
+        if (_declick)   _row('Declick', '${_declickSens.round()}%'),
+        if (_reverse)   _row('Reverse', '✓'),
       ]),
       if (_outPath != null) ...[const SizedBox(height: 10),
         Container(padding: const EdgeInsets.all(12),

@@ -31,6 +31,7 @@ flutter:
     - assets/images/
     - assets/images/engines/
     - assets/engines/ # S65: Python engine scripts
+    - assets/dsp/ # S228: Studio Engine (numpy/scipy) — audio editor only, not a restoration engine
     - assets/bin/ # S69: bundled proot binary
     - assets/alpine/ # S82: bundled Alpine + Python + DeepFilter
     - assets/reference_audio/ # S82: bundled reference audio
