@@ -20,6 +20,13 @@ class LocalEngineRunner(
         private const val DF_VERSION   = "0.5.6"
         private const val ALPINE_VER   = "3.21.3"
         private const val PROOT_VER    = "5.3.0"
+        // S229: bump whenever the bundled alpine-rootfs/python-env ABI
+        // pairing changes. A mismatch (or missing stamp) on an existing
+        // alpineDir means it was extracted by a pre-S229 build that could
+        // have mixed Alpine versions (3.18 rootfs + 3.21 ffmpeg/numpy) —
+        // force one clean wipe so upgrading the app actually fixes a
+        // phone that already hit the ffmpeg "symbol not found" bug.
+        private const val PYENV_BUILD_ID = "s229-alpine3213-unified"
     }
 
     private val dataDir     = context.filesDir
@@ -195,6 +202,22 @@ class LocalEngineRunner(
                 .edit().putBoolean("setup_complete", false).apply()
         }
 
+        // S229: one-time wipe if this alpineDir predates the Alpine
+        // rootfs/python-env version-unification fix (or was built by a
+        // CI run that mixed two different Alpine versions — see this
+        // script's header). Cheap check; only touches disk when the
+        // stamp is missing/stale, i.e. at most once per app upgrade.
+        val buildIdMarker = File(alpineDir, ".pyenv_build_id")
+        val buildIdOk = buildIdMarker.exists() &&
+            buildIdMarker.readText().trim() == PYENV_BUILD_ID
+        if (File(alpineDir, "usr/bin/busybox").exists() && !buildIdOk) {
+            progress(11, "Updating local engine runtime (one-time)…")
+            alpineDir.deleteRecursively()
+            alpineDir.mkdirs()
+            context.getSharedPreferences("tilawa_local", 0)
+                .edit().putBoolean("setup_complete", false).apply()
+        }
+
         // 2. Alpine rootfs — download like Termux proot-distro
         if (!File(alpineDir, "usr/bin/busybox").exists()) {
             progress(12, "Extracting Alpine Linux (bundled)…")
@@ -248,8 +271,19 @@ class LocalEngineRunner(
         progress(35, "Alpine ready")
 
         // 3. Python + ffmpeg — try bundled asset, else download from release  // S89-PYENV
+        // S229: a bare "numpy" folder existing is not enough — a pip
+        // install that fell back to an unbuildable sdist (no C/Fortran
+        // toolchain in this proot) can leave numpy's raw *source* tree
+        // here, which numpy's own import guard refuses to load. Only
+        // trust the cache if a compiled extension module is present.
+        val pipNumpyDir = File(alpineDir, "tilawa_numpy/numpy")
+        val pipNumpyReallyBuilt = pipNumpyDir.exists() &&
+            (pipNumpyDir.walkTopDown().any { it.name.endsWith(".so") })
+        if (pipNumpyDir.exists() && !pipNumpyReallyBuilt) {
+            File(alpineDir, "tilawa_numpy").deleteRecursively()  // broken source tree
+        }
         val numpyOk = hasPySysPackage("numpy") ||  // S212: was hardcoded 3.11/3.12
-            File(alpineDir, "tilawa_numpy/numpy").exists()  // S142: match isSetupComplete()
+            pipNumpyReallyBuilt  // S142/S229: match isSetupComplete(), require a real build
         if (!File(alpineDir, "usr/bin/python3").exists() || !numpyOk) {  // S115: re-extract if numpy missing
             val tmp2 = File(dataDir, "python-env.tar.gz")
             var pyOk = false
@@ -308,7 +342,18 @@ class LocalEngineRunner(
                 timeoutMin = 2)
             lastNumpyProbe = probe.second
             val ok = probe.first == 0 && probe.second.contains("ok")
-            if (ok) numpyVerifiedMarker.writeText("ok") else numpyVerifiedMarker.delete()
+            if (ok) {
+                numpyVerifiedMarker.writeText("ok")
+            } else {
+                numpyVerifiedMarker.delete()
+                // S229: this exact message means /tilawa_numpy holds a raw,
+                // unbuilt numpy source tree (see this file's header) — delete
+                // it now so the very next install attempt starts clean instead
+                // of silently reusing the same broken tree forever.
+                if (probe.second.contains("source directory")) {
+                    File(alpineDir, "tilawa_numpy").deleteRecursively()
+                }
+            }
             return ok
         }
         fun scipyWorks(): Boolean {
@@ -322,6 +367,15 @@ class LocalEngineRunner(
         }
         if (!numpyWorks() || !scipyWorks()) {
             progress(79, "Installing numpy + scipy (apk, one-time)…")
+            // S229: pin the exact mirror/version instead of trusting
+            // whatever /etc/apk/repositories the minirootfs shipped with —
+            // a stale or unreachable default entry was silently pushing
+            // every device down the much less reliable pip-sdist path.
+            try {
+                File(alpineDir, "etc/apk/repositories").writeText(
+                    "https://dl-cdn.alpinelinux.org/alpine/v3.21/main\n" +
+                    "https://dl-cdn.alpinelinux.org/alpine/v3.21/community\n")
+            } catch (_: Exception) {}
             val apkResult = runProot(listOf("/bin/sh", "-c",
                 "apk update --no-progress 2>&1 | tail -3 && " +
                 "apk add --no-progress --no-cache py3-numpy py3-scipy 2>&1 | tail -8"),
@@ -330,8 +384,12 @@ class LocalEngineRunner(
                 progress(79, "apk unavailable — installing via pip (one-time ~2 min)…")
                 numpyTarget.mkdirs()
                 val pip1 = runProot(listOf("/bin/sh", "-c",
-                    "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                    "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
+                    // S229: --only-binary=:all: — this proot has no C/Fortran
+                    // toolchain, so an sdist fallback cannot actually build;
+                    // without this flag pip could leave a broken, unimportable
+                    // numpy *source* tree behind instead of failing cleanly.
+                    "pip3 install --quiet --no-cache-dir --only-binary=:all: --target /tilawa_numpy numpy scipy 2>&1 || " +
+                    "pip install --quiet --no-cache-dir --break-system-packages --only-binary=:all: --target /tilawa_numpy numpy scipy 2>&1"),  // S213/S229
                     timeoutMin = 20)
                 if (!numpyWorks() || !scipyWorks()) {
                     // BUG-C fix: wipe broken/partial install and retry once
@@ -339,8 +397,8 @@ class LocalEngineRunner(
                     numpyTarget.deleteRecursively()
                     numpyTarget.mkdirs()
                     val pip2 = runProot(listOf("/bin/sh", "-c",
-                        "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                        "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
+                        "pip3 install --quiet --no-cache-dir --only-binary=:all: --target /tilawa_numpy numpy scipy 2>&1 || " +
+                        "pip install --quiet --no-cache-dir --break-system-packages --only-binary=:all: --target /tilawa_numpy numpy scipy 2>&1"),  // S213/S229
                         timeoutMin = 20)
                     numpyWorks(); scipyWorks()  // S226: refresh both markers after final attempt
                     if (!numpyVerifiedMarker.exists()) {
@@ -429,6 +487,7 @@ class LocalEngineRunner(
                 }
             }
         }
+        File(alpineDir, ".pyenv_build_id").writeText(PYENV_BUILD_ID)  // S229
         File(dataDir, ".tilawa_setup_done").writeText("ok")
         context.getSharedPreferences("tilawa_local", 0)
             .edit().putBoolean("setup_complete", true).apply()  // S106

@@ -3,7 +3,13 @@
 set -euo pipefail
 
 ARCH="aarch64"
-ALPINE_VER="3.18.9"
+ALPINE_VER="3.21.3"  # S229: was 3.18.9 — the CI workflow (build.yml) separately
+                     # rebuilds python-env.tar.gz from alpine:3.21 and overwrites
+                     # this script's output, so a 3.18 rootfs + a 3.21 ffmpeg/numpy
+                     # bundle were shipping together — different musl/libav ABI —
+                     # causing "Error relocating ffmpeg: ...: symbol not found" on
+                     # every Split/Merge/Export/Preview. Must match LocalEngineRunner
+                     # .kt's ALPINE_VER and its download-fallback URL (both 3.21.3).
 ASSETS="assets/alpine"
 REF_ASSETS="assets/reference_audio"
 DF_VERSION="0.5.6"
@@ -13,7 +19,7 @@ mkdir -p "$ASSETS" "$REF_ASSETS"
 # ── 1. Alpine minirootfs (raw tarball — extracted on device) ──────────────────
 echo "==> Downloading Alpine $ALPINE_VER $ARCH"
 curl -fsSL --retry 3 \
-    "https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/$ARCH/alpine-minirootfs-$ALPINE_VER-$ARCH.tar.gz" \
+    "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/$ARCH/alpine-minirootfs-$ALPINE_VER-$ARCH.tar.gz" \
     -o "$ASSETS/alpine-rootfs.tar.gz"
 echo "    alpine-rootfs.tar.gz: $(du -sh $ASSETS/alpine-rootfs.tar.gz | cut -f1)"
 
@@ -25,7 +31,7 @@ echo "==> Building Python env inside arm64 Alpine Docker"
 docker run --rm \
     --platform linux/arm64 \
     --volume "$PWD/$ASSETS:/out" \
-    alpine:3.18 \
+    alpine:3.21 \
     sh -c "
         apk update --no-progress 2>&1 | tail -2
         apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1 | tail -5
@@ -44,7 +50,7 @@ echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 echo "==> Building deep-filter for aarch64 inside arm64 Docker"
 docker run --rm --platform linux/arm64 \
     --volume "$PWD/$ASSETS:/out" \
-    alpine:3.18 sh -c "
+    alpine:3.21 sh -c "
         apk add --no-progress rust cargo musl-dev 2>&1 | tail -3
         cargo install deep_filter --root /tmp/df 2>&1 | tail -3
         cp /tmp/df/bin/deep_filter /out/deep-filter
