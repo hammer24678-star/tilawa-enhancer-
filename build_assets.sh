@@ -34,7 +34,7 @@ docker run --rm \
     alpine:3.21 \
     sh -c "
         apk update --no-progress 2>&1 | tail -2
-        apk add --no-progress python3 py3-numpy py3-scipy ffmpeg 2>&1 | tail -5
+        apk add --no-progress python3 py3-pip py3-numpy py3-scipy ffmpeg 2>&1 | tail -5
         rm -rf /var/cache/apk/*
         echo 'Python: '$(python3 --version)
         echo 'ffmpeg: '$(which ffmpeg 2>/dev/null && ffmpeg -version 2>&1 | head -1 || echo 'checking inside tar...')
