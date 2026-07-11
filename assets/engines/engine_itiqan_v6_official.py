@@ -5383,9 +5383,21 @@ def _build_ref_cache_if_needed():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main() -> int:
-    if not NUMPY_OK or not SCIPY_OK:
-        print('pip install numpy scipy')
+    # S231 BUG FIX: this used to abort the ENTIRE run the instant scipy was
+    # missing, even though numpy imported fine. S225 already made every
+    # function in this file's pipeline degrade gracefully when SCIPY_OK is
+    # False (its own numpy-only fallback path), and S226 made Kotlin's
+    # setup() treat a scipy-only install failure as non-fatal for exactly
+    # that reason — scipy has no prebuilt pip wheel for most Android
+    # aarch64 devices and commonly fails to install even when numpy
+    # installs fine. This stale gate was the actual cause of "Engine
+    # failed (rc=1): pip install numpy scipy" on devices where the engine
+    # was fully able to run in numpy-only mode.
+    if not NUMPY_OK:
+        print('numpy unavailable — pip install numpy')
         return 1
+    if not SCIPY_OK:
+        print('  [تنبيه] scipy unavailable — continuing with numpy-only fallback paths')
 
     p = argparse.ArgumentParser(
         description='الإتقان Engine-2 v1.0 — Aetherion Perfection Engine — 1425H'
