@@ -34,7 +34,7 @@ const _textB   = Color(0xFF8AACBA);
 const _textDim = Color(0xFF3D5A65);
 const _border  = Color(0xFF1A2E20);
 
-enum _Tab { trim, eq, effects, studio, merge, export_ }
+enum _Tab { trim, eq, effects, fx2, studio, merge, export_ }
 
 class AudioEditorScreen extends StatefulWidget {
   const AudioEditorScreen({super.key});
@@ -91,6 +91,40 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   bool   _dspBusy         = false;   // preview-only busy flag (separate from export _busy)
   String? _dspScriptPath;           // cached copy of the bundled Studio Engine script
 
+  // S229 — FX+ tab: tone shaping
+  double _bassBoost   = 0;      // dB, -12..12
+  double _trebleBoost = 0;      // dB, -12..12
+  double _subBass     = 0;      // 0-100
+  double _presence    = 0;      // 0-100 (clarity/crystalizer)
+  double _hpFreq      = 0;      // Hz, 0 = off
+  double _lpFreq      = 20000;  // Hz, 20000 = off
+
+  // S229 — FX+ tab: character effects
+  double _tremolo = 0;   // 0-100
+  double _vibrato = 0;   // 0-100
+  bool   _chorus  = false;
+  bool   _flanger = false;
+  bool   _phaser  = false;
+  double _crusher = 0;   // 0-100 (bitcrush amount)
+
+  // S229 — FX+ tab: stereo & space
+  bool   _haasWiden   = false;
+  double _stereoFx    = 0;         // -100..100 (extrastereo)
+  String _channelMode = 'Stereo';  // Stereo / Mono / Left / Right
+  bool   _swapLR      = false;
+
+  // S229 — FX+ tab: cleanup & dynamics
+  bool   _noiseGate       = false;
+  double _gateThresh      = -50;   // dB
+  double _deEsser         = 0;     // 0-100
+  bool   _declip          = false;
+  bool   _autoNormalize   = false;
+  bool   _limiter         = false;
+  double _limiterCeil     = -1.0;  // dB
+  bool   _autoTrimSilence = false;
+  double _padStart        = 0;     // sec
+  double _padEnd          = 0;     // sec
+
   // Merge
   String? _mergePath;
   String  _mergeName = '';
@@ -100,6 +134,14 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   String _fmt      = 'MP3';
   int    _kbps     = 192;
   bool   _asRingtone = false;
+
+  // S229 — export details
+  int    _sampleRate  = 48000;   // 16000 / 22050 / 44100 / 48000
+  String _channels    = 'Stereo';
+  int    _wavBitDepth = 16;      // 16 / 24 / 32
+  String _metaTitle   = '';
+  String _metaArtist  = '';
+  String _metaAlbum   = '';
   bool   _busy     = false;
   double _pct      = 0;
   String? _outPath;
@@ -286,14 +328,32 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   }
 
   // ── EXPORT ────────────────────────────────────────────────────────────────
-  String _codec() => _fmt == 'WAV' ? 'pcm_s16le' : _fmt == 'M4A' ? 'aac' : 'libmp3lame';
+  String _codec() => _fmt == 'WAV'
+      ? (_wavBitDepth == 24 ? 'pcm_s24le' : _wavBitDepth == 32 ? 'pcm_s32le' : 'pcm_s16le')
+      : _fmt == 'M4A' ? 'aac' : 'libmp3lame';
   String _br()    => _fmt == 'WAV' ? '' : '-b:a ${_kbps}k';
+
+  // S229 — shared -metadata flags for both single export and batch export
+  String _metaArgs() {
+    final parts = <String>[];
+    if (_metaTitle.isNotEmpty)  parts.add('-metadata title="${_metaTitle.replaceAll('"', "'")}"');
+    if (_metaArtist.isNotEmpty) parts.add('-metadata artist="${_metaArtist.replaceAll('"', "'")}"');
+    if (_metaAlbum.isNotEmpty)  parts.add('-metadata album="${_metaAlbum.replaceAll('"', "'")}"');
+    return parts.join(' ');
+  }
 
   List<String> _buildAf() {
     final af = <String>[];
     if (_reverse) af.add('areverse');
+    // S229 — auto-trim leading/trailing silence, before any other shaping
+    if (_autoTrimSilence)
+      af.add('silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08:'
+          'stop_periods=-1:stop_threshold=-45dB:stop_silence=0.08');
     if (_noiseReduc > 0)
       af.add('afftdn=nr=${(_noiseReduc * 0.97).toStringAsFixed(1)}:nf=-25');
+    if (_declip) af.add('adeclip');
+    if (_noiseGate)
+      af.add('agate=threshold=${_gateThresh.toStringAsFixed(0)}dB:ratio=6:attack=5:release=150');
     if (_fadeIn  > 0) af.add('afade=t=in:d=${_fadeIn.toStringAsFixed(1)}');
     if (_fadeOut > 0) {
       final st = ((_trimEnd - _trimStart) * _durationSec - _fadeOut)
@@ -304,6 +364,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       if (_eq[i].abs() > 0.5)
         af.add('equalizer=f=${_freqs[i]}:g=${_eq[i].toStringAsFixed(1)}');
     }
+    // S229 — tone shaping
+    if (_bassBoost   != 0) af.add('bass=g=${_bassBoost.toStringAsFixed(1)}:f=100:w=0.8');
+    if (_trebleBoost != 0) af.add('treble=g=${_trebleBoost.toStringAsFixed(1)}:f=6500:w=0.8');
+    if (_subBass  > 0) af.add('asubboost=dry=1:wet=${(_subBass/100).toStringAsFixed(2)}');
+    if (_presence > 0) af.add('crystalizer=i=${(_presence/100*8).toStringAsFixed(2)}:c=0');
+    if (_hpFreq > 0) af.add('highpass=f=${_hpFreq.round()}:poles=2');
+    if (_lpFreq < 20000) af.add('lowpass=f=${_lpFreq.round()}:poles=2');
     if (_echo   > 0) af.add('aecho=0.8:${(_echo/100).toStringAsFixed(2)}:500:0.5');
     if (_reverb > 0) af.add('aecho=0.8:${(_reverb/100).toStringAsFixed(2)}:80:0.3');
     if (_pitch  != 0) {
@@ -312,12 +379,35 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       af.add('asetrate=44100*${r.toStringAsFixed(6)},aresample=44100,atempo=$co');
     }
     if (_tempo != 1.0) af.add('atempo=${_tempo.clamp(0.5,2.0).toStringAsFixed(2)}');
+    // S229 — character FX
+    if (_tremolo > 0) af.add('tremolo=f=5:d=${(_tremolo/100).toStringAsFixed(2)}');
+    if (_vibrato > 0) af.add('vibrato=f=5:d=${(_vibrato/100).toStringAsFixed(2)}');
+    if (_chorus)  af.add('chorus=0.6:0.9:55|60|40:0.4|0.32|0.3:0.25|0.4|0.3:2|2.3|1.3');
+    if (_flanger) af.add('flanger');
+    if (_phaser)  af.add('aphaser=in_gain=0.5');
+    if (_crusher > 0)
+      af.add('acrusher=bits=${(16 - (_crusher/100*11)).round()}:mode=log:aa=1');
     if (_stereoW != 1.0) af.add('stereotools=mlev=${_stereoW.toStringAsFixed(2)}');
+    // S229 — stereo & space
+    if (_haasWiden) af.add('haas');
+    if (_stereoFx != 0)
+      af.add('extrastereo=m=${(1 + _stereoFx/100).toStringAsFixed(2)}:c=0');
+    if (_swapLR) af.add('pan=stereo|c0=c1|c1=c0');
+    if (_channelMode == 'Mono')  af.add('pan=mono|c0=0.5*c0+0.5*c1');
+    if (_channelMode == 'Left')  af.add('pan=stereo|c0=c0|c1=c0');
+    if (_channelMode == 'Right') af.add('pan=stereo|c0=c1|c1=c1');
     if (_compress)
       af.add('acompressor=threshold=${_compThresh.toStringAsFixed(1)}dB'
           ':ratio=${_compRatio.toStringAsFixed(1)}:attack=20:release=200');
+    // S229 — de-esser / adaptive normalize / limiter
+    if (_deEsser > 0) af.add('deesser=i=${(_deEsser/100).toStringAsFixed(2)}');
+    if (_autoNormalize) af.add('dynaudnorm=f=150:g=15');
+    if (_limiter) af.add('alimiter=limit=${_limiterCeil.toStringAsFixed(1)}dB:attack=5:release=50');
     if (_loudnessTarget != 'Off') af.add('loudnorm');  // S228: legacy fallback — blunt vs the Studio Engine's real LUFS normalize
     if (_vol != 1.0) af.add('volume=${_vol.toStringAsFixed(2)}');
+    // S229 — start/end padding, always last
+    if (_padStart > 0) af.add('adelay=${(_padStart*1000).round()}:all=1');
+    if (_padEnd   > 0) af.add('apad=pad_dur=${_padEnd.toStringAsFixed(1)}');
     return af;
   }
 
@@ -372,7 +462,26 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       'stereo_width': _stereoW,
       'volume': _vol,
       'loudness': {'target_lufs': lufs, 'true_peak_limit_db': -1.0, 'limiter': _truePeakLimiter},
-      'output': {'format': isPreview ? 'WAV' : _fmt, 'kbps': _kbps},
+      // S229 — forwarded for a future Studio Engine build; the ffmpeg fallback
+      // in _buildAf() already implements every one of these today.
+      'fx2': {
+        'bass_db': _bassBoost, 'treble_db': _trebleBoost, 'sub_bass': _subBass,
+        'presence': _presence, 'highpass_hz': _hpFreq, 'lowpass_hz': _lpFreq,
+        'tremolo': _tremolo, 'vibrato': _vibrato, 'chorus': _chorus,
+        'flanger': _flanger, 'phaser': _phaser, 'bitcrush': _crusher,
+        'haas_widen': _haasWiden, 'stereo_fx': _stereoFx,
+        'channel_mode': _channelMode, 'swap_lr': _swapLR,
+        'noise_gate': {'enabled': _noiseGate, 'threshold_db': _gateThresh},
+        'deesser': _deEsser, 'declip': _declip, 'adaptive_normalize': _autoNormalize,
+        'limiter': {'enabled': _limiter, 'ceiling_db': _limiterCeil},
+        'auto_trim_silence': _autoTrimSilence,
+        'pad_start_sec': _padStart, 'pad_end_sec': _padEnd,
+      },
+      'output': {
+        'format': isPreview ? 'WAV' : _fmt, 'kbps': _kbps,
+        'sample_rate': _sampleRate, 'channels': _channels, 'wav_bit_depth': _wavBitDepth,
+        'metadata': {'title': _metaTitle, 'artist': _metaArtist, 'album': _metaAlbum},
+      },
     };
   }
 
@@ -445,7 +554,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         final dur = ((_trimEnd - _trimStart) * _durationSec).toStringAsFixed(3);
         final af  = _buildAf();
         final cmd = 'ffmpeg -y -ss $ss -i "$inp" -t $dur '
-            '-af ${af.isEmpty ? "anull" : af.join(",")} -acodec ${_codec()} ${_br()} "$out"';
+            '-af ${af.isEmpty ? "anull" : af.join(",")} ${_metaArgs()} '
+            '-ar $_sampleRate -ac ${_channels == "Mono" ? 1 : 2} '
+            '-acodec ${_codec()} ${_br()} "$out"';
         final r2 = await _proot(cmd, inp, out, timeout: 15);
         final rc2 = (r2?['rc'] as int?) ?? 1;
         if (rc2 != 0) {
@@ -613,7 +724,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _editorView() => Column(children: [
     _fileBar(), _waveformSection(), _transport(), _tabBar(),
-    if (_tab == _Tab.eq || _tab == _Tab.effects || _tab == _Tab.studio) _previewBar(),
+    if (_tab == _Tab.eq || _tab == _Tab.effects || _tab == _Tab.fx2 || _tab == _Tab.studio) _previewBar(),
     Expanded(child: _tabBody()),
   ]);
 
@@ -749,10 +860,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
-    final labels = ar ? ['قص','EQ','تأثيرات','استوديو','دمج','تصدير']
-                      : ['Trim','EQ','Effects','Studio','Merge','Export'];
+    final labels = ar ? ['قص','EQ','تأثيرات','FX+','استوديو','دمج','تصدير']
+                      : ['Trim','EQ','Effects','FX+','Studio','Merge','Export'];
     final icons = [Icons.content_cut_rounded, Icons.equalizer_rounded,
-                   Icons.auto_fix_high_rounded, Icons.science_rounded,
+                   Icons.auto_fix_high_rounded, Icons.graphic_eq_rounded, Icons.science_rounded,
                    Icons.merge_type_rounded, Icons.ios_share_rounded];
     return Container(
       decoration: BoxDecoration(color: _surface, border: Border(bottom: BorderSide(color: _border))),
@@ -780,6 +891,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.trim:    return _trimTab();
       case _Tab.eq:      return _eqTab();
       case _Tab.effects: return _effectsTab();
+      case _Tab.fx2:     return _fx2Tab();
       case _Tab.studio:  return _studioTab();
       case _Tab.merge:   return _mergeTab();
       case _Tab.export_: return _exportTab();
@@ -1148,6 +1260,97 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               (v) => setState(() => _kbps = v.round()))],
       ]),
       const SizedBox(height: 10),
+      _card_(ar ? 'تفاصيل التصدير' : 'Export Details', Icons.settings_input_component_rounded, [
+        Text(ar ? 'معدل العينة' : 'Sample Rate', style: const TextStyle(color: _textB, fontSize: 12)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [16000,22050,44100,48000].map((sr) {
+          final sel = sr == _sampleRate;
+          return GestureDetector(onTap: () => setState(() => _sampleRate = sr),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: sel ? _goldDim.withValues(alpha: 0.4) : _card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+              child: Text('$sr Hz', style: TextStyle(color: sel ? _gold : _textB, fontSize: 11,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
+        }).toList()),
+        const SizedBox(height: 14),
+        Text(ar ? 'القنوات' : 'Channels', style: const TextStyle(color: _textB, fontSize: 12)),
+        const SizedBox(height: 8),
+        Row(children: ['Stereo','Mono'].map((c) {
+          final sel = c == _channels;
+          return Expanded(child: GestureDetector(onTap: () => setState(() => _channels = c),
+            child: Container(margin: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: sel ? _goldDim.withValues(alpha: 0.35) : _card,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+              child: Center(child: Text(c, style: TextStyle(color: sel ? _gold : _textB, fontSize: 12,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w500))))));
+        }).toList()),
+        if (_fmt == 'WAV') ...[const SizedBox(height: 14),
+          Text(ar ? 'عمق البت' : 'Bit Depth', style: const TextStyle(color: _textB, fontSize: 12)),
+          const SizedBox(height: 8),
+          Row(children: [16,24,32].map((b) {
+            final sel = b == _wavBitDepth;
+            return Expanded(child: GestureDetector(onTap: () => setState(() => _wavBitDepth = b),
+              child: Container(margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: sel ? _goldDim.withValues(alpha: 0.35) : _card,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+                child: Center(child: Text('$b-bit', style: TextStyle(color: sel ? _gold : _textB, fontSize: 12,
+                    fontWeight: sel ? FontWeight.w700 : FontWeight.w500))))));
+          }).toList())],
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'بيانات وصفية' : 'Metadata Tags', Icons.label_rounded, [
+        TextField(style: const TextStyle(color: _textA, fontSize: 13),
+          decoration: InputDecoration(labelText: ar ? 'العنوان' : 'Title',
+              labelStyle: const TextStyle(color: _textDim, fontSize: 12)),
+          onChanged: (v) => _metaTitle = v),
+        TextField(style: const TextStyle(color: _textA, fontSize: 13),
+          decoration: InputDecoration(labelText: ar ? 'الفنان' : 'Artist',
+              labelStyle: const TextStyle(color: _textDim, fontSize: 12)),
+          onChanged: (v) => _metaArtist = v),
+        TextField(style: const TextStyle(color: _textA, fontSize: 13),
+          decoration: InputDecoration(labelText: ar ? 'الألبوم' : 'Album',
+              labelStyle: const TextStyle(color: _textDim, fontSize: 12)),
+          onChanged: (v) => _metaAlbum = v),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'إعدادات مسبقة سريعة' : 'Quick Presets', Icons.flash_on_rounded, [
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _chip_(ar ? 'رسالة واتساب صوتية' : 'WhatsApp Voice Note', () => setState(() {
+            _fmt='M4A'; _kbps=64; _sampleRate=16000; _channels='Mono'; _loudnessTarget='-16 LUFS (Mobile)';
+          })),
+          _chip_(ar ? 'بودكاست' : 'Podcast', () => setState(() {
+            _fmt='MP3'; _kbps=128; _sampleRate=44100; _channels='Stereo'; _loudnessTarget='-16 LUFS (Mobile)';
+          })),
+          _chip_(ar ? 'نغمة رنين HD' : 'Ringtone HD', () => setState(() {
+            _fmt='M4A'; _kbps=256; _sampleRate=48000; _channels='Stereo'; _loudnessTarget='Off';
+          })),
+          _chip_(ar ? 'بث آمن' : 'Broadcast Safe', () => setState(() {
+            _fmt='WAV'; _sampleRate=48000; _wavBitDepth=24; _channels='Stereo';
+            _loudnessTarget='-23 LUFS (Broadcast)'; _truePeakLimiter=true;
+          })),
+        ]),
+      ]),
+      const SizedBox(height: 10),
+      GestureDetector(onTap: _busy ? null : _batchExport,
+        child: Container(padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _border)),
+          child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.playlist_add_check_rounded, color: _textB, size: 17),
+            const SizedBox(width: 6),
+            Text(ar ? 'تصدير دفعي (ملفات متعددة)' : 'Batch Export (multiple files)',
+                style: const TextStyle(color: _textB, fontSize: 13, fontWeight: FontWeight.w600)),
+          ])))),
+      const SizedBox(height: 10),
       _card_(ar ? 'خيارات' : 'Options', Icons.settings_rounded, [
         _toggle(ar ? 'حفظ كنغمة رنين (التنزيلات)' : 'Set as Ringtone (saves to Downloads)',
             Icons.ring_volume_rounded, _asRingtone, (v) => setState(() => _asRingtone = v)),
@@ -1262,6 +1465,271 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         const Spacer(),
         Text(value, style: const TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w600)),
       ]));
+
+  // ── FX+ TAB — S229: tone shaping, character FX, stereo/space, cleanup ────
+  Widget _fx2Tab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      _card_(ar ? 'تشكيل النغمة' : 'Tone Shaping', Icons.tune_rounded, [
+        _knob(ar ? 'تعزيز الجهير' : 'Bass Boost', '${_bassBoost>=0?"+":""}${_bassBoost.toStringAsFixed(1)} dB',
+            _bassBoost, -12, 12, (v) => setState(() => _bassBoost = v)),
+        _knob(ar ? 'تعزيز الحدة' : 'Treble Boost', '${_trebleBoost>=0?"+":""}${_trebleBoost.toStringAsFixed(1)} dB',
+            _trebleBoost, -12, 12, (v) => setState(() => _trebleBoost = v)),
+        _knob(ar ? 'جهير فرعي' : 'Sub Bass', _subBass==0?(ar?'معطل':'Off'):'${_subBass.round()}%',
+            _subBass, 0, 100, (v) => setState(() => _subBass = v)),
+        _knob(ar ? 'الوضوح' : 'Presence/Clarity', _presence==0?(ar?'معطل':'Off'):'${_presence.round()}%',
+            _presence, 0, 100, (v) => setState(() => _presence = v)),
+        _knob(ar ? 'مرشح تمرير عالي' : 'High-Pass', _hpFreq==0?(ar?'معطل':'Off'):'${_hpFreq.round()} Hz',
+            _hpFreq, 0, 500, (v) => setState(() => _hpFreq = v)),
+        _knob(ar ? 'مرشح تمرير منخفض' : 'Low-Pass', _lpFreq>=20000?(ar?'معطل':'Off'):'${_lpFreq.round()} Hz',
+            _lpFreq, 2000, 20000, (v) => setState(() => _lpFreq = v)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'تأثيرات مميزة' : 'Character FX', Icons.graphic_eq_rounded, [
+        _knob(ar ? 'ترعيد (Tremolo)' : 'Tremolo', _tremolo==0?(ar?'معطل':'Off'):'${_tremolo.round()}%',
+            _tremolo, 0, 100, (v) => setState(() => _tremolo = v)),
+        _knob(ar ? 'اهتزاز (Vibrato)' : 'Vibrato', _vibrato==0?(ar?'معطل':'Off'):'${_vibrato.round()}%',
+            _vibrato, 0, 100, (v) => setState(() => _vibrato = v)),
+        _toggle(ar ? 'جوقة (Chorus)' : 'Chorus', Icons.groups_rounded, _chorus, (v) => setState(() => _chorus = v)),
+        const SizedBox(height: 8),
+        _toggle(ar ? 'فلانجر (Flanger)' : 'Flanger', Icons.waves_rounded, _flanger, (v) => setState(() => _flanger = v)),
+        const SizedBox(height: 8),
+        _toggle(ar ? 'فايزر (Phaser)' : 'Phaser', Icons.blur_on_rounded, _phaser, (v) => setState(() => _phaser = v)),
+        const SizedBox(height: 8),
+        _knob(ar ? 'بت-كراشر' : 'Bitcrusher', _crusher==0?(ar?'معطل':'Off'):'${_crusher.round()}%',
+            _crusher, 0, 100, (v) => setState(() => _crusher = v)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'الستيريو والفضاء' : 'Stereo & Space', Icons.surround_sound_rounded, [
+        _toggle(ar ? 'توسيع هاس (Haas)' : 'Haas Widener', Icons.width_normal_rounded,
+            _haasWiden, (v) => setState(() => _haasWiden = v)),
+        const SizedBox(height: 10),
+        _knob(ar ? 'محسّن الستيريو' : 'Stereo Enhancer', '${_stereoFx.round()}',
+            _stereoFx, -100, 100, (v) => setState(() => _stereoFx = v)),
+        const SizedBox(height: 6),
+        Text(ar ? 'وضع القنوات' : 'Channel Mode', style: const TextStyle(color: _textB, fontSize: 12)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: ['Stereo','Mono','Left','Right'].map((m) {
+          final sel = m == _channelMode;
+          return GestureDetector(onTap: () => setState(() => _channelMode = m),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: sel ? _goldDim.withValues(alpha: 0.4) : _card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+              child: Text(m, style: TextStyle(color: sel ? _gold : _textB, fontSize: 11,
+                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
+        }).toList()),
+        const SizedBox(height: 10),
+        _toggle(ar ? 'تبديل يمين/يسار' : 'Swap L/R', Icons.swap_horiz_rounded,
+            _swapLR, (v) => setState(() => _swapLR = v)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'تنظيف وديناميكية' : 'Cleanup & Dynamics', Icons.cleaning_services_rounded, [
+        _toggle(ar ? 'بوابة ضوضاء (Noise Gate)' : 'Noise Gate', Icons.fence_rounded,
+            _noiseGate, (v) => setState(() => _noiseGate = v)),
+        if (_noiseGate) ...[const SizedBox(height: 8),
+          _knob(ar ? 'عتبة البوابة' : 'Gate Threshold', '${_gateThresh.round()} dB',
+              _gateThresh, -80, -20, (v) => setState(() => _gateThresh = v))],
+        const SizedBox(height: 10),
+        _knob(ar ? 'مزيل الصفير (De-esser)' : 'De-esser', _deEsser==0?(ar?'معطل':'Off'):'${_deEsser.round()}%',
+            _deEsser, 0, 100, (v) => setState(() => _deEsser = v)),
+        const SizedBox(height: 4),
+        _toggle(ar ? 'إزالة التقطيع (Declip)' : 'Declip', Icons.content_cut_rounded,
+            _declip, (v) => setState(() => _declip = v)),
+        const SizedBox(height: 10),
+        _toggle(ar ? 'تطبيع تكيّفي' : 'Adaptive Normalize', Icons.auto_graph_rounded,
+            _autoNormalize, (v) => setState(() => _autoNormalize = v)),
+        const SizedBox(height: 10),
+        _toggle(ar ? 'محدد ذروة (Limiter)' : 'Limiter', Icons.horizontal_rule_rounded,
+            _limiter, (v) => setState(() => _limiter = v)),
+        if (_limiter) ...[const SizedBox(height: 8),
+          _knob(ar ? 'سقف المحدد' : 'Ceiling', '${_limiterCeil.toStringAsFixed(1)} dB',
+              _limiterCeil, -6, 0, (v) => setState(() => _limiterCeil = v))],
+        const SizedBox(height: 10),
+        _toggle(ar ? 'قص الصمت تلقائيًا' : 'Auto-Trim Silence', Icons.content_cut_rounded,
+            _autoTrimSilence, (v) => setState(() => _autoTrimSilence = v)),
+        const SizedBox(height: 10),
+        _knob(ar ? 'حشو البداية' : 'Pad Start', '${_padStart.toStringAsFixed(1)}s',
+            _padStart, 0, 5, (v) => setState(() => _padStart = v)),
+        _knob(ar ? 'حشو النهاية' : 'Pad End', '${_padEnd.toStringAsFixed(1)}s',
+            _padEnd, 0, 5, (v) => setState(() => _padEnd = v)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'الإعدادات المسبقة' : 'Presets', Icons.bookmark_rounded, [
+        Row(children: [
+          Expanded(child: GestureDetector(onTap: _saveFxPreset,
+            child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _teal.withValues(alpha: 0.4))),
+              child: Center(child: Text(ar ? 'حفظ' : 'Save', style: const TextStyle(
+                  color: _teal, fontSize: 13, fontWeight: FontWeight.w700)))))),
+          const SizedBox(width: 10),
+          Expanded(child: GestureDetector(onTap: _loadFxPresetSheet,
+            child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _border)),
+              child: Center(child: Text(ar ? 'تحميل' : 'Load', style: const TextStyle(
+                  color: _textA, fontSize: 13, fontWeight: FontWeight.w700)))))),
+        ]),
+      ]),
+      const SizedBox(height: 10),
+      GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          setState(() {
+            _bassBoost=0; _trebleBoost=0; _subBass=0; _presence=0; _hpFreq=0; _lpFreq=20000;
+            _tremolo=0; _vibrato=0; _chorus=false; _flanger=false; _phaser=false; _crusher=0;
+            _haasWiden=false; _stereoFx=0; _channelMode='Stereo'; _swapLR=false;
+            _noiseGate=false; _gateThresh=-50; _deEsser=0; _declip=false;
+            _autoNormalize=false; _limiter=false; _limiterCeil=-1.0;
+            _autoTrimSilence=false; _padStart=0; _padEnd=0;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _teal.withValues(alpha: 0.3))),
+          child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.restart_alt_rounded, color: _teal, size: 17),
+            const SizedBox(width: 6),
+            Text(ar ? 'إعادة ضبط FX+' : 'Reset FX+',
+                style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w600)),
+          ])))),
+    ]);
+  }
+
+  // ── S229: FX+ presets — saved as JSON in the app documents dir ───────────
+  Future<File> _presetsFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/tilawa_fx_presets.json');
+  }
+
+  Map<String, dynamic> _currentFxSnapshot() => {
+    'bassBoost': _bassBoost, 'trebleBoost': _trebleBoost, 'subBass': _subBass,
+    'presence': _presence, 'hpFreq': _hpFreq, 'lpFreq': _lpFreq,
+    'tremolo': _tremolo, 'vibrato': _vibrato, 'chorus': _chorus, 'flanger': _flanger,
+    'phaser': _phaser, 'crusher': _crusher, 'haasWiden': _haasWiden, 'stereoFx': _stereoFx,
+    'channelMode': _channelMode, 'swapLR': _swapLR, 'noiseGate': _noiseGate,
+    'gateThresh': _gateThresh, 'deEsser': _deEsser, 'declip': _declip,
+    'autoNormalize': _autoNormalize, 'limiter': _limiter, 'limiterCeil': _limiterCeil,
+    'autoTrimSilence': _autoTrimSilence, 'padStart': _padStart, 'padEnd': _padEnd,
+  };
+
+  void _applyFxSnapshot(Map<String, dynamic> m) {
+    setState(() {
+      _bassBoost = (m['bassBoost'] ?? 0).toDouble();
+      _trebleBoost = (m['trebleBoost'] ?? 0).toDouble();
+      _subBass = (m['subBass'] ?? 0).toDouble();
+      _presence = (m['presence'] ?? 0).toDouble();
+      _hpFreq = (m['hpFreq'] ?? 0).toDouble();
+      _lpFreq = (m['lpFreq'] ?? 20000).toDouble();
+      _tremolo = (m['tremolo'] ?? 0).toDouble();
+      _vibrato = (m['vibrato'] ?? 0).toDouble();
+      _chorus = m['chorus'] ?? false;
+      _flanger = m['flanger'] ?? false;
+      _phaser = m['phaser'] ?? false;
+      _crusher = (m['crusher'] ?? 0).toDouble();
+      _haasWiden = m['haasWiden'] ?? false;
+      _stereoFx = (m['stereoFx'] ?? 0).toDouble();
+      _channelMode = m['channelMode'] ?? 'Stereo';
+      _swapLR = m['swapLR'] ?? false;
+      _noiseGate = m['noiseGate'] ?? false;
+      _gateThresh = (m['gateThresh'] ?? -50).toDouble();
+      _deEsser = (m['deEsser'] ?? 0).toDouble();
+      _declip = m['declip'] ?? false;
+      _autoNormalize = m['autoNormalize'] ?? false;
+      _limiter = m['limiter'] ?? false;
+      _limiterCeil = (m['limiterCeil'] ?? -1.0).toDouble();
+      _autoTrimSilence = m['autoTrimSilence'] ?? false;
+      _padStart = (m['padStart'] ?? 0).toDouble();
+      _padEnd = (m['padEnd'] ?? 0).toDouble();
+    });
+  }
+
+  Future<void> _saveFxPreset() async {
+    final ar = LangProvider.strings(context).ar;
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(context: context, builder: (_) => AlertDialog(
+      backgroundColor: _card,
+      title: Text(ar ? 'اسم الإعداد' : 'Preset Name', style: const TextStyle(color: _textA)),
+      content: TextField(controller: ctrl, autofocus: true,
+          style: const TextStyle(color: _textA),
+          decoration: const InputDecoration(hintText: 'My Preset', hintStyle: TextStyle(color: _textDim))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(ar ? 'إلغاء' : 'Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: Text(ar ? 'حفظ' : 'Save')),
+      ]));
+    if (name == null || name.isEmpty) return;
+    try {
+      final f = await _presetsFile();
+      Map<String, dynamic> all = {};
+      if (await f.exists()) {
+        try { all = Map<String, dynamic>.from(jsonDecode(await f.readAsString())); } catch (_) {}
+      }
+      all[name] = _currentFxSnapshot();
+      await f.writeAsString(jsonEncode(all));
+      _snack('✓ ${ar ? "تم حفظ" : "Saved"} "$name"');
+    } catch (e) { _snack('Error: $e', color: _red); }
+  }
+
+  Future<void> _loadFxPresetSheet() async {
+    final ar = LangProvider.strings(context).ar;
+    try {
+      final f = await _presetsFile();
+      if (!await f.exists()) { _snack(ar ? 'لا توجد إعدادات محفوظة' : 'No saved presets yet'); return; }
+      final all = Map<String, dynamic>.from(jsonDecode(await f.readAsString()));
+      if (all.isEmpty) { _snack(ar ? 'لا توجد إعدادات محفوظة' : 'No saved presets yet'); return; }
+      if (!mounted) return;
+      await showModalBottomSheet(context: context, backgroundColor: _surface,
+        builder: (_) => SafeArea(child: ListView(shrinkWrap: true,
+          children: all.keys.map((k) => ListTile(
+            title: Text(k, style: const TextStyle(color: _textA)),
+            leading: const Icon(Icons.bookmark_rounded, color: _gold),
+            trailing: IconButton(icon: const Icon(Icons.delete_outline_rounded, color: _red),
+              onPressed: () async {
+                all.remove(k); await f.writeAsString(jsonEncode(all));
+                if (mounted) Navigator.pop(context);
+              }),
+            onTap: () {
+              _applyFxSnapshot(Map<String, dynamic>.from(all[k]));
+              Navigator.pop(context);
+              _snack('✓ ${ar ? "تم تطبيق" : "Applied"} "$k"');
+            })).toList())));
+    } catch (e) { _snack('Error: $e', color: _red); }
+  }
+
+  // ── S229: BATCH EXPORT — apply current FX/format settings to N more files ─
+  Future<void> _batchExport() async {
+    final ar = LangProvider.strings(context).ar;
+    if (!await _checkSetup()) return;
+    final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: true);
+    if (r == null || r.files.isEmpty) return;
+    final paths = r.files.where((f) => f.path != null).map((f) => f.path!).toList();
+    if (paths.isEmpty) return;
+    setState(() { _busy = true; _busyLabel = ar ? 'تصدير دفعي…' : 'Batch exporting…'; _pct = 0; });
+    int done = 0, failed = 0;
+    for (final p in paths) {
+      try {
+        final inp = await _safeInput(p);
+        final ext = _fmt.toLowerCase();
+        final base = p.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
+        final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
+        final out = '${dir.path}/tilawa_${base}_batch.$ext';
+        final af = _buildAf();
+        final cmd = 'ffmpeg -y -i "$inp" '
+            '-af ${af.isEmpty ? "anull" : af.join(",")} ${_metaArgs()} '
+            '-ar $_sampleRate -ac ${_channels == "Mono" ? 1 : 2} '
+            '-acodec ${_codec()} ${_br()} "$out"';
+        final res = await _proot(cmd, inp, out, timeout: 15);
+        if ((res?['rc'] as int? ?? 1) != 0) { failed++; } else { done++; }
+      } catch (_) { failed++; }
+      setState(() => _pct = (done + failed) / paths.length);
+    }
+    setState(() => _busy = false);
+    _snack('✓ ${ar ? "تم" : "Done"}: $done${failed > 0 ? "  ·  ${ar ? "فشل" : "failed"}: $failed" : ""}');
+  }
 }
 
 // ── WAVEFORM PAINTER ──────────────────────────────────────────────────────────
