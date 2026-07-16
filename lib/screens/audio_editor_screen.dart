@@ -91,6 +91,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   bool   _dspBusy         = false;   // preview-only busy flag (separate from export _busy)
   String? _dspScriptPath;           // cached copy of the bundled Studio Engine script
 
+  // S232 — FX rack: which row is expanded (single-open, like a hardware rack) + search
+  String? _fx2OpenId;
+  String  _fx2Search = '';
+
   // S229 — FX+ tab: tone shaping
   double _bassBoost   = 0;      // dB, -12..12
   double _trebleBoost = 0;      // dB, -12..12
@@ -1467,136 +1471,272 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ]));
 
   // ── FX+ TAB — S229: tone shaping, character FX, stereo/space, cleanup ────
+
+  // ── S232: FX rack redesign — collapsible rows, lamp indicators, search ──────
+  Widget _rackLamp(bool on) => Container(width: 8, height: 8,
+    margin: const EdgeInsets.only(right: 10),
+    decoration: BoxDecoration(shape: BoxShape.circle,
+      color: on ? _gold : Colors.transparent,
+      border: Border.all(color: on ? _gold : _textDim, width: 1.4),
+      boxShadow: on ? [BoxShadow(color: _gold.withValues(alpha: 0.6), blurRadius: 7, spreadRadius: 1)] : null));
+
+  Widget _rackRow({required String id, required String label, required String valueStr,
+      required bool on, Widget? rightControl, Widget? body}) {
+    final open = _fx2OpenId == id;
+    final expandable = body != null;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: expandable ? () => setState(() => _fx2OpenId = open ? null : id) : null,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(children: [
+            _rackLamp(on),
+            Expanded(child: Text(label, style: const TextStyle(color: _textA, fontSize: 13, fontWeight: FontWeight.w600))),
+            Text(valueStr, style: TextStyle(color: on ? _gold : _textDim, fontSize: 11,
+                fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+            const SizedBox(width: 10),
+            rightControl ?? Icon(open ? Icons.keyboard_arrow_down_rounded : Icons.chevron_right_rounded,
+                color: _textDim, size: 18),
+          ])),
+        if (open && body != null)
+          Padding(padding: const EdgeInsets.only(bottom: 12), child: body),
+      ]));
+  }
+
+  Widget _rackSwitch(bool val, ValueChanged<bool> onChanged) =>
+    Switch(value: val, activeColor: _gold, inactiveThumbColor: _textDim,
+      activeTrackColor: _goldDim, inactiveTrackColor: _border, onChanged: onChanged);
+
+  Widget _rackSection(String title, int onCount, List<Widget> rows) {
+    if (rows.isEmpty) return const SizedBox.shrink();
+    final children = <Widget>[];
+    for (int i = 0; i < rows.length; i++) {
+      children.add(rows[i]);
+      if (i != rows.length - 1) children.add(const Divider(height: 1, color: _border));
+    }
+    return Padding(padding: const EdgeInsets.only(bottom: 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(title, style: const TextStyle(color: _textA, fontSize: 15,
+              fontWeight: FontWeight.w700, fontFamily: 'serif'))),
+          Text('$onCount ${onCount == 1 ? "on" : "on"}', style: const TextStyle(color: _teal, fontSize: 10, fontFamily: 'monospace')),
+        ]),
+        const SizedBox(height: 8),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _border)),
+          child: Column(children: children)),
+      ]));
+  }
+
+  void _resetFx2() {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _bassBoost=0; _trebleBoost=0; _subBass=0; _presence=0; _hpFreq=0; _lpFreq=20000;
+      _tremolo=0; _vibrato=0; _chorus=false; _flanger=false; _phaser=false; _crusher=0;
+      _haasWiden=false; _stereoFx=0; _channelMode='Stereo'; _swapLR=false;
+      _noiseGate=false; _gateThresh=-50; _deEsser=0; _declip=false;
+      _autoNormalize=false; _limiter=false; _limiterCeil=-1.0;
+      _autoTrimSilence=false; _padStart=0; _padEnd=0;
+      _fx2OpenId=null;
+    });
+  }
+
   Widget _fx2Tab() {
     final ar = LangProvider.strings(context).ar;
-    return ListView(padding: const EdgeInsets.all(14), children: [
-      _card_(ar ? 'تشكيل النغمة' : 'Tone Shaping', Icons.tune_rounded, [
-        _knob(ar ? 'تعزيز الجهير' : 'Bass Boost', '${_bassBoost>=0?"+":""}${_bassBoost.toStringAsFixed(1)} dB',
-            _bassBoost, -12, 12, (v) => setState(() => _bassBoost = v)),
-        _knob(ar ? 'تعزيز الحدة' : 'Treble Boost', '${_trebleBoost>=0?"+":""}${_trebleBoost.toStringAsFixed(1)} dB',
-            _trebleBoost, -12, 12, (v) => setState(() => _trebleBoost = v)),
-        _knob(ar ? 'جهير فرعي' : 'Sub Bass', _subBass==0?(ar?'معطل':'Off'):'${_subBass.round()}%',
-            _subBass, 0, 100, (v) => setState(() => _subBass = v)),
-        _knob(ar ? 'الوضوح' : 'Presence/Clarity', _presence==0?(ar?'معطل':'Off'):'${_presence.round()}%',
-            _presence, 0, 100, (v) => setState(() => _presence = v)),
-        _knob(ar ? 'مرشح تمرير عالي' : 'High-Pass', _hpFreq==0?(ar?'معطل':'Off'):'${_hpFreq.round()} Hz',
-            _hpFreq, 0, 500, (v) => setState(() => _hpFreq = v)),
-        _knob(ar ? 'مرشح تمرير منخفض' : 'Low-Pass', _lpFreq>=20000?(ar?'معطل':'Off'):'${_lpFreq.round()} Hz',
-            _lpFreq, 2000, 20000, (v) => setState(() => _lpFreq = v)),
-      ]),
-      const SizedBox(height: 10),
-      _card_(ar ? 'تأثيرات مميزة' : 'Character FX', Icons.graphic_eq_rounded, [
-        _knob(ar ? 'ترعيد (Tremolo)' : 'Tremolo', _tremolo==0?(ar?'معطل':'Off'):'${_tremolo.round()}%',
-            _tremolo, 0, 100, (v) => setState(() => _tremolo = v)),
-        _knob(ar ? 'اهتزاز (Vibrato)' : 'Vibrato', _vibrato==0?(ar?'معطل':'Off'):'${_vibrato.round()}%',
-            _vibrato, 0, 100, (v) => setState(() => _vibrato = v)),
-        _toggle(ar ? 'جوقة (Chorus)' : 'Chorus', Icons.groups_rounded, _chorus, (v) => setState(() => _chorus = v)),
-        const SizedBox(height: 8),
-        _toggle(ar ? 'فلانجر (Flanger)' : 'Flanger', Icons.waves_rounded, _flanger, (v) => setState(() => _flanger = v)),
-        const SizedBox(height: 8),
-        _toggle(ar ? 'فايزر (Phaser)' : 'Phaser', Icons.blur_on_rounded, _phaser, (v) => setState(() => _phaser = v)),
-        const SizedBox(height: 8),
-        _knob(ar ? 'بت-كراشر' : 'Bitcrusher', _crusher==0?(ar?'معطل':'Off'):'${_crusher.round()}%',
-            _crusher, 0, 100, (v) => setState(() => _crusher = v)),
-      ]),
-      const SizedBox(height: 10),
-      _card_(ar ? 'الستيريو والفضاء' : 'Stereo & Space', Icons.surround_sound_rounded, [
-        _toggle(ar ? 'توسيع هاس (Haas)' : 'Haas Widener', Icons.width_normal_rounded,
-            _haasWiden, (v) => setState(() => _haasWiden = v)),
-        const SizedBox(height: 10),
-        _knob(ar ? 'محسّن الستيريو' : 'Stereo Enhancer', '${_stereoFx.round()}',
-            _stereoFx, -100, 100, (v) => setState(() => _stereoFx = v)),
-        const SizedBox(height: 6),
-        Text(ar ? 'وضع القنوات' : 'Channel Mode', style: const TextStyle(color: _textB, fontSize: 12)),
-        const SizedBox(height: 8),
-        Wrap(spacing: 8, runSpacing: 8, children: ['Stereo','Mono','Left','Right'].map((m) {
-          final sel = m == _channelMode;
-          return GestureDetector(onTap: () => setState(() => _channelMode = m),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: sel ? _goldDim.withValues(alpha: 0.4) : _card,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
-              child: Text(m, style: TextStyle(color: sel ? _gold : _textB, fontSize: 11,
-                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
-        }).toList()),
-        const SizedBox(height: 10),
-        _toggle(ar ? 'تبديل يمين/يسار' : 'Swap L/R', Icons.swap_horiz_rounded,
-            _swapLR, (v) => setState(() => _swapLR = v)),
-      ]),
-      const SizedBox(height: 10),
-      _card_(ar ? 'تنظيف وديناميكية' : 'Cleanup & Dynamics', Icons.cleaning_services_rounded, [
-        _toggle(ar ? 'بوابة ضوضاء (Noise Gate)' : 'Noise Gate', Icons.fence_rounded,
-            _noiseGate, (v) => setState(() => _noiseGate = v)),
-        if (_noiseGate) ...[const SizedBox(height: 8),
-          _knob(ar ? 'عتبة البوابة' : 'Gate Threshold', '${_gateThresh.round()} dB',
-              _gateThresh, -80, -20, (v) => setState(() => _gateThresh = v))],
-        const SizedBox(height: 10),
-        _knob(ar ? 'مزيل الصفير (De-esser)' : 'De-esser', _deEsser==0?(ar?'معطل':'Off'):'${_deEsser.round()}%',
-            _deEsser, 0, 100, (v) => setState(() => _deEsser = v)),
-        const SizedBox(height: 4),
-        _toggle(ar ? 'إزالة التقطيع (Declip)' : 'Declip', Icons.content_cut_rounded,
-            _declip, (v) => setState(() => _declip = v)),
-        const SizedBox(height: 10),
-        _toggle(ar ? 'تطبيع تكيّفي' : 'Adaptive Normalize', Icons.auto_graph_rounded,
-            _autoNormalize, (v) => setState(() => _autoNormalize = v)),
-        const SizedBox(height: 10),
-        _toggle(ar ? 'محدد ذروة (Limiter)' : 'Limiter', Icons.horizontal_rule_rounded,
-            _limiter, (v) => setState(() => _limiter = v)),
-        if (_limiter) ...[const SizedBox(height: 8),
-          _knob(ar ? 'سقف المحدد' : 'Ceiling', '${_limiterCeil.toStringAsFixed(1)} dB',
-              _limiterCeil, -6, 0, (v) => setState(() => _limiterCeil = v))],
-        const SizedBox(height: 10),
-        _toggle(ar ? 'قص الصمت تلقائيًا' : 'Auto-Trim Silence', Icons.content_cut_rounded,
-            _autoTrimSilence, (v) => setState(() => _autoTrimSilence = v)),
-        const SizedBox(height: 10),
-        _knob(ar ? 'حشو البداية' : 'Pad Start', '${_padStart.toStringAsFixed(1)}s',
-            _padStart, 0, 5, (v) => setState(() => _padStart = v)),
-        _knob(ar ? 'حشو النهاية' : 'Pad End', '${_padEnd.toStringAsFixed(1)}s',
-            _padEnd, 0, 5, (v) => setState(() => _padEnd = v)),
-      ]),
-      const SizedBox(height: 10),
-      _card_(ar ? 'الإعدادات المسبقة' : 'Presets', Icons.bookmark_rounded, [
-        Row(children: [
-          Expanded(child: GestureDetector(onTap: _saveFxPreset,
-            child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _teal.withValues(alpha: 0.4))),
-              child: Center(child: Text(ar ? 'حفظ' : 'Save', style: const TextStyle(
-                  color: _teal, fontSize: 13, fontWeight: FontWeight.w700)))))),
-          const SizedBox(width: 10),
-          Expanded(child: GestureDetector(onTap: _loadFxPresetSheet,
-            child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _border)),
-              child: Center(child: Text(ar ? 'تحميل' : 'Load', style: const TextStyle(
-                  color: _textA, fontSize: 13, fontWeight: FontWeight.w700)))))),
+    final q = _fx2Search.trim().toLowerCase();
+    bool vis(String en, String arLbl) => q.isEmpty || en.toLowerCase().contains(q) || arLbl.toLowerCase().contains(q);
+
+    final onBass = _bassBoost != 0, onTreble = _trebleBoost != 0, onSub = _subBass != 0,
+        onPresence = _presence != 0, onHp = _hpFreq != 0, onLp = _lpFreq < 20000;
+    final onTrem = _tremolo != 0, onVib = _vibrato != 0, onCrush = _crusher != 0;
+    final onStereoFx = _stereoFx != 0, onChanMode = _channelMode != 'Stereo';
+    final onDeEsser = _deEsser != 0, onPadStart = _padStart != 0, onPadEnd = _padEnd != 0;
+
+    final toneRows = <Widget>[
+      if (vis('Bass Boost', 'تعزيز الجهير'))
+        _rackRow(id: 'bass', label: ar ? 'تعزيز الجهير' : 'Bass Boost', on: onBass,
+          valueStr: '${_bassBoost>=0?"+":""}${_bassBoost.toStringAsFixed(1)} dB',
+          body: _slider(_bassBoost, -12, 12, _gold, (v) => setState(() => _bassBoost = v))),
+      if (vis('Treble Boost', 'تعزيز الحدة'))
+        _rackRow(id: 'treble', label: ar ? 'تعزيز الحدة' : 'Treble Boost', on: onTreble,
+          valueStr: '${_trebleBoost>=0?"+":""}${_trebleBoost.toStringAsFixed(1)} dB',
+          body: _slider(_trebleBoost, -12, 12, _gold, (v) => setState(() => _trebleBoost = v))),
+      if (vis('Sub Bass', 'جهير فرعي'))
+        _rackRow(id: 'subbass', label: ar ? 'جهير فرعي' : 'Sub Bass', on: onSub,
+          valueStr: _subBass==0 ? (ar?'معطل':'Off') : '${_subBass.round()}%',
+          body: _slider(_subBass, 0, 100, _gold, (v) => setState(() => _subBass = v))),
+      if (vis('Presence/Clarity', 'الوضوح'))
+        _rackRow(id: 'presence', label: ar ? 'الوضوح' : 'Presence/Clarity', on: onPresence,
+          valueStr: _presence==0 ? (ar?'معطل':'Off') : '${_presence.round()}%',
+          body: _slider(_presence, 0, 100, _gold, (v) => setState(() => _presence = v))),
+      if (vis('High-Pass', 'مرشح تمرير عالي'))
+        _rackRow(id: 'hp', label: ar ? 'مرشح تمرير عالي' : 'High-Pass', on: onHp,
+          valueStr: _hpFreq==0 ? (ar?'معطل':'Off') : '${_hpFreq.round()} Hz',
+          body: _slider(_hpFreq, 0, 500, _gold, (v) => setState(() => _hpFreq = v))),
+      if (vis('Low-Pass', 'مرشح تمرير منخفض'))
+        _rackRow(id: 'lp', label: ar ? 'مرشح تمرير منخفض' : 'Low-Pass', on: onLp,
+          valueStr: _lpFreq>=20000 ? (ar?'معطل':'Off') : '${_lpFreq.round()} Hz',
+          body: _slider(_lpFreq, 2000, 20000, _gold, (v) => setState(() => _lpFreq = v))),
+    ];
+
+    final charRows = <Widget>[
+      if (vis('Tremolo', 'ترعيد'))
+        _rackRow(id: 'tremolo', label: ar ? 'ترعيد (Tremolo)' : 'Tremolo', on: onTrem,
+          valueStr: _tremolo==0 ? (ar?'معطل':'Off') : '${_tremolo.round()}%',
+          body: _slider(_tremolo, 0, 100, _gold, (v) => setState(() => _tremolo = v))),
+      if (vis('Vibrato', 'اهتزاز'))
+        _rackRow(id: 'vibrato', label: ar ? 'اهتزاز (Vibrato)' : 'Vibrato', on: onVib,
+          valueStr: _vibrato==0 ? (ar?'معطل':'Off') : '${_vibrato.round()}%',
+          body: _slider(_vibrato, 0, 100, _gold, (v) => setState(() => _vibrato = v))),
+      if (vis('Chorus', 'جوقة'))
+        _rackRow(id: 'chorus', label: ar ? 'جوقة (Chorus)' : 'Chorus', on: _chorus,
+          valueStr: _chorus ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_chorus, (v) => setState(() => _chorus = v))),
+      if (vis('Flanger', 'فلانجر'))
+        _rackRow(id: 'flanger', label: ar ? 'فلانجر (Flanger)' : 'Flanger', on: _flanger,
+          valueStr: _flanger ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_flanger, (v) => setState(() => _flanger = v))),
+      if (vis('Phaser', 'فايزر'))
+        _rackRow(id: 'phaser', label: ar ? 'فايزر (Phaser)' : 'Phaser', on: _phaser,
+          valueStr: _phaser ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_phaser, (v) => setState(() => _phaser = v))),
+      if (vis('Bitcrusher', 'بت-كراشر'))
+        _rackRow(id: 'crusher', label: ar ? 'بت-كراشر' : 'Bitcrusher', on: onCrush,
+          valueStr: _crusher==0 ? (ar?'معطل':'Off') : '${_crusher.round()}%',
+          body: _slider(_crusher, 0, 100, _gold, (v) => setState(() => _crusher = v))),
+    ];
+
+    final spaceRows = <Widget>[
+      if (vis('Haas Widener', 'توسيع هاس'))
+        _rackRow(id: 'haas', label: ar ? 'توسيع هاس (Haas)' : 'Haas Widener', on: _haasWiden,
+          valueStr: _haasWiden ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_haasWiden, (v) => setState(() => _haasWiden = v))),
+      if (vis('Stereo Enhancer', 'محسن الستيريو'))
+        _rackRow(id: 'stereofx', label: ar ? 'محسّن الستيريو' : 'Stereo Enhancer', on: onStereoFx,
+          valueStr: '${_stereoFx.round()}',
+          body: _slider(_stereoFx, -100, 100, _gold, (v) => setState(() => _stereoFx = v))),
+      if (vis('Channel Mode', 'وضع القنوات'))
+        _rackRow(id: 'channelmode', label: ar ? 'وضع القنوات' : 'Channel Mode', on: onChanMode,
+          valueStr: _channelMode,
+          body: Wrap(spacing: 8, runSpacing: 8, children: ['Stereo','Mono','Left','Right'].map((m) {
+            final sel = m == _channelMode;
+            return GestureDetector(onTap: () => setState(() => _channelMode = m),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: sel ? _goldDim.withValues(alpha: 0.4) : _surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+                child: Text(m, style: TextStyle(color: sel ? _gold : _textB, fontSize: 11,
+                    fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
+          }).toList())),
+      if (vis('Swap L/R', 'تبديل يمين يسار'))
+        _rackRow(id: 'swaplr', label: ar ? 'تبديل يمين/يسار' : 'Swap L/R', on: _swapLR,
+          valueStr: _swapLR ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_swapLR, (v) => setState(() => _swapLR = v))),
+    ];
+
+    final dynRows = <Widget>[
+      if (vis('Noise Gate', 'بوابة ضوضاء'))
+        _rackRow(id: 'gate', label: ar ? 'بوابة ضوضاء (Noise Gate)' : 'Noise Gate', on: _noiseGate,
+          valueStr: _noiseGate ? '${_gateThresh.round()} dB' : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_noiseGate, (v) => setState(() { _noiseGate = v; if (!v) _fx2OpenId = null; })),
+          body: _noiseGate ? _slider(_gateThresh, -80, -20, _gold, (v) => setState(() => _gateThresh = v)) : null),
+      if (vis('De-esser', 'مزيل الصفير'))
+        _rackRow(id: 'deesser', label: ar ? 'مزيل الصفير (De-esser)' : 'De-esser', on: onDeEsser,
+          valueStr: _deEsser==0 ? (ar?'معطل':'Off') : '${_deEsser.round()}%',
+          body: _slider(_deEsser, 0, 100, _gold, (v) => setState(() => _deEsser = v))),
+      if (vis('Declip', 'إزالة التقطيع'))
+        _rackRow(id: 'declip', label: ar ? 'إزالة التقطيع (Declip)' : 'Declip', on: _declip,
+          valueStr: _declip ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_declip, (v) => setState(() => _declip = v))),
+      if (vis('Adaptive Normalize', 'تطبيع تكيفي'))
+        _rackRow(id: 'autonorm', label: ar ? 'تطبيع تكيّفي' : 'Adaptive Normalize', on: _autoNormalize,
+          valueStr: _autoNormalize ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_autoNormalize, (v) => setState(() => _autoNormalize = v))),
+      if (vis('Limiter', 'محدد ذروة'))
+        _rackRow(id: 'limiter', label: ar ? 'محدد ذروة (Limiter)' : 'Limiter', on: _limiter,
+          valueStr: _limiter ? '${_limiterCeil.toStringAsFixed(1)} dB' : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_limiter, (v) => setState(() { _limiter = v; if (!v) _fx2OpenId = null; })),
+          body: _limiter ? _slider(_limiterCeil, -6, 0, _gold, (v) => setState(() => _limiterCeil = v)) : null),
+      if (vis('Auto-Trim Silence', 'قص الصمت تلقائيا'))
+        _rackRow(id: 'autotrim', label: ar ? 'قص الصمت تلقائيًا' : 'Auto-Trim Silence', on: _autoTrimSilence,
+          valueStr: _autoTrimSilence ? (ar?'مفعّل':'On') : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_autoTrimSilence, (v) => setState(() => _autoTrimSilence = v))),
+      if (vis('Pad Start', 'حشو البداية'))
+        _rackRow(id: 'padstart', label: ar ? 'حشو البداية' : 'Pad Start', on: onPadStart,
+          valueStr: _padStart==0 ? (ar?'معطل':'Off') : '${_padStart.toStringAsFixed(1)}s',
+          body: _slider(_padStart, 0, 5, _gold, (v) => setState(() => _padStart = v))),
+      if (vis('Pad End', 'حشو النهاية'))
+        _rackRow(id: 'padend', label: ar ? 'حشو النهاية' : 'Pad End', on: onPadEnd,
+          valueStr: _padEnd==0 ? (ar?'معطل':'Off') : '${_padEnd.toStringAsFixed(1)}s',
+          body: _slider(_padEnd, 0, 5, _gold, (v) => setState(() => _padEnd = v))),
+    ];
+
+    final totalOn = [onBass,onTreble,onSub,onPresence,onHp,onLp,
+        onTrem,onVib,_chorus,_flanger,_phaser,onCrush,
+        _haasWiden,onStereoFx,onChanMode,_swapLR,
+        _noiseGate,onDeEsser,_declip,_autoNormalize,_limiter,_autoTrimSilence,onPadStart,onPadEnd]
+        .where((b) => b).length;
+
+    return Column(children: [
+      Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+        child: TextField(
+          onChanged: (v) => setState(() => _fx2Search = v),
+          style: const TextStyle(color: _textA, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: ar ? 'ابحث في 24 تأثيرًا…' : 'Search 24 effects…',
+            hintStyle: const TextStyle(color: _textDim, fontSize: 12),
+            prefixIcon: const Icon(Icons.search_rounded, color: _textDim, size: 19),
+            filled: true, fillColor: _card, isDense: true,
+            contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11),
+                borderSide: const BorderSide(color: _border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11),
+                borderSide: const BorderSide(color: _gold)),
+          ))),
+      Padding(padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+        child: Row(children: [
+          Expanded(child: Text(
+            ar ? '$totalOn تأثير مفعّل' : '$totalOn effect${totalOn == 1 ? "" : "s"} engaged',
+            style: const TextStyle(color: _textB, fontSize: 11.5, fontWeight: FontWeight.w700))),
+          GestureDetector(onTap: _resetFx2,
+            child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _red.withValues(alpha: 0.4))),
+              child: Text(ar ? 'إعادة ضبط' : 'Reset',
+                  style: const TextStyle(color: _red, fontSize: 10.5, fontWeight: FontWeight.w700)))),
+        ])),
+      const SizedBox(height: 6),
+      Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(14, 6, 14, 20), children: [
+        _rackSection(ar ? 'تشكيل النغمة' : 'Tone Shaping',
+            [onBass,onTreble,onSub,onPresence,onHp,onLp].where((b) => b).length, toneRows),
+        _rackSection(ar ? 'تأثيرات مميزة' : 'Character FX',
+            [onTrem,onVib,_chorus,_flanger,_phaser,onCrush].where((b) => b).length, charRows),
+        _rackSection(ar ? 'الستيريو والفضاء' : 'Stereo & Space',
+            [_haasWiden,onStereoFx,onChanMode,_swapLR].where((b) => b).length, spaceRows),
+        _rackSection(ar ? 'تنظيف وديناميكية' : 'Cleanup & Dynamics',
+            [_noiseGate,onDeEsser,_declip,_autoNormalize,_limiter,_autoTrimSilence,onPadStart,onPadEnd]
+                .where((b) => b).length, dynRows),
+        _card_(ar ? 'الإعدادات المسبقة' : 'Presets', Icons.bookmark_rounded, [
+          Row(children: [
+            Expanded(child: GestureDetector(onTap: _saveFxPreset,
+              child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _teal.withValues(alpha: 0.4))),
+                child: Center(child: Text(ar ? 'حفظ' : 'Save', style: const TextStyle(
+                    color: _teal, fontSize: 13, fontWeight: FontWeight.w700)))))),
+            const SizedBox(width: 10),
+            Expanded(child: GestureDetector(onTap: _loadFxPresetSheet,
+              child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _border)),
+                child: Center(child: Text(ar ? 'تحميل' : 'Load', style: const TextStyle(
+                    color: _textA, fontSize: 13, fontWeight: FontWeight.w700)))))),
+          ]),
         ]),
-      ]),
-      const SizedBox(height: 10),
-      GestureDetector(
-        onTap: () {
-          HapticFeedback.mediumImpact();
-          setState(() {
-            _bassBoost=0; _trebleBoost=0; _subBass=0; _presence=0; _hpFreq=0; _lpFreq=20000;
-            _tremolo=0; _vibrato=0; _chorus=false; _flanger=false; _phaser=false; _crusher=0;
-            _haasWiden=false; _stereoFx=0; _channelMode='Stereo'; _swapLR=false;
-            _noiseGate=false; _gateThresh=-50; _deEsser=0; _declip=false;
-            _autoNormalize=false; _limiter=false; _limiterCeil=-1.0;
-            _autoTrimSilence=false; _padStart=0; _padEnd=0;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _teal.withValues(alpha: 0.3))),
-          child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.restart_alt_rounded, color: _teal, size: 17),
-            const SizedBox(width: 6),
-            Text(ar ? 'إعادة ضبط FX+' : 'Reset FX+',
-                style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w600)),
-          ])))),
+      ])),
     ]);
   }
 
