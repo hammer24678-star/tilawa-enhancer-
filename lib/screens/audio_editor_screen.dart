@@ -34,7 +34,7 @@ const _textB   = Color(0xFF8AACBA);
 const _textDim = Color(0xFF3D5A65);
 const _border  = Color(0xFF1A2E20);
 
-enum _Tab { trim, eq, effects, fx2, studio, merge, export_, code }
+enum _Tab { trim, eq, effects, fx2, studio, merge, export_ }
 
 class AudioEditorScreen extends StatefulWidget {
   const AudioEditorScreen({super.key});
@@ -90,7 +90,6 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   String _fadeCurve       = 'Equal Power'; // Linear / Equal Power / Exponential
   bool   _dspBusy         = false;   // preview-only busy flag (separate from export _busy)
   String? _dspScriptPath;           // cached copy of the bundled Studio Engine script
-  Future<String>? _engineFuture;     // S233 — cached load of the Studio Engine source, for the Code tab
 
   // S232 — FX rack: which row is expanded (single-open, like a hardware rack) + search
   String? _fx2OpenId;
@@ -430,92 +429,6 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     await dst.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), flush: true);
     _dspScriptPath = dst.path;
     return dst.path;
-  }
-
-
-  // ── S233: Engine tab — view/download the bundled Studio Engine source ──────
-  Future<String> _loadEngineSrc() =>
-      _engineFuture ??= rootBundle.loadString('assets/dsp/tilawa_dsp_studio.py');
-
-  Future<void> _copyEngineSrc() async {
-    final ar = LangProvider.strings(context).ar;
-    final src = await _loadEngineSrc();
-    await Clipboard.setData(ClipboardData(text: src));
-    if (!mounted) return;
-    _snack(ar ? '✓ تم نسخ الكود' : '✓ Code copied to clipboard');
-  }
-
-  Future<void> _downloadEngineSrc() async {
-    final ar = LangProvider.strings(context).ar;
-    try {
-      final src = await _loadEngineSrc();
-      final dir = await getTemporaryDirectory();
-      final f = File('${dir.path}/tilawa_dsp_studio.py');
-      await f.writeAsString(src, flush: true);
-      try {
-        await _media.invokeMethod('saveToDownloads',
-            {'path': f.path, 'filename': 'tilawa_dsp_studio.py'});
-      } catch (_) {}
-      if (!mounted) return;
-      _snack(ar ? '✓ تم الحفظ في التنزيلات' : '✓ Saved to Downloads');
-    } catch (e) {
-      if (!mounted) return;
-      _snack('Error: $e', color: _red);
-    }
-  }
-
-  Widget _enginePill(String label, IconData icon, VoidCallback onTap, {bool gold = false}) =>
-    GestureDetector(onTap: onTap,
-      child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: gold ? _goldDim.withValues(alpha: 0.35) : _surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: gold ? _gold.withValues(alpha: 0.6) : _border)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: gold ? _gold : _textB, size: 14),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: gold ? _gold : _textB, fontSize: 11.5,
-              fontWeight: FontWeight.w700)),
-        ])));
-
-  Widget _engineTab() {
-    final ar = LangProvider.strings(context).ar;
-    return Column(children: [
-      Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-        child: Row(children: [
-          Expanded(child: Text(ar ? 'كود محرك المعالجة' : 'Studio Engine source',
-              style: const TextStyle(color: _textA, fontSize: 13.5, fontWeight: FontWeight.w700))),
-          _enginePill(ar ? 'نسخ' : 'Copy', Icons.copy_rounded, _copyEngineSrc),
-          const SizedBox(width: 8),
-          _enginePill(ar ? 'تنزيل' : 'Download', Icons.download_rounded, _downloadEngineSrc, gold: true),
-        ])),
-      Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-        child: Text(
-          ar ? 'assets/dsp/tilawa_dsp_studio.py — نفس السكربت الذي يعالج تبويب "استوديو"'
-             : 'assets/dsp/tilawa_dsp_studio.py — the exact script behind the Studio tab',
-          style: const TextStyle(color: _textDim, fontSize: 11))),
-      Expanded(child: FutureBuilder<String>(
-        future: _loadEngineSrc(),
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2.4));
-          }
-          if (snap.hasError) {
-            return Center(child: Text(ar ? 'تعذر تحميل الكود' : 'Could not load source',
-                style: const TextStyle(color: _red)));
-          }
-          final src = snap.data ?? '';
-          return Container(
-            margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border)),
-            child: Scrollbar(thumbVisibility: true,
-              child: SingleChildScrollView(
-                child: SingleChildScrollView(scrollDirection: Axis.horizontal,
-                  child: SelectableText(src, style: const TextStyle(color: _textB, fontSize: 11.5,
-                      fontFamily: 'monospace', height: 1.5))))));
-        })),
-    ]);
   }
 
   Map<String, dynamic> _buildDspParams({double? previewStart, double? previewDur}) {
@@ -951,11 +864,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
-    final labels = ar ? ['قص','EQ','تأثيرات','FX+','استوديو','دمج','تصدير','كود']
-                      : ['Trim','EQ','Effects','FX+','Studio','Merge','Export','Code'];
+    final labels = ar ? ['قص','EQ','تأثيرات','FX+','استوديو','دمج','تصدير']
+                      : ['Trim','EQ','Effects','FX+','Studio','Merge','Export'];
     final icons = [Icons.content_cut_rounded, Icons.equalizer_rounded,
                    Icons.auto_fix_high_rounded, Icons.graphic_eq_rounded, Icons.science_rounded,
-                   Icons.merge_type_rounded, Icons.ios_share_rounded, Icons.code_rounded];
+                   Icons.merge_type_rounded, Icons.ios_share_rounded];
     return Container(
       decoration: BoxDecoration(color: _surface, border: Border(bottom: BorderSide(color: _border))),
       child: Row(children: _Tab.values.map((t) {
@@ -986,7 +899,6 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.studio:  return _studioTab();
       case _Tab.merge:   return _mergeTab();
       case _Tab.export_: return _exportTab();
-      case _Tab.code:    return _engineTab();
     }
   }
 

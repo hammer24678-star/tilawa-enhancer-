@@ -19,6 +19,7 @@ import 'history_screen.dart';
 import 'audio_editor_screen.dart';
 import 'game_screen.dart'; // S209
 import 'ai_tools_screen.dart'; // S184 // S152-B13: home_screen is already in lib/screens/
+import 'engine_code_screen.dart'; // S234
 import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
 
@@ -1187,6 +1188,7 @@ class _HomeScreenState extends State<HomeScreen>
             SliverToBoxAdapter(child: _bottomRow(s)),
             SliverToBoxAdapter(child: _audioEditorCard(s)),  // S152
             SliverToBoxAdapter(child: _aiToolsCard(s)),     // S184
+            SliverToBoxAdapter(child: _engineCodeCard(s)),   // S234
             SliverToBoxAdapter(child: _donationCard(s)),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ]),
@@ -3477,6 +3479,41 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(width: 8),
             const Text('محرر الصوت',
                 style: TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
+            const Spacer(),
+            const Icon(Icons.chevron_left_rounded,
+                color: Color(0xFF484F58), size: 18),
+          ]),
+        ),
+      ),
+    ),
+  );
+
+  // ── ENGINE CODE CARD — S234 (own screen, split out of Audio Editor tabs) ───
+  Widget _engineCodeCard(S s) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+    child: Material(
+      color: _bgCard,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.push(context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const EngineCodeScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 220),
+          )),
+        splashColor: _gold.withValues(alpha: 0.12),
+        highlightColor: _gold.withValues(alpha: 0.06),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border.all(color: _gold.withValues(alpha: 0.25))),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.code_rounded, color: _gold, size: 18),
+            const SizedBox(width: 8),
+            Text(LangProvider.strings(context).ar ? 'كود محرك المعالجة' : 'Engine Source',
+                style: const TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
                 color: Color(0xFF484F58), size: 18),
