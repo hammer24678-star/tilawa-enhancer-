@@ -41,9 +41,10 @@ back to the plain ffmpeg filter chain", so it's safe for this script to
 fail loud rather than produce silently-wrong audio.
 
 Pipeline order (fixed, applied only where the relevant param is non-default):
-  reverse → auto-trim silence → declip → declick → noise gate →
+  reverse → auto-trim silence → declip → declick → noise gate → de-hum →
   parametric EQ → spectral noise reduction → high/low-pass →
-  bass/treble shelves → sub-bass → presence → echo → convolution reverb →
+  bass/treble shelves → sub-bass → presence → vocal isolate →
+  echo → convolution reverb →
   compressor → pitch shift → time stretch →
   tremolo → vibrato → chorus → flanger → phaser → bitcrush →
   stereo width → Haas widen → stereo enhance → swap/channel mode →
@@ -635,6 +636,45 @@ def _channel_mode(x, mode, swap_lr):
     return y.astype(np.float32)
 
 
+# ─── S238: voice/recitation tools ──────────────────────────────────────────
+
+def _dehum(x, sr, base_hz, strength):
+    """Mains-hum remover: narrow IIR notches at the base frequency (50 or
+    60 Hz) and its first four harmonics. Strength widens the notches."""
+    if not SCIPY_OK or strength <= 0:
+        return x
+    depth = min(max(strength, 0.0), 100.0) / 100.0
+    q = float(np.interp(depth, [0, 1], [45.0, 22.0]))  # stronger = wider notch
+    y = x.astype(np.float64)
+    for k in range(1, 6):
+        f = base_hz * k
+        if f >= sr * 0.45:
+            break
+        b, a = signal.iirnotch(f / (sr / 2.0), q)
+        y = signal.lfilter(b, a, y, axis=0)
+    return y.astype(np.float32)
+
+
+def _vocal_isolate(x, sr, amount):
+    """Recitation/voice focus: the voice sits in the stereo center and the
+    150 Hz–5 kHz band — attenuate the side channel (ambience, room) and
+    gently emphasize the voice band. amount 0..100."""
+    if not SCIPY_OK or amount <= 0:
+        return x
+    a = min(max(amount, 0.0), 100.0) / 100.0
+    y = x.astype(np.float64)
+    if y.shape[1] >= 2:
+        mid = (y[:, 0] + y[:, 1]) * 0.5
+        side = (y[:, 0] - y[:, 1]) * 0.5 * (1.0 - 0.85 * a)
+        y = np.stack([mid + side, mid - side], axis=1)
+    lo = 150.0 / (sr / 2.0)
+    hi = min(5000.0, sr * 0.44) / (sr / 2.0)
+    sos = signal.butter(2, [lo, hi], btype='band', output='sos')
+    band = signal.sosfilt(sos, y, axis=0)
+    y = (1.0 - 0.40 * a) * y + 0.55 * a * band
+    return y.astype(np.float32)
+
+
 # ─── S236: FX+ — cleanup & dynamics ────────────────────────────────────────
 
 def _noise_gate(x, sr, threshold_db):
@@ -900,9 +940,96 @@ def analyze(in_path: str, out_json: str) -> int:
         return 1
 
 
+# ─── S238: SPLIT-BY-SILENCE — cut a recitation into pieces at the pauses ────
+# python3 tilawa_dsp_studio.py --split <in> <out_base> <params.json>
+# Writes <out_base>_001.<ext>, _002… and a <out_base>_report.json listing them.
+# Perfect for splitting a long recitation into ayah-sized files: cuts are
+# placed in the middle of each detected pause, and each piece keeps ~120 ms
+# of breathing room on both sides.
+
+def split_mode(in_path: str, out_base: str, params_path: str) -> int:
+    try:
+        with open(params_path, 'r', encoding='utf-8') as fh:
+            p = json.load(fh)
+    except Exception:
+        p = {}
+    sr = 32000  # decode rate for detection + output resampled by ffmpeg anyway
+    thresh_db = float(p.get('silence_db', -40.0))
+    min_sil = float(p.get('min_silence_s', 0.6))
+    min_seg = float(p.get('min_seg_s', 1.0))
+    out_cfg = p.get('output', {}) or {}
+    fmt = str(out_cfg.get('format', 'MP3')).upper()
+    ext = {'MP3': 'mp3', 'WAV': 'wav', 'M4A': 'm4a'}.get(fmt, 'mp3')
+
+    x = _decode(in_path, sr, 0.0, 0.0)
+    if x is None or x.shape[0] == 0:
+        print(json.dumps({'ok': False, 'error': 'ffmpeg decode failed'}))
+        return 1
+    try:
+        n = x.shape[0]
+        env = np.abs(x).max(axis=1)
+        # ~20 ms smoothing so consonant gaps don't read as pauses
+        win = max(1, int(0.02 * sr))
+        env = np.convolve(env, np.ones(win) / win, mode='same')
+        thr = 10 ** (thresh_db / 20.0)
+        silent = env < thr
+
+        # find silent runs long enough to count as a pause; cut at run centers
+        cuts = []
+        run_start = None
+        for i in range(n + 1):
+            is_sil = silent[i] if i < n else False
+            if is_sil and run_start is None:
+                run_start = i
+            elif not is_sil and run_start is not None:
+                if i - run_start >= int(min_sil * sr):
+                    cuts.append((run_start + i) // 2)
+                run_start = None
+
+        bounds = [0] + cuts + [n]
+        pad = int(0.12 * sr)
+        segments = []
+        for a, b in zip(bounds[:-1], bounds[1:]):
+            aa = max(0, a - (pad if a > 0 else 0))
+            bb = min(n, b + (pad if b < n else 0))
+            seg = x[aa:bb]
+            if bb - aa < int(min_seg * sr):
+                continue
+            if float(np.max(np.abs(seg))) < thr:  # pure silence — drop
+                continue
+            segments.append((aa, bb))
+
+        if not segments:
+            print(json.dumps({'ok': False, 'error': 'no segments found — lower the silence threshold'}))
+            return 1
+
+        files = []
+        for i, (a, b) in enumerate(segments, start=1):
+            out_path = f'{out_base}_{i:03d}.{ext}'
+            if _encode(x[a:b].copy(), sr, out_path, out_cfg):
+                files.append({'path': out_path,
+                              'start_sec': round(a / sr, 2),
+                              'dur_sec': round((b - a) / sr, 2)})
+        report = {'ok': len(files) > 0, 'count': len(files), 'files': files}
+        with open(f'{out_base}_report.json', 'w', encoding='utf-8') as fh:
+            json.dump(report, fh)
+        print(json.dumps({'ok': len(files) > 0, 'count': len(files)}))
+        return 0 if files else 1
+    except Exception as e:
+        print(json.dumps({'ok': False, 'error': f'split failed: {e}'}))
+        return 1
+
+
 # ─── Main pipeline ───────────────────────────────────────────────────────────
 
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == '--split':
+        if len(sys.argv) < 5:
+            print(json.dumps({'ok': False,
+                              'error': 'usage: tilawa_dsp_studio.py --split <in> <out_base> <params.json>'}))
+            return 1
+        return split_mode(sys.argv[2], sys.argv[3], sys.argv[4])
+
     if len(sys.argv) >= 2 and sys.argv[1] == '--analyze':
         if len(sys.argv) < 4:
             print(json.dumps({'ok': False,
@@ -952,6 +1079,12 @@ def main():
         if gate.get('enabled'):
             x = _noise_gate(x, sr, float(gate.get('threshold_db', -50)))
 
+        # S238 — mains-hum removal early, before any spectral shaping
+        hum = fx.get('dehum', {}) or {}
+        if hum.get('enabled'):
+            x = _dehum(x, sr, float(hum.get('base_hz', 50)),
+                       float(hum.get('strength', 60)))
+
         # ── spectral shaping ──
         x = _apply_eq(x, sr, p.get('eq_freqs', []), p.get('eq_gains', []),
                       float(p.get('eq_q', 1.4)))
@@ -971,6 +1104,10 @@ def main():
 
         if float(fx.get('presence', 0) or 0) > 0:
             x = _presence(x, sr, float(fx.get('presence', 0)))
+
+        # S238 — voice/recitation focus
+        if float(fx.get('vocal_isolate', 0) or 0) > 0:
+            x = _vocal_isolate(x, sr, float(fx.get('vocal_isolate', 0)))
 
         # ── space ──
         echo_mix = float((p.get('echo', {}) or {}).get('mix', 0))

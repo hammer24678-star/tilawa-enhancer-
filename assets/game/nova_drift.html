@@ -240,7 +240,15 @@
   .achRowReward{font-family:'Orbitron',sans-serif; font-size:10px; color:var(--amber); letter-spacing:1px; flex:0 0 auto; white-space:nowrap;}
 
   #achToast{
-    position:absolute; top:150px; left:50%; transform:translate(-50%,-14px);
+    /* S238 FIX: was hard-pinned at top:150px with no width limit — on small
+       or landscape phones the box sat over mid-screen gameplay, and long
+       names could push it past the viewport edge. Now anchored just below
+       the HUD (safe-area aware) and clamped to the screen width. */
+    position:absolute;
+    top:calc(env(safe-area-inset-top, 0px) + 58px);
+    left:50%; transform:translate(-50%,-14px);
+    width:max-content; max-width:min(340px, calc(100vw - 32px));
+    box-sizing:border-box; overflow-wrap:break-word;
     background:rgba(13,18,38,.94); border:1px solid rgba(255,194,75,.5);
     border-radius:4px; padding:10px 20px; text-align:center; z-index:9;
     opacity:0; pointer-events:none; transition:opacity .3s ease, transform .3s ease;

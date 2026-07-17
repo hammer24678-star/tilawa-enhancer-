@@ -123,6 +123,19 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   String _channelMode = 'Stereo';  // Stereo / Mono / Left / Right
   bool   _swapLR      = false;
 
+  // S238 — voice/recitation tools (halal-focused: voice only, no music FX)
+  bool   _dehumOn       = false;
+  int    _dehumBase     = 50;     // 50 Hz (most regions) / 60 Hz (Americas)
+  double _dehumStrength = 60;     // 0-100
+  double _vocalIso      = 0;      // 0-100 — center/voice-band focus
+
+  // S238 — split-by-silence (Trim tab)
+  double _silThresh = -40;        // dB
+  double _silMin    = 0.6;        // seconds of pause that counts as a cut point
+
+  // S238 — A/B: remembers where the last Studio preview started
+  double _lastPreviewStart = 0;
+
   // S229 — FX+ tab: cleanup & dynamics
   bool   _noiseGate       = false;
   double _gateThresh      = -50;   // dB
@@ -438,6 +451,52 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     }
   }
 
+  // ── S238: SPLIT BY SILENCE — cut a recitation into pieces at the pauses ──
+  // Runs the Studio Engine's --split mode: detects pauses longer than
+  // _silMin below _silThresh dB and writes one file per spoken segment —
+  // made for cutting a long recitation into ayah-sized files.
+  Future<void> _splitBySilence() async {
+    if (_filePath == null || _busy) return;
+    if (!await _checkSetup()) return;
+    HapticFeedback.mediumImpact();
+    final ar = LangProvider.strings(context).ar;
+    setState(() { _busy = true; _busyStart = DateTime.now();
+      _busyLabel = ar ? 'تقسيم عند السكتات…' : 'Splitting at pauses…'; _pct = 0.1; });
+    try {
+      final inp    = await _safeInput(_filePath!);
+      final script = await _ensureDspScript();
+      final tmp    = await getTemporaryDirectory();
+      final dir    = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
+      final base   = _fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+      final outBase = '${dir.path}/tilawa_${base}_part';
+      final paramsFile = File('${tmp.path}/tl_split_${DateTime.now().millisecondsSinceEpoch}.json');
+      await paramsFile.writeAsString(jsonEncode({
+        'silence_db': _silThresh, 'min_silence_s': _silMin, 'min_seg_s': 1.0,
+        'output': {'format': _fmt, 'kbps': _kbps, 'sample_rate': _sampleRate,
+                   'channels': _channels, 'wav_bit_depth': _wavBitDepth,
+                   'metadata': {'title': _metaTitle, 'artist': _metaArtist, 'album': _metaAlbum}},
+      }));
+      final report = '${outBase}_report.json';
+      setState(() => _pct = 0.3);
+      final r = await _proot(
+          'python3 "$script" --split "$inp" "$outBase" "${paramsFile.path}"',
+          inp, report, timeout: 20);
+      try { await paramsFile.delete(); } catch (_) {}
+      final rc = (r?['rc'] as int?) ?? -1;
+      if (rc != 0 || !File(report).existsSync()) {
+        throw Exception(r?['out'] ?? 'split failed');
+      }
+      final rep = Map<String, dynamic>.from(jsonDecode(await File(report).readAsString()));
+      final count = (rep['count'] as num?)?.toInt() ?? 0;
+      if (!mounted) return;
+      setState(() { _pct = 1.0; _busy = false; });
+      _snack('✓ ${ar ? "تم التقسيم إلى" : "Split into"} $count ${ar ? "مقطعًا في" : "parts in"} ${dir.path}');
+    } catch (e) {
+      if (mounted) setState(() => _busy = false);
+      _snack('Error: $e', color: _red);
+    }
+  }
+
   // ── MERGE ─────────────────────────────────────────────────────────────────
   Future<void> _merge() async {
     if (_filePath == null || _mergePath == null) return;
@@ -496,6 +555,19 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (_declip) af.add('adeclip');
     if (_noiseGate)
       af.add('agate=threshold=${_gateThresh.toStringAsFixed(0)}dB:ratio=6:attack=5:release=150');
+    // S238 — de-hum fallback: notch the mains frequency + 4 harmonics
+    if (_dehumOn) {
+      final w = (2 + _dehumStrength / 100 * 6).toStringAsFixed(1);
+      for (int k = 1; k <= 5; k++) {
+        af.add('bandreject=f=${_dehumBase * k}:width_type=h:w=$w');
+      }
+    }
+    // S238 — vocal isolate fallback: pull the side channel down + voice-band lift
+    if (_vocalIso > 0) {
+      final slev = (1 - 0.85 * _vocalIso / 100).toStringAsFixed(2);
+      af.add('stereotools=slev=$slev');
+      af.add('equalizer=f=1800:g=${(_vocalIso / 100 * 3).toStringAsFixed(1)}');
+    }
     if (_fadeIn  > 0) af.add('afade=t=in:d=${_fadeIn.toStringAsFixed(1)}');
     if (_fadeOut > 0) {
       final st = ((_trimEnd - _trimStart) * _durationSec - _fadeOut)
@@ -618,6 +690,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         'haas_widen': _haasWiden, 'stereo_fx': _stereoFx,
         'channel_mode': _channelMode, 'swap_lr': _swapLR,
         'noise_gate': {'enabled': _noiseGate, 'threshold_db': _gateThresh},
+        // S238 — voice tools
+        'dehum': {'enabled': _dehumOn, 'base_hz': _dehumBase, 'strength': _dehumStrength},
+        'vocal_isolate': _vocalIso,
         'deesser': _deEsser, 'declip': _declip, 'adaptive_normalize': _autoNormalize,
         'limiter': {'enabled': _limiter, 'ceiling_db': _limiterCeil},
         'auto_trim_silence': _autoTrimSilence,
@@ -643,6 +718,19 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     return Map<String, dynamic>.from(r ?? {'rc': -1, 'out': 'no result'});
   }
 
+  // S238 QoL — A/B: hear the untouched original from the same spot the last
+  // Studio preview started, so processed vs. original is a two-tap compare.
+  Future<void> _playOriginalSlice() async {
+    if (_filePath == null) return;
+    HapticFeedback.selectionClick();
+    final ar = LangProvider.strings(context).ar;
+    if (_playing) await _player.stop();
+    await _player.setSource(DeviceFileSource(_filePath!));
+    await _player.seek(Duration(milliseconds: (_lastPreviewStart * 1000).round()));
+    await _player.resume();
+    _snack(ar ? '▶ الأصلي (بدون معالجة)' : '▶ Original (unprocessed)', color: _gold);
+  }
+
   /// Renders a short slice (current playhead, or trim start) through the
   /// Studio Engine with the live settings, so the user can audition before
   /// committing to a full export. "Preview" = quick audition, not a visual.
@@ -661,6 +749,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       final rangeStart = _trimStart * _durationSec;
       final start = (_positionSec >= rangeStart && _positionSec < rangeEnd)
           ? _positionSec : rangeStart;
+      _lastPreviewStart = start;  // S238 — A/B jumps back to the same spot
       final remain = (rangeEnd - start).clamp(0.2, double.infinity);
       final dur = remain > 8.0 ? 8.0 : remain;
       final params = _buildDspParams(previewStart: start, previewDur: dur);
@@ -824,9 +913,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               '• طيف ترددي: محلل ٣٠ نطاقًا في تبويب الموازن يوضح أين تتركز طاقة الملف.\n'
               '• قص: حدد نطاق البداية والنهاية.\n'
               '• تقسيم: اضغط ✂️ في التشغيل لتقسيم الملف عند الموضع الحالي.\n'
+              '• تقسيم عند السكتات: يفصل التلاوة تلقائيًا إلى مقاطع (آيات) عند السكتات.\n'
+              '• أدوات صوت القارئ: إزالة طنين الكهرباء (50/60 هرتز) وعزل صوت القارئ عن الخلفية.\n'
+              '• تحسين صوتي سريع: سلاسل جاهزة بضغطة واحدة (تلاوة نقية، رسالة صوتية، إصلاح تسجيل قديم).\n'
               '• موازن 10 أحزمة: موازن معلمي حقيقي (numpy/scipy) بدقة Q قابلة للضبط.\n'
               '• تأثيرات: تلاشي، طبقة صوت، سرعة، صدى، إرجاع، عكس، تقليص ضوضاء طيفي، ضغط.\n'
-              '• FX+‏: ٢٤ تأثيرًا تعمل الآن كلها داخل محرك numpy/scipy مباشرة.\n'
+              '• FX+‏: ٢٦ تأثيرًا تعمل كلها داخل محرك numpy/scipy مباشرة.\n'
               '• استوديو: إزالة طقطقة، نوع الصدى، ديناميكية الضاغط، تطبيع الصوت LUFS.\n'
               '• معاينة: استمع لـ٨ ثوانٍ بالإعدادات الحالية قبل التصدير الكامل.\n'
               '• دمج: جمع ملفين صوتيين. تصدير دفعي بمحرك الاستوديو.\n'
@@ -836,9 +928,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               '• Spectrum: a 30-band analyzer in the EQ tab shows where the file\'s energy lives.\n'
               '• Trim: set start/end range.\n'
               '• Split: tap ✂️ in transport to split at playhead into two files.\n'
+              '• Split by Silence: auto-cuts a recitation into ayah-sized parts at the pauses.\n'
+              '• Voice tools: mains-hum removal (50/60 Hz) and reciter-voice isolation.\n'
+              '• Quick Voice Enhance: one-tap chains (Recitation Clean, Voice Note, Old Tape Repair).\n'
               '• 10-band EQ: real parametric EQ (numpy/scipy) with adjustable Q.\n'
               '• Effects: fade, pitch, speed, echo, reverb, reverse, spectral noise reduction, compressor.\n'
-              '• FX+: all 24 effects now run natively inside the numpy/scipy engine.\n'
+              '• FX+: all 26 effects run natively inside the numpy/scipy engine.\n'
               '• Studio: declick, reverb type, compressor dynamics, LUFS loudness normalize.\n'
               '• Preview: audition 8s with your current settings before a full export.\n'
               '• Merge: join two audio files. Batch export runs the Studio Engine too.\n'
@@ -908,6 +1003,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             style: const TextStyle(color: _textB, fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ),
+        // S238 QoL — A/B: replay the raw original from the same spot
+        GestureDetector(
+          onTap: _dspBusy ? null : _playOriginalSlice,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+            decoration: BoxDecoration(
+              color: _goldDim.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _gold.withValues(alpha: 0.45)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.compare_arrows_rounded, color: _gold, size: 14),
+              const SizedBox(width: 5),
+              Text(ar ? 'أصلي' : 'A/B',
+                  style: const TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+        const SizedBox(width: 8),
         GestureDetector(
           onTap: _dspBusy ? null : _previewDsp,
           child: Container(
@@ -1190,6 +1304,32 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         Text('${ar ? "الموضع: " : "Position: "}${_fmtTime(_positionSec)}',
             style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       ]),
+      const SizedBox(height: 10),
+      // S238 — split a long recitation into ayah-sized files at the pauses
+      _card_(ar ? 'تقسيم عند السكتات (فواصل الآيات)' : 'Split by Silence (Ayah Cutter)',
+          Icons.graphic_eq_rounded, [
+        Text(ar
+            ? 'يكتشف السكتات في التلاوة ويقسم الملف تلقائيًا إلى مقاطع منفصلة — مثالي لفصل الآيات.'
+            : 'Detects the pauses in a recitation and automatically cuts the file into separate parts — perfect for isolating ayat.',
+            style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+        const SizedBox(height: 10),
+        _knob(ar ? 'حساسية الصمت' : 'Silence Level', '${_silThresh.round()} dB',
+            _silThresh, -60, -25, (v) => setState(() => _silThresh = v)),
+        _knob(ar ? 'أقل مدة سكتة' : 'Min Pause', '${_silMin.toStringAsFixed(1)}s',
+            _silMin, 0.2, 2.0, (v) => setState(() => _silMin = v)),
+        const SizedBox(height: 4),
+        GestureDetector(onTap: _busy ? null : _splitBySilence,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _teal.withValues(alpha: 0.4))),
+            child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.splitscreen_rounded, color: _teal, size: 17),
+              const SizedBox(width: 8),
+              Text(ar ? 'تقسيم تلقائي' : 'Auto-Split Now',
+                  style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w700)),
+            ])))),
+      ]),
     ]);
   }
 
@@ -1257,6 +1397,47 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Widget _effectsTab() {
     final ar = LangProvider.strings(context).ar;
     return ListView(padding: const EdgeInsets.all(14), children: [
+      // S238 — one-tap chains tuned for the human voice (recitation, lectures,
+      // voice notes). Sets multiple existing controls at once; export as usual.
+      _card_(ar ? 'تحسين صوتي سريع' : 'Quick Voice Enhance', Icons.record_voice_over_rounded, [
+        Text(ar ? 'سلاسل جاهزة مضبوطة لصوت القارئ — اضغط، عاين، ثم صدّر'
+                : 'Ready-made chains tuned for the reciter\'s voice — tap, preview, export',
+            style: const TextStyle(color: _textDim, fontSize: 11)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _chip_(ar ? 'تلاوة نقية' : 'Recitation Clean', () {
+            setState(() {
+              _hpFreq = 80; _noiseReduc = 45; _presence = 25;
+              _compress = true; _compThresh = -18; _compRatio = 3.0;
+              _loudnessTarget = '-16 LUFS (Mobile)';
+            });
+            _snack(ar ? '✓ تلاوة نقية — عاين ثم صدّر' : '✓ Recitation Clean applied — preview, then export');
+          }),
+          _chip_(ar ? 'رسالة صوتية واضحة' : 'Clear Voice Note', () {
+            setState(() {
+              _hpFreq = 100; _noiseReduc = 55; _deEsser = 30;
+              _autoNormalize = true; _loudnessTarget = '-16 LUFS (Mobile)';
+            });
+            _snack(ar ? '✓ رسالة صوتية واضحة' : '✓ Clear Voice Note applied');
+          }),
+          _chip_(ar ? 'إصلاح تسجيل قديم' : 'Old Tape Repair', () {
+            setState(() {
+              _declip = true; _declick = true; _dehumOn = true;
+              _noiseReduc = 60; _trebleBoost = 2;
+              _loudnessTarget = '-16 LUFS (Mobile)';
+            });
+            _snack(ar ? '✓ إصلاح تسجيل قديم' : '✓ Old Tape Repair applied');
+          }),
+          _chip_(ar ? 'عزل صوت القارئ' : 'Isolate Reciter', () {
+            setState(() {
+              _vocalIso = 55; _hpFreq = 90; _noiseReduc = 35;
+              _loudnessTarget = '-16 LUFS (Mobile)';
+            });
+            _snack(ar ? '✓ عزل صوت القارئ' : '✓ Isolate Reciter applied');
+          }),
+        ]),
+      ]),
+      const SizedBox(height: 10),
       _card_(ar ? 'الصوت' : 'Audio', Icons.volume_up_rounded, [
         _knob(ar ? 'مستوى الصوت' : 'Volume', '${(_vol*100).round()}%', _vol, 0.5, 2.0, (v) => setState(() => _vol = v)),
         _knob(ar ? 'درجة الصوت'  : 'Pitch',  '${_pitch>=0?"+":""}${_pitch.toStringAsFixed(1)} st', _pitch, -12, 12, (v) => setState(() => _pitch = v)),
@@ -1847,6 +2028,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _noiseGate=false; _gateThresh=-50; _deEsser=0; _declip=false;
       _autoNormalize=false; _limiter=false; _limiterCeil=-1.0;
       _autoTrimSilence=false; _padStart=0; _padEnd=0;
+      _dehumOn=false; _dehumBase=50; _dehumStrength=60; _vocalIso=0;  // S238
       _fx2OpenId=null;
     });
   }
@@ -1858,9 +2040,46 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
     final onBass = _bassBoost != 0, onTreble = _trebleBoost != 0, onSub = _subBass != 0,
         onPresence = _presence != 0, onHp = _hpFreq != 0, onLp = _lpFreq < 20000;
+    final onVocalIso = _vocalIso != 0;  // S238
     final onTrem = _tremolo != 0, onVib = _vibrato != 0, onCrush = _crusher != 0;
     final onStereoFx = _stereoFx != 0, onChanMode = _channelMode != 'Stereo';
     final onDeEsser = _deEsser != 0, onPadStart = _padStart != 0, onPadEnd = _padEnd != 0;
+
+    // S238 — voice & recitation tools (voice-only processing, no music FX)
+    final voiceRows = <Widget>[
+      if (vis('De-Hum', 'إزالة طنين الكهرباء'))
+        _rackRow(id: 'dehum', label: ar ? 'إزالة طنين الكهرباء' : 'De-Hum', on: _dehumOn,
+          valueStr: _dehumOn ? '$_dehumBase Hz · ${_dehumStrength.round()}%' : (ar?'معطل':'Off'),
+          rightControl: _rackSwitch(_dehumOn, (v) => setState(() { _dehumOn = v; if (!v) _fx2OpenId = null; })),
+          body: _dehumOn ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Wrap(spacing: 8, children: [50, 60].map((hz) {
+              final sel = hz == _dehumBase;
+              return GestureDetector(onTap: () => setState(() => _dehumBase = hz),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: sel ? _goldDim.withValues(alpha: 0.4) : _surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: sel ? _gold : _border, width: sel ? 1.5 : 1)),
+                  child: Text('$hz Hz', style: TextStyle(color: sel ? _gold : _textB,
+                      fontSize: 11, fontWeight: sel ? FontWeight.w700 : FontWeight.w400))));
+            }).toList()),
+            const SizedBox(height: 6),
+            _slider(_dehumStrength, 10, 100, _gold, (v) => setState(() => _dehumStrength = v)),
+            Text(ar ? '٥٠ هرتز لمعظم الدول · ٦٠ هرتز للأمريكتين'
+                    : '50 Hz for most regions · 60 Hz for the Americas',
+                style: const TextStyle(color: _textDim, fontSize: 10)),
+          ]) : null),
+      if (vis('Vocal Isolate', 'عزل الصوت البشري'))
+        _rackRow(id: 'vocaliso', label: ar ? 'عزل الصوت البشري' : 'Vocal Isolate', on: onVocalIso,
+          valueStr: _vocalIso==0 ? (ar?'معطل':'Off') : '${_vocalIso.round()}%',
+          body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _slider(_vocalIso, 0, 100, _gold, (v) => setState(() => _vocalIso = v)),
+            Text(ar ? 'يركّز على صوت القارئ ويخفض أصوات الخلفية والقاعة'
+                    : 'Focuses on the reciter\'s voice, pulls down room ambience',
+                style: const TextStyle(color: _textDim, fontSize: 10)),
+          ])),
+    ];
 
     final toneRows = <Widget>[
       if (vis('Bass Boost', 'تعزيز الجهير'))
@@ -1983,7 +2202,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           body: _slider(_padEnd, 0, 5, _gold, (v) => setState(() => _padEnd = v))),
     ];
 
-    final totalOn = [onBass,onTreble,onSub,onPresence,onHp,onLp,
+    final totalOn = [_dehumOn,onVocalIso,  // S238
+        onBass,onTreble,onSub,onPresence,onHp,onLp,
         onTrem,onVib,_chorus,_flanger,_phaser,onCrush,
         _haasWiden,onStereoFx,onChanMode,_swapLR,
         _noiseGate,onDeEsser,_declip,_autoNormalize,_limiter,_autoTrimSilence,onPadStart,onPadEnd]
@@ -1995,7 +2215,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           onChanged: (v) => setState(() => _fx2Search = v),
           style: const TextStyle(color: _textA, fontSize: 13),
           decoration: InputDecoration(
-            hintText: ar ? 'ابحث في 24 تأثيرًا…' : 'Search 24 effects…',
+            hintText: ar ? 'ابحث في 26 تأثيرًا…' : 'Search 26 effects…',
             hintStyle: const TextStyle(color: _textDim, fontSize: 12),
             prefixIcon: const Icon(Icons.search_rounded, color: _textDim, size: 19),
             filled: true, fillColor: _card, isDense: true,
@@ -2019,6 +2239,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         ])),
       const SizedBox(height: 6),
       Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(14, 6, 14, 20), children: [
+        _rackSection(ar ? 'صوت القارئ' : 'Voice & Recitation',  // S238
+            [_dehumOn,onVocalIso].where((b) => b).length, voiceRows),
         _rackSection(ar ? 'تشكيل النغمة' : 'Tone Shaping',
             [onBass,onTreble,onSub,onPresence,onHp,onLp].where((b) => b).length, toneRows),
         _rackSection(ar ? 'تأثيرات مميزة' : 'Character FX',
@@ -2064,6 +2286,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     'gateThresh': _gateThresh, 'deEsser': _deEsser, 'declip': _declip,
     'autoNormalize': _autoNormalize, 'limiter': _limiter, 'limiterCeil': _limiterCeil,
     'autoTrimSilence': _autoTrimSilence, 'padStart': _padStart, 'padEnd': _padEnd,
+    // S238 — voice tools
+    'dehumOn': _dehumOn, 'dehumBase': _dehumBase, 'dehumStrength': _dehumStrength,
+    'vocalIso': _vocalIso,
   };
 
   void _applyFxSnapshot(Map<String, dynamic> m) {
@@ -2094,6 +2319,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _autoTrimSilence = m['autoTrimSilence'] ?? false;
       _padStart = (m['padStart'] ?? 0).toDouble();
       _padEnd = (m['padEnd'] ?? 0).toDouble();
+      // S238 — voice tools
+      _dehumOn = m['dehumOn'] ?? false;
+      _dehumBase = (m['dehumBase'] as num?)?.toInt() ?? 50;
+      _dehumStrength = (m['dehumStrength'] ?? 60).toDouble();
+      _vocalIso = (m['vocalIso'] ?? 0).toDouble();
     });
   }
 
