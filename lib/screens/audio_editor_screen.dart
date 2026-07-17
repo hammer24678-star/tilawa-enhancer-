@@ -4,6 +4,11 @@
 // reduction, declick, convolution reverb, phase-vocoder pitch/tempo, and
 // LUFS-ish loudness normalize + true-peak limiting. Falls back to the plain
 // ffmpeg filter chain below if the Studio Engine is unavailable/fails.
+// S236: Studio Engine v2 — ALL 24 FX+ effects now run natively in numpy/scipy
+// (previously they only existed in the ffmpeg fallback and were silently
+// dropped whenever the engine succeeded), plus a numpy `--analyze` mode that
+// powers a REAL waveform (peak + RMS layers, morph-animated in), loudness
+// stats (peak/RMS dBFS, LUFS, clipping) and a 30-band spectrum analyzer.
 // Trim · Split · 10-band EQ · Effects (Noise Reduce/Compress/Normalize/Reverse)
 // Merge · Set as Ringtone · Export via ffmpeg (proot local engine)
 
@@ -156,6 +161,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   late AnimationController _glowCtrl;
   late List<double> _bars;
 
+  // S236 — real waveform analysis (numpy --analyze) state
+  List<double>? _rmsBars;              // real RMS layer under the peak bars
+  List<double> _spectrum = const [];   // 30-band average spectrum, 0..1
+  double? _statPeakDb, _statRmsDb, _statLufs, _statClipPct;
+  bool _analyzed  = false;             // bars are the real waveform, not placeholder
+  bool _analyzing = false;
+  int  _analyzeToken = 0;              // discards stale results after file change
+  late AnimationController _barMorphCtrl;
+  List<double>  _barsFrom = const [], _barsTo = const [];
+  List<double>? _rmsTo;
+  static const int _kBars = 96;        // must match _WAVE_BUCKETS in the py engine
+
   static const _ch    = MethodChannel('com.tilawa.tilawa_enhancer/local_engine');
   static const _media = MethodChannel('com.tilawa.tilawa_enhancer/media');
 
@@ -163,9 +180,23 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   void initState() {
     super.initState();
     final rng = Random(42);
-    _bars = List.generate(80, (_) => 0.1 + rng.nextDouble() * 0.9);
+    _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
     _waveCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
     _glowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
+    // S236 — morphs the placeholder bars into the real analyzed waveform
+    _barMorphCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))
+      ..addListener(() {
+        if (_barsTo.isEmpty) return;
+        final t = Curves.easeOutCubic.transform(_barMorphCtrl.value);
+        setState(() {
+          _bars = List.generate(_barsTo.length, (i) {
+            final f = i < _barsFrom.length ? _barsFrom[i] : 0.0;
+            return f + (_barsTo[i] - f) * t;
+          });
+          final rt = _rmsTo;
+          if (rt != null) _rmsBars = List.generate(rt.length, (i) => rt[i] * t);
+        });
+      });
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (mounted) setState(() => _playing = s == PlayerState.playing);
     });
@@ -181,6 +212,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   void dispose() {
     _stateSub?.cancel(); _posSub?.cancel(); _durSub?.cancel();
     _player.dispose(); _waveCtrl.dispose(); _glowCtrl.dispose();
+    _barMorphCtrl.dispose();
     super.dispose();
   }
 
@@ -252,8 +284,64 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     setState(() {
       _filePath = f.path; _fileName = f.name;
       _durationSec = 0; _positionSec = 0; _trimStart = 0; _trimEnd = 1; _outPath = null;
+      // S236 — invalidate any previous file's analysis
+      _analyzed = false; _analyzing = false; _rmsBars = null; _spectrum = const [];
+      _statPeakDb = null; _statRmsDb = null; _statLufs = null; _statClipPct = null;
+      final rng = Random(f.name.hashCode);
+      _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
     });
     await _player.setSource(DeviceFileSource(f.path!));
+    unawaited(_analyzeAudio());
+  }
+
+  // ── S236: REAL WAVEFORM — numpy --analyze ─────────────────────────────────
+  // Best-effort: runs right after picking a file, quietly leaves the animated
+  // placeholder bars in place if the local engine isn't set up or fails. The
+  // engine writes JSON to a file (proot stdout is truncated to 800 chars).
+  Future<void> _analyzeAudio() async {
+    final token = ++_analyzeToken;
+    final path = _filePath;
+    if (path == null) return;
+    try {
+      final ok = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
+      if (!ok || !mounted) return;
+      setState(() => _analyzing = true);
+      final inp = await _safeInput(path);
+      final tmp = await getTemporaryDirectory();
+      final outJson = '${tmp.path}/tl_analysis_${DateTime.now().millisecondsSinceEpoch}.json';
+      final script = await _ensureDspScript();
+      final r = await _proot('python3 "$script" --analyze "$inp" "$outJson"',
+          inp, outJson, timeout: 5);
+      if (token != _analyzeToken || !mounted) return;
+      if ((r?['rc'] as int? ?? 1) != 0 || !File(outJson).existsSync()) return;
+      final m = Map<String, dynamic>.from(jsonDecode(await File(outJson).readAsString()));
+      try { File(outJson).deleteSync(); } catch (_) {}
+      if (m['ok'] != true) return;
+      final peaks = ((m['peaks'] as List?) ?? const [])
+          .map((e) => ((e as num).toDouble()).clamp(0.04, 1.0)).cast<double>().toList();
+      final rms = (m['rms'] as List?)
+          ?.map((e) => (e as num).toDouble().clamp(0.0, 1.0)).cast<double>().toList();
+      if (peaks.isEmpty || token != _analyzeToken || !mounted) return;
+      setState(() {
+        _analyzed = true;
+        _spectrum = ((m['spectrum'] as List?) ?? const [])
+            .map((e) => (e as num).toDouble()).cast<double>().toList();
+        _statPeakDb  = (m['peak_db']  as num?)?.toDouble();
+        _statRmsDb   = (m['rms_db']   as num?)?.toDouble();
+        _statLufs    = (m['lufs']     as num?)?.toDouble();
+        _statClipPct = (m['clip_pct'] as num?)?.toDouble();
+        final d = (m['duration_sec'] as num?)?.toDouble() ?? 0;
+        if (_durationSec == 0 && d > 0) _durationSec = d;
+        _barsFrom = List.of(_bars);
+        _barsTo   = peaks;
+        _rmsTo    = rms;
+      });
+      _barMorphCtrl.forward(from: 0);
+    } catch (_) {
+      // analysis is a bonus — the editor stays fully usable without it
+    } finally {
+      if (mounted && token == _analyzeToken) setState(() => _analyzing = false);
+    }
   }
 
   Future<void> _pickMerge() async {
@@ -424,17 +512,20 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Future<String> _ensureDspScript() async {
     if (_dspScriptPath != null && File(_dspScriptPath!).existsSync()) return _dspScriptPath!;
     final dir  = await getTemporaryDirectory();
-    final dst  = File('${dir.path}/tilawa_dsp_studio_v1.py');
+    final dst  = File('${dir.path}/tilawa_dsp_studio_v2.py');  // S236: v2 — new name busts any cached v1 copy
     final data = await rootBundle.load('assets/dsp/tilawa_dsp_studio.py');
     await dst.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), flush: true);
     _dspScriptPath = dst.path;
     return dst.path;
   }
 
-  Map<String, dynamic> _buildDspParams({double? previewStart, double? previewDur}) {
+  Map<String, dynamic> _buildDspParams({double? previewStart, double? previewDur,
+      bool fullFile = false}) {
     final isPreview = previewStart != null;
-    final ss  = isPreview ? previewStart! : (_trimStart * _durationSec);
-    final dur = isPreview ? (previewDur ?? 0) : ((_trimEnd - _trimStart) * _durationSec);
+    // S236: batch export processes each picked file in full — the trim window
+    // belongs to the currently loaded file only.
+    final ss  = fullFile ? 0.0 : isPreview ? previewStart! : (_trimStart * _durationSec);
+    final dur = fullFile ? 0.0 : isPreview ? (previewDur ?? 0) : ((_trimEnd - _trimStart) * _durationSec);
     double? lufs;
     switch (_loudnessTarget) {
       case '-14 LUFS (Streaming)': lufs = -14; break;
@@ -466,8 +557,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       'stereo_width': _stereoW,
       'volume': _vol,
       'loudness': {'target_lufs': lufs, 'true_peak_limit_db': -1.0, 'limiter': _truePeakLimiter},
-      // S229 — forwarded for a future Studio Engine build; the ffmpeg fallback
-      // in _buildAf() already implements every one of these today.
+      // S236 — the Studio Engine now implements ALL of these natively in
+      // numpy/scipy (see tilawa_dsp_studio.py fx2 stages); _buildAf() keeps
+      // its ffmpeg equivalents purely as the fallback path.
       'fx2': {
         'bass_db': _bassBoost, 'treble_db': _trebleBoost, 'sub_bass': _subBass,
         'presence': _presence, 'highpass_hz': _hpFreq, 'lowpass_hz': _lpFreq,
@@ -668,23 +760,29 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         title: Text(ar ? 'عن محرر الصوت' : 'Audio Editor',
             style: const TextStyle(color: _gold, fontWeight: FontWeight.w700)),
         content: Text(ar
-            ? '• قص: حدد نطاق البداية والنهاية.\n'
+            ? '• موجة حقيقية: يقرأ numpy الملف ويرسم موجته الفعلية (قمة + RMS) مع إحصاءات Peak/RMS/LUFS.\n'
+              '• طيف ترددي: محلل ٣٠ نطاقًا في تبويب الموازن يوضح أين تتركز طاقة الملف.\n'
+              '• قص: حدد نطاق البداية والنهاية.\n'
               '• تقسيم: اضغط ✂️ في التشغيل لتقسيم الملف عند الموضع الحالي.\n'
               '• موازن 10 أحزمة: موازن معلمي حقيقي (numpy/scipy) بدقة Q قابلة للضبط.\n'
               '• تأثيرات: تلاشي، طبقة صوت، سرعة، صدى، إرجاع، عكس، تقليص ضوضاء طيفي، ضغط.\n'
+              '• FX+‏: ٢٤ تأثيرًا تعمل الآن كلها داخل محرك numpy/scipy مباشرة.\n'
               '• استوديو: إزالة طقطقة، نوع الصدى، ديناميكية الضاغط، تطبيع الصوت LUFS.\n'
               '• معاينة: استمع لـ٨ ثوانٍ بالإعدادات الحالية قبل التصدير الكامل.\n'
-              '• دمج: جمع ملفين صوتيين.\n'
-              '• تصدير: MP3/WAV/M4A + حفظ كنغمة رنين.\n'
+              '• دمج: جمع ملفين صوتيين. تصدير دفعي بمحرك الاستوديو.\n'
+              '• تصدير: MP3/WAV/M4A + معدل عينة/قنوات/عمق بت + بيانات وصفية + نغمة رنين.\n'
               '⚙️ محلي بالكامل — محرك الاستوديو (numpy/scipy) مع رجوع تلقائي لـ ffmpeg — بدون إنترنت.'
-            : '• Trim: set start/end range.\n'
+            : '• Real waveform: numpy reads your file and draws its actual wave (peak + RMS) with Peak/RMS/LUFS stats.\n'
+              '• Spectrum: a 30-band analyzer in the EQ tab shows where the file\'s energy lives.\n'
+              '• Trim: set start/end range.\n'
               '• Split: tap ✂️ in transport to split at playhead into two files.\n'
               '• 10-band EQ: real parametric EQ (numpy/scipy) with adjustable Q.\n'
               '• Effects: fade, pitch, speed, echo, reverb, reverse, spectral noise reduction, compressor.\n'
+              '• FX+: all 24 effects now run natively inside the numpy/scipy engine.\n'
               '• Studio: declick, reverb type, compressor dynamics, LUFS loudness normalize.\n'
               '• Preview: audition 8s with your current settings before a full export.\n'
-              '• Merge: join two audio files.\n'
-              '• Export: MP3/WAV/M4A + Set as Ringtone.\n'
+              '• Merge: join two audio files. Batch export runs the Studio Engine too.\n'
+              '• Export: MP3/WAV/M4A + sample rate/channels/bit depth + metadata + ringtone.\n'
               '⚙️ Fully local — Studio Engine (numpy/scipy) with automatic ffmpeg fallback, no internet needed.',
           style: const TextStyle(color: _textA, fontSize: 13, height: 1.5)),
         actions: [TextButton(onPressed: () => Navigator.pop(context),
@@ -804,6 +902,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     ]));
 
   Widget _waveformSection() {
+    final ar = LangProvider.strings(context).ar;
     final pos = _durationSec > 0 ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0.0;
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
@@ -812,23 +911,60 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           border: Border.all(color: _border),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.22),
               blurRadius: 12, offset: const Offset(0, 5))]),
-      child: ClipRRect(borderRadius: BorderRadius.circular(10),
-        child: GestureDetector(
-          onTapDown: (d) {
-            final box = context.findRenderObject() as RenderBox?;
-            if (box == null) return;
-            final frac = (d.localPosition.dx / box.size.width).clamp(0.0, 1.0);
-            _player.seek(Duration(milliseconds: (frac * _durationSec * 1000).round()));
-            setState(() => _positionSec = frac * _durationSec);
-          },
-          child: AnimatedBuilder(animation: _waveCtrl,
-            builder: (_, __) => SizedBox(height: 92,
-              child: CustomPaint(
-                painter: _WavePainter(bars: _bars, playPos: pos,
-                  trimStart: _trimStart, trimEnd: _trimEnd,
-                  animT: _waveCtrl.value, playing: _playing),
-                size: const Size(double.infinity, 92)))))));
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ClipRRect(borderRadius: BorderRadius.circular(10),
+          child: GestureDetector(
+            onTapDown: (d) {
+              final box = context.findRenderObject() as RenderBox?;
+              if (box == null) return;
+              final frac = (d.localPosition.dx / box.size.width).clamp(0.0, 1.0);
+              _player.seek(Duration(milliseconds: (frac * _durationSec * 1000).round()));
+              setState(() => _positionSec = frac * _durationSec);
+            },
+            child: AnimatedBuilder(animation: _waveCtrl,
+              builder: (_, __) => SizedBox(height: 92,
+                child: CustomPaint(
+                  painter: _WavePainter(bars: _bars, rms: _rmsBars, playPos: pos,
+                    trimStart: _trimStart, trimEnd: _trimEnd,
+                    animT: _waveCtrl.value, playing: _playing, analyzed: _analyzed),
+                  size: const Size(double.infinity, 92)))))),
+        // S236 — analysis status + real loudness stats under the waveform
+        if (_analyzing || _analyzed)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 5, 12, 1),
+            child: Row(children: [
+              if (_analyzing) ...[
+                const SizedBox(width: 9, height: 9,
+                  child: CircularProgressIndicator(strokeWidth: 1.5, color: _teal)),
+                const SizedBox(width: 6),
+                Text(ar ? 'قراءة الموجة الحقيقية…' : 'Reading real waveform…',
+                    style: const TextStyle(color: _textDim, fontSize: 9.5)),
+              ] else ...[
+                const Icon(Icons.verified_rounded, color: _teal, size: 11),
+                const SizedBox(width: 4),
+                Text(ar ? 'موجة حقيقية' : 'Real waveform',
+                    style: const TextStyle(color: _teal, fontSize: 9.5, fontWeight: FontWeight.w700)),
+              ],
+              const Spacer(),
+              if (_statPeakDb != null)
+                _waveStat('Peak', '${_statPeakDb!.toStringAsFixed(1)}dB'),
+              if (_statRmsDb != null)
+                _waveStat('RMS', '${_statRmsDb!.toStringAsFixed(1)}dB'),
+              if (_statLufs != null)
+                _waveStat('LUFS', _statLufs!.toStringAsFixed(1)),
+              if ((_statClipPct ?? 0) > 0.5)
+                _waveStat('Clip', '${_statClipPct!.toStringAsFixed(1)}%', color: _red),
+            ])),
+      ]));
   }
+
+  Widget _waveStat(String label, String value, {Color color = _textB}) =>
+    Padding(padding: const EdgeInsetsDirectional.only(start: 8),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text('$label ', style: const TextStyle(color: _textDim, fontSize: 9)),
+        Text(value, style: TextStyle(color: color, fontSize: 9.5,
+            fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+      ]));
 
   Widget _transport() => Container(
     color: _surface,
@@ -997,6 +1133,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Widget _eqTab() {
     final ar = LangProvider.strings(context).ar;
     return ListView(padding: const EdgeInsets.all(14), children: [
+      // S236 — real frequency profile of the loaded file (numpy Welch analysis)
+      if (_spectrum.isNotEmpty) ...[
+        _card_(ar ? 'الطيف الترددي للملف' : 'Frequency Profile', Icons.bar_chart_rounded, [
+          SizedBox(height: 64, child: CustomPaint(
+              painter: _SpectrumPainter(bands: _spectrum),
+              size: const Size(double.infinity, 64))),
+          const SizedBox(height: 6),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [
+            Text('60Hz', style: TextStyle(color: _textDim, fontSize: 9, fontFamily: 'monospace')),
+            Text('1kHz', style: TextStyle(color: _textDim, fontSize: 9, fontFamily: 'monospace')),
+            Text('10kHz', style: TextStyle(color: _textDim, fontSize: 9, fontFamily: 'monospace')),
+          ]),
+          const SizedBox(height: 4),
+          Text(ar ? 'متوسط طاقة الملف عبر الترددات — يساعدك على ضبط الموازن بدقة'
+                  : 'Average energy across frequencies — helps you target the EQ precisely',
+              style: const TextStyle(color: _textDim, fontSize: 10.5)),
+        ]),
+        const SizedBox(height: 10),
+      ],
       _card_(ar ? 'منحنى التعديل' : 'EQ Curve', Icons.show_chart_rounded, [
         SizedBox(height: 72, child: CustomPaint(painter: _EqPainter(values: _eq),
             size: const Size(double.infinity, 72))),
@@ -1939,13 +2094,21 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         final base = p.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
         final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
         final out = '${dir.path}/tilawa_${base}_batch.$ext';
-        final af = _buildAf();
-        final cmd = 'ffmpeg -y -i "$inp" '
-            '-af ${af.isEmpty ? "anull" : af.join(",")} ${_metaArgs()} '
-            '-ar $_sampleRate -ac ${_channels == "Mono" ? 1 : 2} '
-            '-acodec ${_codec()} ${_br()} "$out"';
-        final res = await _proot(cmd, inp, out, timeout: 15);
-        if ((res?['rc'] as int? ?? 1) != 0) { failed++; } else { done++; }
+        // S236: batch now runs the full Studio Engine (numpy/scipy) per file —
+        // same quality as single export — with the ffmpeg chain as fallback.
+        final params = _buildDspParams(fullFile: true);
+        final r = await _runDspEngine(inp, out, params);
+        var okFile = ((r['rc'] as int?) ?? -1) == 0 && File(out).existsSync();
+        if (!okFile) {
+          final af = _buildAf();
+          final cmd = 'ffmpeg -y -i "$inp" '
+              '-af ${af.isEmpty ? "anull" : af.join(",")} ${_metaArgs()} '
+              '-ar $_sampleRate -ac ${_channels == "Mono" ? 1 : 2} '
+              '-acodec ${_codec()} ${_br()} "$out"';
+          final res = await _proot(cmd, inp, out, timeout: 15);
+          okFile = (res?['rc'] as int? ?? 1) == 0;
+        }
+        if (okFile) { done++; } else { failed++; }
       } catch (_) { failed++; }
       setState(() => _pct = (done + failed) / paths.length);
     }
@@ -1955,41 +2118,81 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 }
 
 // ── WAVEFORM PAINTER ──────────────────────────────────────────────────────────
+// S236: dual-layer (peak outline + solid RMS core) once the numpy analysis
+// lands, with an *accurate* play animation — instead of the old fake global
+// sine shimmer, a gaussian energy ripple hugs the playhead so motion follows
+// what is actually being heard. Placeholder (pre-analysis) bars keep a gentle
+// global shimmer so the screen never looks frozen.
 class _WavePainter extends CustomPainter {
   final List<double> bars;
+  final List<double>? rms;
   final double playPos, trimStart, trimEnd, animT;
-  final bool playing;
-  _WavePainter({required this.bars, required this.playPos,
+  final bool playing, analyzed;
+  _WavePainter({required this.bars, this.rms, required this.playPos,
       required this.trimStart, required this.trimEnd,
-      required this.animT, required this.playing});
+      required this.animT, required this.playing, this.analyzed = false});
 
   @override
   void paint(Canvas c, Size sz) {
     final n = bars.length; final bw = sz.width / n; final mid = sz.height / 2;
     final rActive   = Paint()..shader = ui.Gradient.linear(Offset(0,0), Offset(0,sz.height),
         [const Color(0xFF1DB898), const Color(0xFF0A5A3A)]);
+    final rActiveGhost = Paint()..color = const Color(0xFF1DB898).withOpacity(0.30);
+    final rRmsCore  = Paint()..shader = ui.Gradient.linear(Offset(0,0), Offset(0,sz.height),
+        [const Color(0xFF37E0B8), const Color(0xFF0F7A52)]);
     final rInactive = Paint()..color = const Color(0xFF1A3A30).withOpacity(0.5);
+    final rInactiveGhost = Paint()..color = const Color(0xFF1A3A30).withOpacity(0.25);
     final rTrim     = Paint()..color = Colors.black.withOpacity(0.35);
 
     final x0 = trimStart * sz.width; final x1 = trimEnd * sz.width;
     if (trimStart > 0) c.drawRect(Rect.fromLTWH(0, 0, x0, sz.height), rTrim);
     if (trimEnd   < 1) c.drawRect(Rect.fromLTWH(x1, 0, sz.width - x1, sz.height), rTrim);
 
+    final hasRms = rms != null && rms!.length == n;
     for (int i = 0; i < n; i++) {
       final x = i * bw + 1.0; final frac = i / n;
       final inTrim = frac >= trimStart && frac < trimEnd;
-      final pulse = playing ? 0.08 * sin(animT * 2 * pi + i * 0.25) : 0.0;
+      double pulse = 0.0;
+      if (playing) {
+        if (analyzed) {
+          // energy ripple centered on the playhead (±~4 bars), pulsing in time
+          final d = (frac - playPos) / 0.04;
+          final envelope = d.abs() < 4 ? (1.0 / (1.0 + d * d)) : 0.0;
+          pulse = 0.16 * envelope * (0.6 + 0.4 * sin(animT * 2 * pi * 3));
+        } else {
+          pulse = 0.08 * sin(animT * 2 * pi + i * 0.25);
+        }
+      }
       final h = (bars[i] + pulse).clamp(0.05, 1.0) * mid * 0.88;
-      c.drawRRect(RRect.fromRectAndRadius(
-          Rect.fromLTWH(x, mid - h, bw - 2, h * 2), const Radius.circular(2.5)),
-          inTrim ? rActive : rInactive);
+      if (hasRms) {
+        // outer translucent peak envelope + solid inner RMS body
+        c.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(x, mid - h, bw - 2, h * 2), const Radius.circular(2.5)),
+            inTrim ? rActiveGhost : rInactiveGhost);
+        final hr = ((rms![i] + pulse * 0.7).clamp(0.03, 1.0)) * mid * 0.88;
+        c.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(x, mid - hr, bw - 2, hr * 2), const Radius.circular(2.5)),
+            inTrim ? rRmsCore : rInactive);
+      } else {
+        c.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(x, mid - h, bw - 2, h * 2), const Radius.circular(2.5)),
+            inTrim ? rActive : rInactive);
+      }
     }
 
     final px = playPos * sz.width;
     c.drawRect(Rect.fromLTWH(0, 0, px, sz.height),
         Paint()..color = const Color(0xFFD4AF37).withOpacity(0.16));
+    if (playing) {
+      // soft glow behind the playhead while audio is running
+      c.drawLine(Offset(px, 0), Offset(px, sz.height),
+          Paint()..color = const Color(0xFFD4AF37).withOpacity(0.20 + 0.15 * sin(animT * 2 * pi * 2))
+                 ..strokeWidth = 6
+                 ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4));
+    }
     c.drawLine(Offset(px, 0), Offset(px, sz.height),
         Paint()..color = const Color(0xFFD4AF37)..strokeWidth = 1.5);
+    c.drawCircle(Offset(px, sz.height - 4), 2.5, Paint()..color = const Color(0xFFD4AF37));
 
     void handle(double x, Color col, bool start) {
       c.drawLine(Offset(x,0), Offset(x,sz.height), Paint()..color=col..strokeWidth=1.8);
@@ -2003,6 +2206,44 @@ class _WavePainter extends CustomPainter {
   }
 
   @override bool shouldRepaint(_WavePainter o) => true;
+}
+
+// ── SPECTRUM PAINTER — S236: 30-band average spectrum from numpy analysis ────
+class _SpectrumPainter extends CustomPainter {
+  final List<double> bands;
+  _SpectrumPainter({required this.bands});
+
+  @override
+  void paint(Canvas c, Size sz) {
+    if (bands.isEmpty) return;
+    // faint reference grid at 25/50/75%
+    final grid = Paint()..color = const Color(0xFF1A3A30)..strokeWidth = 0.5;
+    for (final g in [0.25, 0.5, 0.75]) {
+      final y = sz.height * (1 - g);
+      c.drawLine(Offset(0, y), Offset(sz.width, y), grid);
+    }
+    final n = bands.length;
+    final bw = sz.width / n;
+    for (int i = 0; i < n; i++) {
+      final v = bands[i].clamp(0.0, 1.0);
+      final h = v * (sz.height - 2);
+      final x = i * bw + 1.0;
+      c.drawRRect(RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, sz.height - h, bw - 2, h), const Radius.circular(2)),
+          Paint()..shader = ui.Gradient.linear(
+              Offset(0, sz.height), Offset(0, 0),
+              [const Color(0xFF0A5A3A), const Color(0xFF1DB898), const Color(0xFFD4AF37)],
+              [0.0, 0.55, 1.0]));
+    }
+  }
+
+  @override bool shouldRepaint(_SpectrumPainter o) {
+    if (o.bands.length != bands.length) return true;
+    for (int i = 0; i < bands.length; i++) {
+      if (o.bands[i] != bands[i]) return true;
+    }
+    return false;
+  }
 }
 
 // ── EQ CURVE PAINTER ──────────────────────────────────────────────────────────

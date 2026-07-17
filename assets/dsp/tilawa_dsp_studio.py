@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tilawa_dsp_studio.py — S228 — "Studio Engine"
+tilawa_dsp_studio.py — S228 "Studio Engine" · S236 v2 "full FX suite + analysis"
 
 General-purpose numpy/scipy audio DSP engine for the Tilawa Audio Editor.
 
@@ -18,21 +18,38 @@ no new native/Kotlin code needed. Decodes/encodes through ffmpeg pipes
 (f32le), exactly like the restoration engines do, to avoid any soundfile
 dependency.
 
-USAGE:
+USAGE (process):
     python3 tilawa_dsp_studio.py <in_path> <out_path> <params_json_path>
 
+USAGE (analysis — S236):
+    python3 tilawa_dsp_studio.py --analyze <in_path> <out_json_path>
+
+Analysis writes JSON to <out_json_path> (NOT stdout — the proot channel
+truncates stdout to its last 800 chars): real waveform peak/RMS buckets,
+a log-spaced average spectrum, duration, peak/RMS dBFS, LUFS-ish loudness
+and clipping percentage. The Flutter side uses it to draw the *actual*
+waveform instead of placeholder bars.
+
 <params_json_path> is a JSON file (see audio_editor_screen.dart
-_buildDspParams()) describing the trim window, EQ bands, and every effect.
-Prints {"ok": true} / {"ok": false, "error": "..."} to stdout and exits
-0/1 accordingly — the Dart side treats a non-zero exit as "fall back to
-the plain ffmpeg filter chain", so it's safe for this script to fail loud
-rather than produce silently-wrong audio.
+_buildDspParams()) describing the trim window, EQ bands, and every effect —
+including, since S236, the entire `fx2` block (tone shaping, character FX,
+stereo/space, cleanup & dynamics), which previously only existed in the
+ffmpeg fallback chain and was silently dropped whenever this engine
+succeeded. Prints {"ok": true} / {"ok": false, "error": "..."} to stdout
+and exits 0/1 accordingly — the Dart side treats a non-zero exit as "fall
+back to the plain ffmpeg filter chain", so it's safe for this script to
+fail loud rather than produce silently-wrong audio.
 
 Pipeline order (fixed, applied only where the relevant param is non-default):
-  reverse → declick → parametric EQ → spectral noise reduction → echo →
-  convolution reverb → compressor → pitch shift → time stretch →
-  stereo width → volume → loudness (LUFS-ish) normalize + true-peak limit →
-  fades → clip → encode
+  reverse → auto-trim silence → declip → declick → noise gate →
+  parametric EQ → spectral noise reduction → high/low-pass →
+  bass/treble shelves → sub-bass → presence → echo → convolution reverb →
+  compressor → pitch shift → time stretch →
+  tremolo → vibrato → chorus → flanger → phaser → bitcrush →
+  stereo width → Haas widen → stereo enhance → swap/channel mode →
+  de-esser → adaptive normalize → limiter →
+  volume → loudness (LUFS-ish) normalize + true-peak limit →
+  fades → pad start/end → clip → encode
 """
 import sys
 import os
@@ -71,17 +88,30 @@ def _decode(path: str, sr: int, start: float, dur: float):
     return data.reshape(-1, 2).copy()
 
 
-def _encode(x: 'np.ndarray', sr: int, out_path: str, fmt: str, kbps: int) -> bool:
+def _encode(x: 'np.ndarray', sr: int, out_path: str, out_cfg: dict) -> bool:
+    """S236: honors the Export-tab details that v1 ignored — output sample
+    rate, mono/stereo channel count, WAV bit depth and metadata tags."""
+    fmt = str(out_cfg.get('format', 'WAV')).upper()
+    kbps = int(out_cfg.get('kbps', 192))
+    out_sr = int(out_cfg.get('sample_rate', sr) or sr)
+    out_ch = 1 if str(out_cfg.get('channels', 'Stereo')) == 'Mono' else 2
+    depth = int(out_cfg.get('wav_bit_depth', 16) or 16)
+    meta = out_cfg.get('metadata', {}) or {}
+
     raw = np.clip(x, -1.0, 1.0).astype(np.float32).tobytes()
+    cmd = ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+           '-f', 'f32le', '-ar', str(sr), '-ac', '2', '-i', '-']
+    for tag in ('title', 'artist', 'album'):
+        v = str(meta.get(tag, '') or '').strip()
+        if v:
+            cmd += ['-metadata', f'{tag}={v}']
+    cmd += ['-ar', str(out_sr), '-ac', str(out_ch)]
     if fmt == 'WAV':
-        cmd = ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
-               '-f', 'f32le', '-ar', str(sr), '-ac', '2', '-i', '-',
-               '-c:a', 'pcm_s16le', out_path]
+        pcm = {16: 'pcm_s16le', 24: 'pcm_s24le', 32: 'pcm_s32le'}.get(depth, 'pcm_s16le')
+        cmd += ['-c:a', pcm, out_path]
     else:
         codec = {'MP3': 'libmp3lame', 'M4A': 'aac'}.get(fmt, 'libmp3lame')
-        cmd = ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
-               '-f', 'f32le', '-ar', str(sr), '-ac', '2', '-i', '-',
-               '-c:a', codec, '-b:a', f'{kbps}k', out_path]
+        cmd += ['-c:a', codec, '-b:a', f'{kbps}k', out_path]
     try:
         r = subprocess.run(cmd, input=raw, capture_output=True, timeout=180)
     except Exception:
@@ -89,7 +119,7 @@ def _encode(x: 'np.ndarray', sr: int, out_path: str, fmt: str, kbps: int) -> boo
     return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 44
 
 
-# ─── Parametric EQ — real RBJ-cookbook peaking biquads, cascaded ────────────
+# ─── Biquad designers — RBJ audio-cookbook ──────────────────────────────────
 
 def _peaking_biquad(freq: float, gain_db: float, q: float, sr: int):
     """RBJ audio-cookbook peaking-EQ biquad coefficients."""
@@ -107,6 +137,48 @@ def _peaking_biquad(freq: float, gain_db: float, q: float, sr: int):
     a = np.array([1.0, a1 / a0, a2 / a0])
     return b, a
 
+
+def _shelf_biquad(freq: float, gain_db: float, sr: int, kind: str = 'low',
+                  slope: float = 0.9):
+    """RBJ low-shelf / high-shelf biquad — real tone-shaping filters for the
+    FX+ Bass/Treble Boost rows (v1 delegated these to ffmpeg `bass=`/`treble=`
+    and then dropped them whenever the engine succeeded)."""
+    a_amp = 10 ** (gain_db / 40.0)
+    w0 = 2 * np.pi * freq / sr
+    cosw0, sinw0 = np.cos(w0), np.sin(w0)
+    alpha = sinw0 / 2.0 * np.sqrt((a_amp + 1 / a_amp) * (1 / slope - 1) + 2)
+    two_sq = 2 * np.sqrt(a_amp) * alpha
+    if kind == 'low':
+        b0 = a_amp * ((a_amp + 1) - (a_amp - 1) * cosw0 + two_sq)
+        b1 = 2 * a_amp * ((a_amp - 1) - (a_amp + 1) * cosw0)
+        b2 = a_amp * ((a_amp + 1) - (a_amp - 1) * cosw0 - two_sq)
+        a0 = (a_amp + 1) + (a_amp - 1) * cosw0 + two_sq
+        a1 = -2 * ((a_amp - 1) + (a_amp + 1) * cosw0)
+        a2 = (a_amp + 1) + (a_amp - 1) * cosw0 - two_sq
+    else:
+        b0 = a_amp * ((a_amp + 1) + (a_amp - 1) * cosw0 + two_sq)
+        b1 = -2 * a_amp * ((a_amp - 1) + (a_amp + 1) * cosw0)
+        b2 = a_amp * ((a_amp + 1) + (a_amp - 1) * cosw0 - two_sq)
+        a0 = (a_amp + 1) - (a_amp - 1) * cosw0 + two_sq
+        a1 = 2 * ((a_amp - 1) - (a_amp + 1) * cosw0)
+        a2 = (a_amp + 1) - (a_amp - 1) * cosw0 - two_sq
+    b = np.array([b0, b1, b2]) / a0
+    a = np.array([1.0, a1 / a0, a2 / a0])
+    return b, a
+
+
+def _allpass_biquad(freq: float, q: float, sr: int):
+    """RBJ allpass biquad — phaser stages."""
+    w0 = 2 * np.pi * freq / sr
+    alpha = np.sin(w0) / (2.0 * q)
+    cosw0 = np.cos(w0)
+    a0 = 1 + alpha
+    b = np.array([1 - alpha, -2 * cosw0, 1 + alpha]) / a0
+    a = np.array([1.0, -2 * cosw0 / a0, (1 - alpha) / a0])
+    return b, a
+
+
+# ─── Parametric EQ — real RBJ-cookbook peaking biquads, cascaded ────────────
 
 def _apply_eq(x, sr, freqs, gains, q):
     """Cascade one zero-phase peaking biquad per non-zero band (real filters,
@@ -238,20 +310,19 @@ def _reverb(x, sr, mix, rtype):
     return ((1.0 - mix) * x + mix * wet).astype(np.float32)
 
 
-# ─── Compressor — block-envelope follower (fast, not sample-by-sample) ─────
+# ─── Block envelope helper (compressor / gate / limiter share this) ─────────
 
-def _compressor(x, sr, threshold_db, ratio, attack_ms, release_ms, makeup_db):
-    if ratio <= 1.0:
-        return x
-    block = max(16, int(sr * 0.001))  # ~1ms blocks — plenty for audible dynamics
+def _block_env(x, sr, block_s=0.001, attack_ms=5.0, release_ms=150.0):
+    """Per-block peak envelope with one-pole attack/release smoothing.
+    Returns (env_per_block, block_len)."""
+    block = max(16, int(sr * block_s))
     n = x.shape[0]
     nb = int(np.ceil(n / block))
     xa = np.abs(x).max(axis=1)
-    lvl = np.zeros(nb, dtype=np.float64)
-    for i in range(nb):
-        s = i * block
-        e = min(n, s + block)
-        lvl[i] = xa[s:e].max() if e > s else 0.0
+    pad = nb * block - n
+    if pad:
+        xa = np.concatenate([xa, np.zeros(pad)])
+    lvl = xa.reshape(nb, block).max(axis=1)
     atk = np.exp(-block / (sr * max(attack_ms, 0.1) / 1000.0))
     rel = np.exp(-block / (sr * max(release_ms, 1.0) / 1000.0))
     env = np.zeros(nb, dtype=np.float64)
@@ -260,11 +331,24 @@ def _compressor(x, sr, threshold_db, ratio, attack_ms, release_ms, makeup_db):
         coeff = atk if lvl[i] > e_prev else rel
         e_prev = coeff * e_prev + (1.0 - coeff) * lvl[i]
         env[i] = e_prev
+    return env, block
+
+
+def _expand_gain(gain_b, block, n):
+    return np.repeat(gain_b, block)[:n]
+
+
+# ─── Compressor — block-envelope follower (fast, not sample-by-sample) ─────
+
+def _compressor(x, sr, threshold_db, ratio, attack_ms, release_ms, makeup_db):
+    if ratio <= 1.0:
+        return x
+    env, block = _block_env(x, sr, 0.001, attack_ms, release_ms)
     thr = 10 ** (threshold_db / 20.0)
-    gain_b = np.ones(nb, dtype=np.float64)
+    gain_b = np.ones_like(env)
     over = env > thr
     gain_b[over] = (thr + (env[over] - thr) / ratio) / (env[over] + 1e-12)
-    gain = np.repeat(gain_b, block)[:n]
+    gain = _expand_gain(gain_b, block, x.shape[0])
     makeup = 10 ** (makeup_db / 20.0)
     return (x * gain[:, None] * makeup).astype(np.float32)
 
@@ -341,7 +425,175 @@ def _time_stretch(x, sr, tempo):
     return np.stack([c[:n] for c in chans], axis=1)
 
 
-# ─── Stereo width — mid/side matrix ─────────────────────────────────────────
+# ─── S236: FX+ — tone shaping ───────────────────────────────────────────────
+
+def _apply_biquad(x, b, a):
+    return signal.lfilter(b, a, x.astype(np.float64), axis=0)
+
+
+def _tone_shelves(x, sr, bass_db, treble_db):
+    if not SCIPY_OK:
+        return x
+    y = x.astype(np.float64)
+    if abs(bass_db) >= 0.05:
+        b, a = _shelf_biquad(100.0, float(np.clip(bass_db, -12, 12)), sr, 'low')
+        y = _apply_biquad(y, b, a)
+    if abs(treble_db) >= 0.05:
+        b, a = _shelf_biquad(6500.0, float(np.clip(treble_db, -12, 12)), sr, 'high')
+        y = _apply_biquad(y, b, a)
+    return y.astype(np.float32)
+
+
+def _sub_bass(x, sr, amount):
+    """Adds a filtered low band back in (asubboost-style) — amount 0..100."""
+    if not SCIPY_OK or amount <= 0:
+        return x
+    a = min(max(amount, 0.0), 100.0) / 100.0
+    sos = signal.butter(4, 90.0 / (sr / 2.0), btype='low', output='sos')
+    low = signal.sosfilt(sos, x.astype(np.float64), axis=0)
+    return (x + a * 1.2 * low).astype(np.float32)
+
+
+def _presence(x, sr, amount):
+    """Clarity/crystalizer: soft-saturated high band mixed back in."""
+    if not SCIPY_OK or amount <= 0:
+        return x
+    a = min(max(amount, 0.0), 100.0) / 100.0
+    sos = signal.butter(2, 3500.0 / (sr / 2.0), btype='high', output='sos')
+    hi = signal.sosfilt(sos, x.astype(np.float64), axis=0)
+    excited = np.tanh(hi * 3.0) / 3.0
+    return (x + a * 0.9 * excited).astype(np.float32)
+
+
+def _hp_lp(x, sr, hp_hz, lp_hz):
+    if not SCIPY_OK:
+        return x
+    y = x.astype(np.float64)
+    nyq = sr / 2.0
+    if hp_hz and hp_hz > 0:
+        f = min(max(float(hp_hz), 10.0), nyq * 0.95)
+        sos = signal.butter(2, f / nyq, btype='high', output='sos')
+        y = signal.sosfilt(sos, y, axis=0)
+    if lp_hz and 0 < lp_hz < 20000:
+        f = min(max(float(lp_hz), 100.0), nyq * 0.98)
+        sos = signal.butter(2, f / nyq, btype='low', output='sos')
+        y = signal.sosfilt(sos, y, axis=0)
+    return y.astype(np.float32)
+
+
+# ─── S236: FX+ — character effects ──────────────────────────────────────────
+
+def _tremolo(x, sr, amount, rate_hz=5.0):
+    if amount <= 0:
+        return x
+    d = min(max(amount, 0.0), 100.0) / 100.0
+    t = np.arange(x.shape[0]) / sr
+    lfo = 1.0 - d * 0.5 * (1.0 + np.sin(2 * np.pi * rate_hz * t))
+    return (x * lfo[:, None]).astype(np.float32)
+
+
+def _mod_delay_read(x_ch, delay_samps):
+    """Fractional modulated-delay read via linear interpolation (vectorized)."""
+    n = len(x_ch)
+    pos = np.arange(n) - delay_samps
+    pos = np.clip(pos, 0.0, n - 1.0)
+    return np.interp(pos, np.arange(n), x_ch)
+
+
+def _vibrato(x, sr, amount, rate_hz=5.0):
+    if amount <= 0:
+        return x
+    d = min(max(amount, 0.0), 100.0) / 100.0
+    depth = d * 0.004 * sr          # up to ±4 ms pitch wobble
+    base = depth + 8
+    t = np.arange(x.shape[0])
+    delay = base + depth * np.sin(2 * np.pi * rate_hz * t / sr)
+    y = np.zeros_like(x, dtype=np.float64)
+    for ch in range(x.shape[1]):
+        y[:, ch] = _mod_delay_read(x[:, ch].astype(np.float64), delay)
+    return y.astype(np.float32)
+
+
+def _chorus(x, sr):
+    """Three modulated delay taps (~20 ms base) blended with the dry path."""
+    n = x.shape[0]
+    t = np.arange(n)
+    y = x.astype(np.float64).copy()
+    for base_ms, depth_ms, rate, gain in [(18, 2.5, 0.8, 0.30),
+                                          (24, 3.0, 1.1, 0.25),
+                                          (30, 2.0, 0.6, 0.20)]:
+        base = base_ms * sr / 1000.0
+        depth = depth_ms * sr / 1000.0
+        for ch in range(x.shape[1]):
+            ph = ch * np.pi / 3  # slight L/R phase offset — wider image
+            d2 = base + depth * np.sin(2 * np.pi * rate * t / sr + ph)
+            y[:, ch] += gain * _mod_delay_read(x[:, ch].astype(np.float64), d2)
+    peak = np.max(np.abs(y)) + 1e-9
+    if peak > 1.0:
+        y /= peak
+    return y.astype(np.float32)
+
+
+def _flanger(x, sr):
+    """Classic swept short delay (0.5–5 ms, 0.25 Hz) mixed 50/50."""
+    n = x.shape[0]
+    t = np.arange(n)
+    base = 0.003 * sr
+    depth = 0.0025 * sr
+    delay = base + depth * np.sin(2 * np.pi * 0.25 * t / sr)
+    y = np.zeros_like(x, dtype=np.float64)
+    for ch in range(x.shape[1]):
+        wet = _mod_delay_read(x[:, ch].astype(np.float64), delay)
+        y[:, ch] = 0.6 * x[:, ch] + 0.6 * wet
+    peak = np.max(np.abs(y)) + 1e-9
+    if peak > 1.0:
+        y /= peak
+    return y.astype(np.float32)
+
+
+def _phaser(x, sr, stages=4, rate_hz=0.5):
+    """Block-based cascade of LFO-swept allpass biquads (state carried across
+    blocks so sweeps stay click-free)."""
+    if not SCIPY_OK:
+        return x
+    block = 1024
+    n = x.shape[0]
+    y = np.zeros_like(x, dtype=np.float64)
+    for ch in range(x.shape[1]):
+        zi = [np.zeros(2) for _ in range(stages)]
+        src = x[:, ch].astype(np.float64)
+        dst = np.zeros(n, dtype=np.float64)
+        for s in range(0, n, block):
+            e = min(n, s + block)
+            seg = src[s:e]
+            t_mid = (s + e) / 2.0 / sr
+            sweep = 0.5 * (1.0 + np.sin(2 * np.pi * rate_hz * t_mid))
+            f0 = 300.0 * (2.0 ** (sweep * 3.0))  # 300 Hz .. 2.4 kHz sweep
+            for st in range(stages):
+                b, a = _allpass_biquad(min(f0 * (1.0 + 0.4 * st), sr * 0.45), 0.7, sr)
+                seg, zi[st] = signal.lfilter(b, a, seg, zi=zi[st])
+            dst[s:e] = seg
+        y[:, ch] = 0.5 * src + 0.5 * dst
+    return y.astype(np.float32)
+
+
+def _bitcrush(x, amount):
+    """Bit-depth quantize + sample-hold decimation — amount 0..100."""
+    if amount <= 0:
+        return x
+    a = min(max(amount, 0.0), 100.0) / 100.0
+    bits = 16.0 - a * 12.0                    # 16 → 4 bits
+    levels = 2.0 ** bits
+    y = np.round(x.astype(np.float64) * levels) / levels
+    hold = int(1 + round(a * 7))              # 1 → 8× sample-hold
+    if hold > 1:
+        n = y.shape[0]
+        idx = (np.arange(n) // hold) * hold
+        y = y[idx]
+    return y.astype(np.float32)
+
+
+# ─── S236: FX+ — stereo & space ─────────────────────────────────────────────
 
 def _stereo_width(x, width):
     if x.shape[1] < 2 or abs(width - 1.0) < 1e-3:
@@ -351,6 +603,142 @@ def _stereo_width(x, width):
     left = mid + side
     right = mid - side
     return np.stack([left, right], axis=1).astype(np.float32)
+
+
+def _haas(x, sr, delay_ms=15.0):
+    """Haas widener — delays the right channel a few ms."""
+    d = int(sr * delay_ms / 1000.0)
+    if d <= 0 or d >= x.shape[0] or x.shape[1] < 2:
+        return x
+    r = np.concatenate([np.zeros(d, dtype=x.dtype), x[:-d, 1]])
+    return np.stack([x[:, 0], r], axis=1)
+
+
+def _stereo_enhance(x, amount):
+    """extrastereo-style side gain: amount -100 (mono-ish) .. +100 (wide)."""
+    if x.shape[1] < 2 or amount == 0:
+        return x
+    return _stereo_width(x, 1.0 + min(max(amount, -100.0), 100.0) / 100.0)
+
+
+def _channel_mode(x, mode, swap_lr):
+    y = x
+    if swap_lr and y.shape[1] >= 2:
+        y = y[:, ::-1].copy()
+    if mode == 'Mono' and y.shape[1] >= 2:
+        m = y.mean(axis=1)
+        y = np.stack([m, m], axis=1)
+    elif mode == 'Left' and y.shape[1] >= 2:
+        y = np.stack([y[:, 0], y[:, 0]], axis=1)
+    elif mode == 'Right' and y.shape[1] >= 2:
+        y = np.stack([y[:, 1], y[:, 1]], axis=1)
+    return y.astype(np.float32)
+
+
+# ─── S236: FX+ — cleanup & dynamics ────────────────────────────────────────
+
+def _noise_gate(x, sr, threshold_db):
+    """Soft downward expander below threshold (smoothed block envelope)."""
+    env, block = _block_env(x, sr, 0.005, attack_ms=2.0, release_ms=120.0)
+    thr = 10 ** (min(max(threshold_db, -80.0), -10.0) / 20.0)
+    ratio = (env / (thr + 1e-12)) ** 2
+    gain_b = np.clip(ratio, 0.0, 1.0)
+    gain_b[env >= thr] = 1.0
+    gain = _expand_gain(gain_b, block, x.shape[0])
+    return (x * gain[:, None]).astype(np.float32)
+
+
+def _deesser(x, sr, amount):
+    """Split-band sibilance tamer: compress only the 4.5–9.5 kHz band."""
+    if not SCIPY_OK or amount <= 0:
+        return x
+    strength = min(max(amount, 0.0), 100.0) / 100.0
+    hi_edge = min(9500.0, sr * 0.45)
+    sos = signal.butter(4, [4500.0 / (sr / 2.0), hi_edge / (sr / 2.0)],
+                        btype='band', output='sos')
+    band = signal.sosfilt(sos, x.astype(np.float64), axis=0)
+    rest = x.astype(np.float64) - band
+    env, block = _block_env(band.astype(np.float32), sr, 0.002,
+                            attack_ms=1.0, release_ms=60.0)
+    active = env[env > 1e-5]
+    thr = np.percentile(active, 60) if active.size else 1.0
+    gain_b = np.ones_like(env)
+    over = env > thr
+    gain_b[over] = (thr / (env[over] + 1e-12)) ** strength
+    gain = _expand_gain(gain_b, block, x.shape[0])
+    return (rest + band * gain[:, None]).astype(np.float32)
+
+
+def _declip(x, sr):
+    """Reconstructs clipped runs (|x| ≥ ~0.985) by interpolating from the
+    surrounding clean samples — same interp strategy as _declick."""
+    y = x.copy()
+    idx = np.arange(x.shape[0])
+    for ch in range(x.shape[1]):
+        sig_ = x[:, ch].astype(np.float64)
+        bad = np.abs(sig_) >= 0.985
+        good = ~bad
+        if np.any(bad) and np.sum(good) > 2:
+            sig_[bad] = np.interp(idx[bad], idx[good], sig_[good])
+            y[:, ch] = sig_.astype(np.float32)
+    return y
+
+
+def _adaptive_normalize(x, sr, target_rms_db=-16.0):
+    """dynaudnorm-lite: frame-wise gain ride toward a target RMS, smoothed so
+    it breathes instead of pumping."""
+    frame = max(256, int(sr * 0.4))
+    hop = frame // 2
+    n = x.shape[0]
+    if n < frame:
+        return x
+    mono = x.mean(axis=1).astype(np.float64)
+    starts = np.arange(0, n - frame + 1, hop)
+    rms = np.array([np.sqrt(np.mean(mono[s:s + frame] ** 2)) + 1e-9 for s in starts])
+    target = 10 ** (target_rms_db / 20.0)
+    gains = np.clip(target / rms, 0.5, 8.0)
+    if len(gains) >= 5:  # gaussian-ish smoothing across frames
+        kernel = np.array([0.06, 0.24, 0.4, 0.24, 0.06])
+        gains = np.convolve(gains, kernel, mode='same')
+    centers = starts + frame // 2
+    per_sample = np.interp(np.arange(n), centers, gains)
+    return np.clip(x * per_sample[:, None], -1.0, 1.0).astype(np.float32)
+
+
+def _hard_limiter(x, sr, ceiling_db):
+    """Look-ahead-ish limiter: smoothed gain reduction + safety clip."""
+    ceiling = 10 ** (min(max(ceiling_db, -12.0), 0.0) / 20.0)
+    env, block = _block_env(x, sr, 0.001, attack_ms=0.5, release_ms=50.0)
+    gain_b = np.ones_like(env)
+    over = env > ceiling
+    gain_b[over] = ceiling / (env[over] + 1e-12)
+    gain = _expand_gain(gain_b, block, x.shape[0])
+    y = x * gain[:, None]
+    return np.clip(y, -ceiling, ceiling).astype(np.float32)
+
+
+def _auto_trim_silence(x, sr, thresh_db=-45.0, pad_s=0.08):
+    env = np.abs(x).max(axis=1)
+    thr = 10 ** (thresh_db / 20.0)
+    above = np.flatnonzero(env > thr)
+    if above.size == 0:
+        return x
+    pad = int(pad_s * sr)
+    s = max(0, int(above[0]) - pad)
+    e = min(x.shape[0], int(above[-1]) + pad)
+    if e - s < int(0.05 * sr):
+        return x
+    return x[s:e].copy()
+
+
+def _pad(x, sr, start_s, end_s):
+    parts = []
+    if start_s > 0:
+        parts.append(np.zeros((int(start_s * sr), x.shape[1]), dtype=x.dtype))
+    parts.append(x)
+    if end_s > 0:
+        parts.append(np.zeros((int(end_s * sr), x.shape[1]), dtype=x.dtype))
+    return np.concatenate(parts, axis=0) if len(parts) > 1 else x
 
 
 # ─── Loudness — simplified BS.1770-style K-weighting + gating + true peak ──
@@ -434,9 +822,94 @@ def _apply_fades(x, sr, fade_in_s, fade_out_s, curve):
     return y
 
 
+# ─── S236: ANALYSIS MODE — real waveform / spectrum / loudness for the UI ──
+
+_ANALYZE_SR = 22050        # plenty for visuals + stats, keeps decode fast
+_WAVE_BUCKETS = 96         # bars drawn by the Flutter waveform
+_SPEC_BANDS = 30           # log-spaced spectrum bands (60 Hz .. 10 kHz)
+
+
+def analyze(in_path: str, out_json: str) -> int:
+    x = _decode(in_path, _ANALYZE_SR, 0.0, 0.0)
+    if x is None or x.shape[0] == 0:
+        print(json.dumps({'ok': False, 'error': 'ffmpeg decode failed'}))
+        return 1
+    try:
+        n = x.shape[0]
+        duration = n / float(_ANALYZE_SR)
+        mono = x.mean(axis=1).astype(np.float64)
+
+        # Waveform buckets — true peak + RMS per bucket, display-normalized.
+        nb = _WAVE_BUCKETS
+        edges = np.linspace(0, n, nb + 1).astype(int)
+        peaks = np.zeros(nb)
+        rms = np.zeros(nb)
+        for i in range(nb):
+            seg = mono[edges[i]:max(edges[i] + 1, edges[i + 1])]
+            peaks[i] = np.max(np.abs(seg)) if seg.size else 0.0
+            rms[i] = np.sqrt(np.mean(seg ** 2)) if seg.size else 0.0
+        norm = max(float(peaks.max()), 1e-6)
+        peaks_n = np.clip(peaks / norm, 0.0, 1.0)
+        rms_n = np.clip(rms / norm, 0.0, 1.0)
+
+        # Level stats (true dBFS, pre-normalization).
+        peak_db = float(20 * np.log10(np.max(np.abs(mono)) + 1e-9))
+        rms_db = float(20 * np.log10(np.sqrt(np.mean(mono ** 2)) + 1e-9))
+        clip_pct = float(100.0 * np.mean(np.abs(mono) >= 0.985))
+        lufs = None
+        if SCIPY_OK:
+            try:
+                lufs = round(_measure_lufs_ish(x.astype(np.float64), _ANALYZE_SR), 1)
+            except Exception:
+                lufs = None
+
+        # Average spectrum — log-spaced bands, normalized 0..1 over a 60 dB range.
+        spectrum = []
+        if SCIPY_OK and n > 4096:
+            try:
+                f, pxx = signal.welch(mono, fs=_ANALYZE_SR, nperseg=4096)
+                band_edges = np.geomspace(60.0, min(10000.0, _ANALYZE_SR * 0.45),
+                                          _SPEC_BANDS + 1)
+                p_db = 10 * np.log10(pxx + 1e-14)
+                top = float(p_db.max())
+                for i in range(_SPEC_BANDS):
+                    m = (f >= band_edges[i]) & (f < band_edges[i + 1])
+                    v = float(p_db[m].mean()) if np.any(m) else -120.0
+                    spectrum.append(round(float(np.clip((v - top + 60.0) / 60.0, 0.0, 1.0)), 3))
+            except Exception:
+                spectrum = []
+
+        payload = {
+            'ok': True,
+            'duration_sec': round(duration, 3),
+            'peaks': [round(float(v), 3) for v in peaks_n],
+            'rms': [round(float(v), 3) for v in rms_n],
+            'spectrum': spectrum,
+            'peak_db': round(peak_db, 1),
+            'rms_db': round(rms_db, 1),
+            'lufs': lufs,
+            'clip_pct': round(clip_pct, 2),
+            'scipy': SCIPY_OK,
+        }
+        with open(out_json, 'w', encoding='utf-8') as fh:
+            json.dump(payload, fh)
+        print(json.dumps({'ok': True, 'scipy': SCIPY_OK}))
+        return 0
+    except Exception as e:
+        print(json.dumps({'ok': False, 'error': f'analysis failed: {e}'}))
+        return 1
+
+
 # ─── Main pipeline ───────────────────────────────────────────────────────────
 
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == '--analyze':
+        if len(sys.argv) < 4:
+            print(json.dumps({'ok': False,
+                              'error': 'usage: tilawa_dsp_studio.py --analyze <in> <out.json>'}))
+            return 1
+        return analyze(sys.argv[2], sys.argv[3])
+
     if len(sys.argv) < 4:
         print(json.dumps({'ok': False, 'error': 'usage: tilawa_dsp_studio.py <in> <out> <params.json>'}))
         return 1
@@ -458,14 +931,28 @@ def main():
         print(json.dumps({'ok': False, 'error': 'ffmpeg decode failed'}))
         return 1
 
+    fx = p.get('fx2', {}) or {}
+
     try:
         if p.get('reverse'):
             x = x[::-1].copy()
+
+        # ── cleanup first: silence trim, declip, declick, gate ──
+        if fx.get('auto_trim_silence'):
+            x = _auto_trim_silence(x, sr)
+
+        if fx.get('declip'):
+            x = _declip(x, sr)
 
         dc = p.get('declick', {}) or {}
         if dc.get('enabled'):
             x = _declick(x, sr, float(dc.get('sensitivity', 50)))
 
+        gate = fx.get('noise_gate', {}) or {}
+        if gate.get('enabled'):
+            x = _noise_gate(x, sr, float(gate.get('threshold_db', -50)))
+
+        # ── spectral shaping ──
         x = _apply_eq(x, sr, p.get('eq_freqs', []), p.get('eq_gains', []),
                       float(p.get('eq_q', 1.4)))
 
@@ -473,6 +960,19 @@ def main():
         if nr > 0:
             x = _spectral_denoise(x, sr, nr)
 
+        x = _hp_lp(x, sr, float(fx.get('highpass_hz', 0) or 0),
+                   float(fx.get('lowpass_hz', 20000) or 20000))
+
+        x = _tone_shelves(x, sr, float(fx.get('bass_db', 0) or 0),
+                          float(fx.get('treble_db', 0) or 0))
+
+        if float(fx.get('sub_bass', 0) or 0) > 0:
+            x = _sub_bass(x, sr, float(fx.get('sub_bass', 0)))
+
+        if float(fx.get('presence', 0) or 0) > 0:
+            x = _presence(x, sr, float(fx.get('presence', 0)))
+
+        # ── space ──
         echo_mix = float((p.get('echo', {}) or {}).get('mix', 0))
         if echo_mix > 0:
             x = _echo(x, sr, echo_mix)
@@ -481,6 +981,7 @@ def main():
         if float(rv.get('mix', 0)) > 0:
             x = _reverb(x, sr, float(rv.get('mix', 0)), rv.get('type', 'Room'))
 
+        # ── dynamics (main compressor) ──
         comp = p.get('compressor', {}) or {}
         if comp.get('enabled'):
             x = _compressor(x, sr, float(comp.get('threshold_db', -18)),
@@ -489,6 +990,7 @@ def main():
                              float(comp.get('release_ms', 200)),
                              float(comp.get('makeup_db', 0)))
 
+        # ── pitch / tempo ──
         pitch = float(p.get('pitch_semitones', 0))
         if abs(pitch) > 1e-3:
             x = _pitch_shift(x, sr, pitch)
@@ -497,7 +999,37 @@ def main():
         if abs(tempo - 1.0) > 1e-3:
             x = _time_stretch(x, sr, tempo)
 
+        # ── character FX ──
+        if float(fx.get('tremolo', 0) or 0) > 0:
+            x = _tremolo(x, sr, float(fx.get('tremolo', 0)))
+        if float(fx.get('vibrato', 0) or 0) > 0:
+            x = _vibrato(x, sr, float(fx.get('vibrato', 0)))
+        if fx.get('chorus'):
+            x = _chorus(x, sr)
+        if fx.get('flanger'):
+            x = _flanger(x, sr)
+        if fx.get('phaser'):
+            x = _phaser(x, sr)
+        if float(fx.get('bitcrush', 0) or 0) > 0:
+            x = _bitcrush(x, float(fx.get('bitcrush', 0)))
+
+        # ── stereo & space ──
         x = _stereo_width(x, float(p.get('stereo_width', 1.0)))
+        if fx.get('haas_widen'):
+            x = _haas(x, sr)
+        if float(fx.get('stereo_fx', 0) or 0) != 0:
+            x = _stereo_enhance(x, float(fx.get('stereo_fx', 0)))
+        x = _channel_mode(x, str(fx.get('channel_mode', 'Stereo')),
+                          bool(fx.get('swap_lr', False)))
+
+        # ── final cleanup & dynamics ──
+        if float(fx.get('deesser', 0) or 0) > 0:
+            x = _deesser(x, sr, float(fx.get('deesser', 0)))
+        if fx.get('adaptive_normalize'):
+            x = _adaptive_normalize(x, sr)
+        lim = fx.get('limiter', {}) or {}
+        if lim.get('enabled'):
+            x = _hard_limiter(x, sr, float(lim.get('ceiling_db', -1.0)))
 
         vol = float(p.get('volume', 1.0))
         if abs(vol - 1.0) > 1e-3:
@@ -513,15 +1045,15 @@ def main():
         x = _apply_fades(x, sr, float(p.get('fade_in', 0)), float(p.get('fade_out', 0)),
                           p.get('fade_curve', 'Equal Power'))
 
+        x = _pad(x, sr, float(fx.get('pad_start_sec', 0) or 0),
+                 float(fx.get('pad_end_sec', 0) or 0))
+
         x = np.clip(x, -1.0, 1.0).astype(np.float32)
     except Exception as e:
         print(json.dumps({'ok': False, 'error': f'dsp stage failed: {e}'}))
         return 1
 
-    out_cfg = p.get('output', {}) or {}
-    fmt = str(out_cfg.get('format', 'WAV')).upper()
-    kbps = int(out_cfg.get('kbps', 192))
-    ok = _encode(x, sr, out_path, fmt, kbps)
+    ok = _encode(x, sr, out_path, p.get('output', {}) or {})
     print(json.dumps({'ok': ok, 'scipy': SCIPY_OK}))
     return 0 if ok else 1
 
