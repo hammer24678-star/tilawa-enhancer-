@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';  // S237: persist editor prefs
 import '../state/lang_provider.dart';
 import 'setup_screen.dart';  // S206: lets the setup-required snackbar launch setup directly
 
@@ -155,6 +156,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   double _pct      = 0;
   String? _outPath;
   String  _busyLabel = '';
+  DateTime? _busyStart;  // S237: elapsed time shown in the processing overlay
 
   _Tab _tab = _Tab.trim;
   late AnimationController _waveCtrl;
@@ -206,6 +208,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     _durSub = _player.onDurationChanged.listen((d) {
       if (mounted) setState(() => _durationSec = d.inMilliseconds / 1000.0);
     });
+    _loadEditorPrefs();  // S237 QoL — restore last-used export/studio settings
   }
 
   @override
@@ -364,12 +367,59 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
   }
 
+  // S237 QoL — export & studio settings persist across sessions. Only chip/
+  // slider-backed state is saved (metadata TextFields have no controllers, so
+  // restored text would be invisible in the UI — deliberately not persisted).
+  static const _prefsKey = 'audio_editor_prefs_v1';
+
+  Future<void> _loadEditorPrefs() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final raw = p.getString(_prefsKey);
+      if (raw == null || !mounted) return;
+      final m = Map<String, dynamic>.from(jsonDecode(raw));
+      setState(() {
+        _fmt            = (m['fmt'] as String?) ?? _fmt;
+        _kbps           = (m['kbps'] as num?)?.toInt() ?? _kbps;
+        _sampleRate     = (m['sampleRate'] as num?)?.toInt() ?? _sampleRate;
+        _channels       = (m['channels'] as String?) ?? _channels;
+        _wavBitDepth    = (m['wavBitDepth'] as num?)?.toInt() ?? _wavBitDepth;
+        _loudnessTarget = (m['loudnessTarget'] as String?) ?? _loudnessTarget;
+        _truePeakLimiter = (m['truePeakLimiter'] as bool?) ?? _truePeakLimiter;
+        _fadeCurve      = (m['fadeCurve'] as String?) ?? _fadeCurve;
+        _eqQ            = (m['eqQ'] as num?)?.toDouble() ?? _eqQ;
+        _reverbType     = (m['reverbType'] as String?) ?? _reverbType;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveEditorPrefs() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_prefsKey, jsonEncode({
+        'fmt': _fmt, 'kbps': _kbps, 'sampleRate': _sampleRate,
+        'channels': _channels, 'wavBitDepth': _wavBitDepth,
+        'loudnessTarget': _loudnessTarget, 'truePeakLimiter': _truePeakLimiter,
+        'fadeCurve': _fadeCurve, 'eqQ': _eqQ, 'reverbType': _reverbType,
+      }));
+    } catch (_) {}
+  }
+
+  // S237 QoL — jump the playhead by ±N seconds from the transport bar
+  Future<void> _seekBy(double deltaSec) async {
+    if (_filePath == null || _durationSec <= 0) return;
+    HapticFeedback.selectionClick();
+    final target = (_positionSec + deltaSec).clamp(0.0, _durationSec);
+    await _player.seek(Duration(milliseconds: (target * 1000).round()));
+    if (mounted) setState(() => _positionSec = target);
+  }
+
   // ── SPLIT ─────────────────────────────────────────────────────────────────
   Future<void> _split() async {
     if (_filePath == null) return;
     if (!await _checkSetup()) return;
     HapticFeedback.mediumImpact();
-    setState(() { _busy = true; _busyLabel = 'Splitting…'; _pct = 0.1; });
+    setState(() { _busy = true; _busyStart = DateTime.now(); _busyLabel = 'Splitting…'; _pct = 0.1; });
     try {
       final inp = await _safeInput(_filePath!);
       final ext = _fmt.toLowerCase();
@@ -393,7 +443,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (_filePath == null || _mergePath == null) return;
     if (!await _checkSetup()) return;
     HapticFeedback.mediumImpact();
-    setState(() { _busy = true; _busyLabel = 'Merging…'; _pct = 0.1; });
+    setState(() { _busy = true; _busyStart = DateTime.now(); _busyLabel = 'Merging…'; _pct = 0.1; });
     try {
       final tmp  = await getTemporaryDirectory();
       final inpA = await _safeInput(_filePath!);
@@ -633,7 +683,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (_filePath == null) return;
     if (!await _checkSetup()) return;
     HapticFeedback.mediumImpact();
-    setState(() { _busy = true; _pct = 0.05; _outPath = null; _busyLabel = 'Exporting…'; });
+    setState(() { _busy = true; _busyStart = DateTime.now(); _pct = 0.05; _outPath = null; _busyLabel = 'Exporting…'; });
     try {
       final inp = await _safeInput(_filePath!);
       final ext = _fmt.toLowerCase();
@@ -661,6 +711,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       }
       if (!mounted) return;
       setState(() { _pct = 1.0; _outPath = out; _busy = false; });
+      unawaited(_saveEditorPrefs());  // S237 QoL — remember these export settings
       if (_asRingtone) {
         try { await _media.invokeMethod('saveToDownloads',
             {'path': out, 'filename': out.split('/').last}); }
@@ -721,6 +772,15 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               backgroundColor: _border, valueColor: const AlwaysStoppedAnimation(_gold), minHeight: 5))),
           if (_pct > 0.05) ...[const SizedBox(height: 8),
             Text('${(_pct * 100).round()}%', style: const TextStyle(color: _textB, fontSize: 12))],
+          // S237 QoL — elapsed time (this AnimatedBuilder already ticks with _glowCtrl)
+          if (_busyStart != null) ...[const SizedBox(height: 6),
+            Builder(builder: (_) {
+              final e = DateTime.now().difference(_busyStart!);
+              final mm = e.inMinutes.toString().padLeft(2, '0');
+              final ss = (e.inSeconds % 60).toString().padLeft(2, '0');
+              return Text('$mm:$ss', style: const TextStyle(
+                  color: _textDim, fontSize: 11, fontFamily: 'monospace'));
+            })],
         ]))));
 
   Widget _appBar() {
@@ -968,13 +1028,15 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _transport() => Container(
     color: _surface,
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
     child: Row(children: [
       _tBtn(Icons.skip_previous_rounded, () async {
         await _player.seek(Duration(milliseconds: (_trimStart * _durationSec * 1000).round()));
         if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
       }),
-      const SizedBox(width: 10),
+      const SizedBox(width: 6),
+      _tBtn(Icons.replay_10_rounded, () => _seekBy(-10)),  // S237 QoL
+      const SizedBox(width: 6),
       AnimatedBuilder(animation: _glowCtrl,
         builder: (_, __) => GestureDetector(
           onTap: () { HapticFeedback.mediumImpact(); _togglePlay(); },
@@ -988,12 +1050,14 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                     blurRadius: 20)]),
               child: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 color: const Color(0xFF050A06), size: 28))))),
-      const SizedBox(width: 10),
+      const SizedBox(width: 6),
+      _tBtn(Icons.forward_10_rounded, () => _seekBy(10)),  // S237 QoL
+      const SizedBox(width: 6),
       _tBtn(Icons.stop_rounded, _stop),
       const SizedBox(width: 6),
       Tooltip(message: 'Split at playhead',
         child: _tBtn(Icons.content_cut_rounded, _split, color: _teal)),
-      const SizedBox(width: 12),
+      const SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
@@ -1570,17 +1634,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         if (_reverse)   _row('Reverse', '✓'),
       ]),
       if (_outPath != null) ...[const SizedBox(height: 10),
-        Container(padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: _tealDk.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _teal.withValues(alpha: 0.4))),
-          child: Row(children: [
-            const Icon(Icons.check_circle_rounded, color: _teal, size: 20),
-            const SizedBox(width: 10),
-            Expanded(child: Text('${ar ? "تم الحفظ: " : "Saved: "}$_outPath',
-                style: const TextStyle(color: _textA, fontSize: 11),
-                overflow: TextOverflow.ellipsis, maxLines: 2)),
-          ]))],
+        // S237 QoL — tap to copy the saved path to the clipboard
+        GestureDetector(
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: _outPath!));
+            HapticFeedback.selectionClick();
+            _snack(ar ? '✓ تم نسخ المسار' : '✓ Path copied', color: _teal);
+          },
+          child: Container(padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: _tealDk.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _teal.withValues(alpha: 0.4))),
+            child: Row(children: [
+              const Icon(Icons.check_circle_rounded, color: _teal, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text('${ar ? "تم الحفظ: " : "Saved: "}$_outPath',
+                  style: const TextStyle(color: _textA, fontSize: 11),
+                  overflow: TextOverflow.ellipsis, maxLines: 2)),
+              const Icon(Icons.copy_rounded, color: _teal, size: 14),
+            ])))],
       const SizedBox(height: 14),
       GestureDetector(onTap: _busy ? null : _export,
         child: AnimatedBuilder(animation: _glowCtrl,
@@ -2085,7 +2157,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (r == null || r.files.isEmpty) return;
     final paths = r.files.where((f) => f.path != null).map((f) => f.path!).toList();
     if (paths.isEmpty) return;
-    setState(() { _busy = true; _busyLabel = ar ? 'تصدير دفعي…' : 'Batch exporting…'; _pct = 0; });
+    setState(() { _busy = true; _busyStart = DateTime.now(); _busyLabel = ar ? 'تصدير دفعي…' : 'Batch exporting…'; _pct = 0; });
     int done = 0, failed = 0;
     for (final p in paths) {
       try {
@@ -2113,6 +2185,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       setState(() => _pct = (done + failed) / paths.length);
     }
     setState(() => _busy = false);
+    unawaited(_saveEditorPrefs());  // S237 QoL
     _snack('✓ ${ar ? "تم" : "Done"}: $done${failed > 0 ? "  ·  ${ar ? "فشل" : "failed"}: $failed" : ""}');
   }
 }

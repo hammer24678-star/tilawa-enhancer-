@@ -106,6 +106,28 @@ class LocalEngineService {
     _engineCtrl?.close(); _engineCtrl = null;  // S162-B17: unblock await-for in _processLocal()
   }
 
+  // ── S237: local-engine health + cache management ─────────────────────────
+
+  /// Component-level status map from Kotlin computeSetupStatus():
+  /// proot/python/libpython/ffmpeg/numpy/scipy/deepFilter (bool),
+  /// engines/refAudio/cacheFiles (int), cacheBytes/runtimeBytes/freeBytes
+  /// (int, bytes), setupDone (bool), buildId (String).
+  static Future<Map<String, dynamic>> getSetupStatus() async {
+    try {
+      final r = await _ch.invokeMethod<Map>('getSetupStatus');
+      return Map<String, dynamic>.from(r ?? {});
+    } catch (_) { return {}; }
+  }
+
+  /// Deletes all tilawa_* work files from the engine cache.
+  /// Returns {freedBytes: int, deletedFiles: int}.
+  static Future<Map<String, dynamic>> clearEngineCache() async {
+    try {
+      final r = await _ch.invokeMethod<Map>('clearEngineCache');
+      return Map<String, dynamic>.from(r ?? {});
+    } catch (_) { return {'freedBytes': 0, 'deletedFiles': 0}; }
+  }
+
   // S161: run an arbitrary shell command via proot (for AudioLab editor)
   // S174-B3: inputPath/outputPath trigger extra proot bind mounts so
   //          user audio files outside cacheDir are accessible inside proot.

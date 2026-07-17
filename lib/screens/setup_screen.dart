@@ -221,6 +221,9 @@ class _SetupScreenState extends State<SetupScreen>
       _row(Icons.download_rounded,        'One-time download  ~200 MB'),
       const SizedBox(height: 8),
       _row(Icons.storage_rounded,         'Uses ~300 MB of storage'),
+      const SizedBox(height: 8),
+      // S237: download() now retries with HTTP-Range resume
+      _row(Icons.sync_rounded,            'Interrupted downloads resume automatically'),
     ]));
 
   Widget _row(IconData ic, String txt) => Row(children: [

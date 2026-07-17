@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // S31-F1
 import 'package:url_launcher/url_launcher.dart';
+import '../services/local_engine_service.dart'; // S237
 import '../state/lang_provider.dart';
 import '../main.dart' show ThemeProvider; // S31-F4b
+import 'setup_screen.dart'; // S237
 import 'welcome_screen.dart'; // S31-F1
 
 class SettingsScreen extends StatelessWidget {
@@ -158,6 +160,10 @@ class SettingsScreen extends StatelessWidget {
           // ── S31-F1: Show Tutorial button ───────────────────────────────────
           _tutorialTile(context, s),
           const SizedBox(height: 4),
+          // ── S237: Local Engine health + cache management ──────────────────
+          _section(context, isAr ? 'المحرك المحلي' : 'LOCAL ENGINE'),
+          const _LocalEngineHealthCard(),
+          const SizedBox(height: 14),
           // ── Target info ────────────────────────────────────────────────────
           Container(
             margin: const EdgeInsets.only(bottom: 20),
@@ -428,4 +434,199 @@ class SettingsScreen extends StatelessWidget {
 class _EHist {
   final String v, name, score, badge, bc, ar, en, rating;
   const _EHist(this.v, this.name, this.score, this.badge, this.bc, this.ar, this.en, [this.rating = '']);
+}
+
+// ── S237: Local Engine health panel ──────────────────────────────────────────
+// Component-by-component diagnostics for the proot local engine, plus cache
+// size + one-tap cleanup and a direct entry into setup/repair. Before this,
+// the only signal a user ever got was a binary "setup required" — with no way
+// to see WHICH piece (numpy? DeepFilter? ffmpeg?) was actually broken, and no
+// way to reclaim the work files that accumulated in the engine cache.
+class _LocalEngineHealthCard extends StatefulWidget {
+  const _LocalEngineHealthCard();
+  @override State<_LocalEngineHealthCard> createState() => _LocalEngineHealthCardState();
+}
+
+class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
+  Map<String, dynamic>? _status;
+  bool _loading  = false;
+  bool _clearing = false;
+
+  static const _gold = Color(0xFFD4AF37);
+  static const _teal = Color(0xFF1DB898);
+  static const _red  = Color(0xFFD94040);
+
+  bool get _dark => ThemeProvider.isDark(context);
+  Color get _cCard   => _dark ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
+  Color get _cBorder => _dark ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
+  Color get _cText   => _dark ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
+  Color get _cSub    => _dark ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    final st = await LocalEngineService.getSetupStatus();
+    if (!mounted) return;
+    setState(() { _status = st.isEmpty ? null : st; _loading = false; });
+  }
+
+  Future<void> _clearCache() async {
+    final ar = LangProvider.strings(context).ar;
+    if (_clearing) return;
+    setState(() => _clearing = true);
+    final r = await LocalEngineService.clearEngineCache();
+    if (!mounted) return;
+    setState(() => _clearing = false);
+    final freed = _fmtBytes((r['freedBytes'] as num?)?.toInt() ?? 0);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: _cCard, behavior: SnackBarBehavior.floating,
+      content: Text('${ar ? "تم تحرير" : "Freed"} $freed',
+          style: const TextStyle(color: _teal, fontSize: 12))));
+    _refresh();
+  }
+
+  Future<void> _repair() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => SetupScreen(
+            onDone: () => Navigator.of(context).pop(),
+            onSkip: () => Navigator.of(context).pop())));
+    _refresh();
+  }
+
+  static String _fmtBytes(int b) {
+    if (b >= 1073741824) return '${(b / 1073741824).toStringAsFixed(1)} GB';
+    if (b >= 1048576)    return '${(b / 1048576).toStringAsFixed(0)} MB';
+    if (b >= 1024)       return '${(b / 1024).toStringAsFixed(0)} KB';
+    return '$b B';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = LangProvider.strings(context);
+    final ar = s.ar;
+    final st = _status;
+    final bool allCoreOk = st != null &&
+        (st['proot'] == true) && (st['python'] == true) &&
+        (st['libpython'] == true) && (st['ffmpeg'] == true) &&
+        (st['numpy'] == true) && (st['deepFilter'] == true) &&
+        ((st['engines'] as num? ?? 0) > 0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _cCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _cBorder)),
+      child: Column(children: [
+        ListTile(
+          leading: Icon(
+            st == null ? Icons.dns_outlined
+                : allCoreOk ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+            color: st == null ? _cSub : allCoreOk ? _teal : _red),
+          title: Text(ar ? 'صحة المحرك المحلي' : 'Local Engine Health',
+              style: TextStyle(color: _cText, fontSize: 14)),
+          subtitle: Text(
+            st == null
+                ? (_loading ? (ar ? 'جارٍ الفحص…' : 'Checking…')
+                            : (ar ? 'تعذر الفحص' : 'Check unavailable'))
+                : allCoreOk
+                    ? (ar ? 'كل المكونات سليمة ✓' : 'All components healthy ✓')
+                    : (ar ? 'يوجد مكون ناقص — انظر التفاصيل' : 'Something is missing — see details'),
+            style: TextStyle(color: _cSub, fontSize: 11)),
+          trailing: _loading
+              ? const SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _gold))
+              : IconButton(icon: const Icon(Icons.refresh_rounded, color: _gold, size: 20),
+                  onPressed: _refresh),
+        ),
+        if (st != null) ...[
+          Divider(height: 1, color: _cBorder),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            child: Column(children: [
+              _compRow(ar ? 'بيئة العزل proot' : 'proot sandbox',       st['proot'] == true),
+              _compRow('Python 3',                                       st['python'] == true && st['libpython'] == true),
+              _compRow('ffmpeg',                                         st['ffmpeg'] == true),
+              _compRow('numpy',                                          st['numpy'] == true),
+              _compRow('scipy',                                          st['scipy'] == true,
+                  optional: true, ar: ar),
+              _compRow('DeepFilter (aarch64)',                           st['deepFilter'] == true),
+              _compRow(ar ? 'محركات المعالجة' : 'Engine scripts',
+                  (st['engines'] as num? ?? 0) > 0,
+                  detail: '${st['engines'] ?? 0}'),
+              _compRow(ar ? 'التلاوات المرجعية' : 'Reference audio',
+                  (st['refAudio'] as num? ?? 0) > 0,
+                  detail: '${st['refAudio'] ?? 0}'),
+            ])),
+          Divider(height: 1, color: _cBorder),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Column(children: [
+              _kvRow(ar ? 'حجم بيئة التشغيل' : 'Runtime size',
+                  _fmtBytes((st['runtimeBytes'] as num? ?? 0).toInt())),
+              _kvRow(ar ? 'المساحة الحرة' : 'Free space',
+                  _fmtBytes((st['freeBytes'] as num? ?? 0).toInt())),
+              _kvRow(ar ? 'ملفات العمل المؤقتة' : 'Work cache',
+                  '${_fmtBytes((st['cacheBytes'] as num? ?? 0).toInt())} · ${st['cacheFiles'] ?? 0} ${ar ? "ملف" : "files"}'),
+            ])),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            child: Row(children: [
+              Expanded(child: OutlinedButton.icon(
+                onPressed: _clearing || ((st['cacheFiles'] as num? ?? 0) == 0) ? null : _clearCache,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal, side: BorderSide(color: _teal.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10)),
+                icon: _clearing
+                    ? const SizedBox(width: 13, height: 13,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                    : const Icon(Icons.cleaning_services_rounded, size: 15),
+                label: Text(ar ? 'تفريغ المؤقت' : 'Clear Cache',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)))),
+              const SizedBox(width: 10),
+              Expanded(child: OutlinedButton.icon(
+                onPressed: _repair,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _gold, side: BorderSide(color: _gold.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10)),
+                icon: const Icon(Icons.build_rounded, size: 15),
+                label: Text(
+                    allCoreOk ? (ar ? 'إعادة الإعداد' : 'Re-run Setup')
+                              : (ar ? 'إصلاح الآن' : 'Repair Now'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)))),
+            ])),
+        ],
+      ]));
+  }
+
+  Widget _compRow(String label, bool ok,
+      {String? detail, bool optional = false, bool ar = false}) =>
+    Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Icon(
+          ok ? Icons.check_circle_rounded
+             : optional ? Icons.remove_circle_outline_rounded : Icons.cancel_rounded,
+          color: ok ? _teal : optional ? _cSub : _red, size: 15),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label, style: TextStyle(color: _cText, fontSize: 12))),
+        if (detail != null)
+          Text(detail, style: TextStyle(color: _cSub, fontSize: 11, fontFamily: 'monospace'))
+        else if (!ok && optional)
+          Text(ar ? 'اختياري' : 'optional',
+              style: TextStyle(color: _cSub, fontSize: 10)),
+      ]));
+
+  Widget _kvRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(children: [
+      Expanded(child: Text(label, style: TextStyle(color: _cSub, fontSize: 11.5))),
+      Text(value, style: TextStyle(color: _cText, fontSize: 11.5,
+          fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+    ]));
 }

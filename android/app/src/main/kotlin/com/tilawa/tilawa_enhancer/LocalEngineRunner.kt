@@ -84,6 +84,19 @@ class LocalEngineRunner(
                     result.success(null)
                 }
                 "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S193
+                // S237: component-level diagnostics for the Settings health panel —
+                // shows the user exactly WHICH piece of local mode is missing/broken
+                // instead of a single opaque "setup required" boolean.
+                "getSetupStatus" -> scope.launch {
+                    val st = computeSetupStatus()
+                    ui { result.success(st) }
+                }
+                // S237: frees tilawa_* work files (engine inputs/outputs, editor
+                // temp exports) that used to accumulate in cacheDir forever.
+                "clearEngineCache" -> scope.launch {
+                    val r = clearEngineCache(0L)  // 0 = everything, any age
+                    ui { result.success(r) }
+                }
                 "runProotCmd" -> {  // S202: was missing entirely — every audio-editor
                     // export (and any LocalEngineService.runProotCmd caller) fell through
                     // to notImplemented() below and threw a MissingPluginException in Dart.
@@ -157,6 +170,59 @@ class LocalEngineRunner(
         return true
     }
 
+    // ── S237: health status + cache management ──────────────────────────────
+
+    private fun dirSizeBytes(dir: File): Long {
+        if (!dir.exists()) return 0L
+        var total = 0L
+        try { dir.walkTopDown().forEach { if (it.isFile) total += it.length() } }
+        catch (_: Exception) {}
+        return total
+    }
+
+    private fun computeSetupStatus(): Map<String, Any> {
+        val df = File(alpineDir, "usr/local/bin/deep-filter")
+        val dfArchOk = try {
+            val h = ByteArray(20); FileInputStream(df).use { it.read(h) }
+            h[18] == 0xB7.toByte() && h[19] == 0x00.toByte()
+        } catch (_: Exception) { false }
+        val hasLibPython = File(alpineDir, "usr/lib").listFiles()
+            ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
+        val cacheFiles = cacheDir.listFiles()?.filter { it.isFile && it.name.startsWith("tilawa_") } ?: emptyList()
+        return mapOf(
+            "proot"        to prootBin.exists(),
+            "python"       to File(alpineDir, "usr/bin/python3").exists(),
+            "libpython"    to hasLibPython,
+            "ffmpeg"       to File(alpineDir, "usr/bin/ffmpeg").exists(),
+            "numpy"        to File(alpineDir, ".numpy_verified").exists(),
+            "scipy"        to File(alpineDir, ".scipy_verified").exists(),
+            "deepFilter"   to (df.exists() && df.length() > 1_000_000L && dfArchOk),
+            "engines"      to (enginesDir.list()?.count { it.endsWith(".py") } ?: 0),
+            "refAudio"     to (refAudioDir.list()?.count { it.endsWith(".mp3") } ?: 0),
+            "setupDone"    to File(dataDir, ".tilawa_setup_done").exists(),
+            "buildId"      to (File(alpineDir, ".pyenv_build_id").takeIf { it.exists() }?.readText()?.trim() ?: ""),
+            "cacheBytes"   to cacheFiles.sumOf { it.length() },
+            "cacheFiles"   to cacheFiles.size,
+            "runtimeBytes" to dirSizeBytes(alpineDir),
+            "freeBytes"    to dataDir.usableSpace,
+        )
+    }
+
+    /** Deletes tilawa_* work files in cacheDir older than [maxAgeMs] (0 = all).
+     *  Returns {freedBytes, deletedFiles}. */
+    private fun clearEngineCache(maxAgeMs: Long): Map<String, Any> {
+        var freed = 0L; var count = 0
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        cacheDir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name.startsWith("tilawa_") &&
+                (maxAgeMs == 0L || f.lastModified() < cutoff)) {
+                val len = f.length()
+                if (f.delete()) { freed += len; count++ }
+            }
+        }
+        return mapOf("freedBytes" to freed, "deletedFiles" to count)
+    }
+
     private suspend fun safeSetup() {
         try { setup(); ui { channel?.invokeMethod("setupDone", null) } }
         catch (e: Exception) {
@@ -174,6 +240,18 @@ class LocalEngineRunner(
         val archStr = if (isArm) "aarch64" else "x86_64"
 
         progress(1, "Detecting device ($archStr)…")
+
+        // S237: disk-space preflight — extraction needs the tar.gz + the
+        // unpacked rootfs simultaneously (~700 MB worst case). Fail with a
+        // clear message now instead of a cryptic mid-extraction write error.
+        val alreadyInstalled = File(alpineDir, "usr/bin/busybox").exists() &&
+            File(alpineDir, "usr/bin/python3").exists()
+        if (!alreadyInstalled) {
+            val freeMb = dataDir.usableSpace / 1_048_576L
+            if (freeMb < 700) throw IOException(
+                "Not enough storage: ${freeMb} MB free, ~700 MB needed during setup. " +
+                "Free up space and retry.")
+        }
 
         // 1. Use bundled libproot.so from nativeLibraryDir (always executable on Android)
         //    Android 10+ marks filesDir as noexec — downloaded binaries cannot run there.
@@ -498,6 +576,11 @@ class LocalEngineRunner(
         aggressive: Boolean = false) =  // S173
         withContext(Dispatchers.IO) {
         try {
+            // S237: keep cacheDir from growing forever — every run used to leave
+            // its tilawa_input_* copy and output behind permanently. Anything
+            // older than 24h is safely stale (results are re-downloaded/saved
+            // by the Dart side right after each run finishes).
+            try { clearEngineCache(24L * 60 * 60 * 1000) } catch (_: Exception) {}
             val script = mapOf(
                 "v11.0" to "engine_safaa_v4.py",  // S199-BUG-2: tajalli file never existed
                 "v11.1" to "engine_itiqan_v6_official.py",  // S199-BUG-3: ditto
@@ -726,30 +809,72 @@ class LocalEngineRunner(
         return Pair(code, output)
     }
 
+    // S237: hardened download — up to 4 attempts with exponential backoff, HTTP
+    // Range resume so a dropped connection continues where it left off instead
+    // of restarting a ~135 MB file from zero, and live speed in the phase text.
     private fun download(url: String, dest: File, label: String, p0: Int, p1: Int) {
         dest.parentFile?.mkdirs()
-        var conn: HttpURLConnection? = null
-        try {
-            conn = URL(url).openConnection() as HttpURLConnection
-            conn.connectTimeout = 30_000; conn.readTimeout = 300_000
-            conn.instanceFollowRedirects = true; conn.connect()
-            if (conn.responseCode !in 200..299)
-                throw IOException("HTTP ${conn.responseCode} for $url")
-            val total = conn.contentLengthLong; var done = 0L
-            conn.inputStream.use { inp ->
-                FileOutputStream(dest).use { out ->
-                    val buf = ByteArray(65_536); var n: Int
-                    while (inp.read(buf).also { n = it } != -1) {
-                        out.write(buf, 0, n); done += n
-                        if (total > 0) {
-                            val pct = p0 + ((done.toDouble() / total) * (p1 - p0)).toInt()
-                            ui { channel?.invokeMethod("setupProgress",
-                                mapOf("pct" to pct, "phase" to "Downloading $label…")) }
+        val part = File(dest.parentFile, dest.name + ".part")
+        var lastErr: Exception? = null
+        for (attempt in 1..4) {
+            var conn: HttpURLConnection? = null
+            try {
+                var already = if (part.exists()) part.length() else 0L
+                conn = URL(url).openConnection() as HttpURLConnection
+                conn.connectTimeout = 30_000; conn.readTimeout = 120_000
+                conn.instanceFollowRedirects = true
+                if (already > 0) conn.setRequestProperty("Range", "bytes=$already-")
+                conn.connect()
+                val code = conn.responseCode
+                if (already > 0 && code == 200) {
+                    // server ignored Range — restart from scratch
+                    part.delete(); already = 0L
+                } else if (code !in 200..299) {
+                    throw IOException("HTTP $code for $url")
+                }
+                val total = already + conn.contentLengthLong.coerceAtLeast(0)
+                var done = already
+                var lastUiMs = 0L
+                var speedWindowStart = System.currentTimeMillis()
+                var speedWindowBytes = 0L
+                var speedStr = ""
+                conn.inputStream.use { inp ->
+                    FileOutputStream(part, already > 0).use { out ->
+                        val buf = ByteArray(65_536); var n: Int
+                        while (inp.read(buf).also { n = it } != -1) {
+                            out.write(buf, 0, n); done += n; speedWindowBytes += n
+                            val now = System.currentTimeMillis()
+                            if (now - speedWindowStart >= 1000) {
+                                val mbps = speedWindowBytes / 1_048_576.0 / ((now - speedWindowStart) / 1000.0)
+                                speedStr = "  ·  %.1f MB/s".format(mbps)
+                                speedWindowStart = now; speedWindowBytes = 0
+                            }
+                            if (total > already && now - lastUiMs >= 250) {  // throttle UI spam
+                                lastUiMs = now
+                                val pct = p0 + ((done.toDouble() / total) * (p1 - p0)).toInt()
+                                val mb = "%.0f/%.0f MB".format(done / 1_048_576.0, total / 1_048_576.0)
+                                ui { channel?.invokeMethod("setupProgress",
+                                    mapOf("pct" to pct, "phase" to "Downloading $label…  $mb$speedStr")) }
+                            }
                         }
                     }
                 }
-            }
-        } finally { conn?.disconnect() }
+                if (!part.exists() || part.length() == 0L) throw IOException("empty download for $url")
+                dest.delete()
+                if (!part.renameTo(dest)) { part.copyTo(dest, overwrite = true); part.delete() }
+                return
+            } catch (e: Exception) {
+                lastErr = e
+                if (attempt < 4) {
+                    val backoffS = 1L shl attempt  // 2s, 4s, 8s
+                    ui { channel?.invokeMethod("setupProgress", mapOf("pct" to p0,
+                        "phase" to "Connection dropped — retrying $label (attempt ${attempt + 1}/4)…")) }
+                    try { Thread.sleep(backoffS * 1000) } catch (_: InterruptedException) {}
+                }
+            } finally { conn?.disconnect() }
+        }
+        part.delete()
+        throw IOException("Download failed after 4 attempts: $label — ${lastErr?.message}")
     }
 
     private fun extractTarGz(tarGz: File, destDir: File) {
