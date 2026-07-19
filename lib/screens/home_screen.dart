@@ -3512,7 +3512,7 @@ class _HomeScreenState extends State<HomeScreen>
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.code_rounded, color: _gold, size: 18),
             const SizedBox(width: 8),
-            Text(LangProvider.strings(context).ar ? 'كود محرك المعالجة' : 'Engine Source',
+            Text(LangProvider.strings(context).ar ? 'كود محركات المعالجة' : 'Engine Source Code',
                 style: const TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
@@ -3547,12 +3547,14 @@ class _HomeScreenState extends State<HomeScreen>
             const Icon(Icons.warning_amber_rounded,
                 color: Color(0xFFE8A020), size: 18),
             const SizedBox(width: 8),
+            // S239: was hardcoded Arabic regardless of app language
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('أدوات الذكاء الاصطناعي',
-                  style: TextStyle(color: Color(0xFFE8A020),
+              Text(s.ar ? 'أدوات الذكاء الاصطناعي' : 'AI Tools',
+                  style: const TextStyle(color: Color(0xFFE8A020),
                       fontSize: 13, fontWeight: FontWeight.w600)),
-              const Text('الخيار الأخير — استخدم بحذر ⚠️',
-                  style: TextStyle(color: Color(0xFF8B6020), fontSize: 10)),
+              Text(s.ar ? 'الخيار الأخير — استخدم بحذر ⚠️'
+                        : 'Last resort — use with care ⚠️',
+                  style: const TextStyle(color: Color(0xFF8B6020), fontSize: 10)),
             ]),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
