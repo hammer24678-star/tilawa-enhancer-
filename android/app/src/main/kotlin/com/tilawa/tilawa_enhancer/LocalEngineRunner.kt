@@ -516,8 +516,10 @@ class LocalEngineRunner(
             } catch (_: Exception) {
                 try {
                     progress(80, "Downloading DeepFilter…")
-                    val dfVer = "0_5_6"
-                    val url = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-${dfVer}-aarch64-unknown-linux-musl"
+                    // S240: the old ...-0_5_6-aarch64-unknown-linux-musl URL has always
+                    // 404'd — v0.5.6 ships no musl aarch64 asset. The real asset is
+                    // dot-versioned -gnu (same binary the APK bundles).
+                    val url = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0.5.6-aarch64-unknown-linux-gnu"
                     download(url, dfBin, "DeepFilter", 80, 88)
                     dfBin.setExecutable(true)
                 } catch (_: Exception) {
@@ -535,7 +537,8 @@ class LocalEngineRunner(
             dfBin.delete()
             progress(80, "DF3: wrong arch detected — downloading aarch64…")
             try {
-                val dfUrl = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0_5_6-aarch64-unknown-linux-musl"
+                // S240: same URL fix as above — musl asset never existed, gnu is real
+                val dfUrl = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0.5.6-aarch64-unknown-linux-gnu"
                 download(dfUrl, dfBin, "DeepFilter aarch64", 80, 88)
                 dfBin.setExecutable(true)
             } catch (e: Exception) {

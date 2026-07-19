@@ -46,19 +46,29 @@ docker run --rm \
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 
-# ── 3. DeepFilter — official prebuilt aarch64-musl binary ─────────────────────
-# S240 FIX: this used to `cargo install deep_filter` inside QEMU arm64 Docker —
-# compiling a large Rust ML project under CPU emulation. That took multiple
-# hours and killed the S239 CI runs twice (runner died mid-build at ~1.5h and
-# ~3.6h, job stuck on this step). Upstream publishes a prebuilt musl aarch64
-# binary — the SAME artifact LocalEngineRunner.kt already downloads as its
-# on-device fallback — so just fetch it (seconds, deterministic).
-echo "==> Downloading prebuilt deep-filter $DF_VERSION (aarch64 musl)"
-DF_URL="https://github.com/Rikorose/DeepFilterNet/releases/download/v${DF_VERSION}/deep-filter-${DF_VERSION//./_}-aarch64-unknown-linux-musl"
-curl -fsSL --retry 3 "$DF_URL" -o "$ASSETS/deep-filter"
+# ── 3. DeepFilter — use the committed binary; download only if missing ────────
+# S240 FIX (v2): the original `cargo install deep_filter` inside QEMU arm64
+# Docker compiled a large Rust ML project under CPU emulation — multiple hours,
+# and it killed the S239 CI runs twice. It was also pointless: a working 39 MB
+# aarch64 deep-filter binary is ALREADY COMMITTED at assets/alpine/deep-filter
+# (the same one every previous release shipped) and the cargo build just
+# overwrote it. Use it. If it's ever missing, fall back to upstream's release
+# binary — NOTE: v0.5.6 publishes NO aarch64-musl asset (the old
+# deep-filter-0_5_6-aarch64-unknown-linux-musl URL 404s and always has); the
+# real asset is dot-versioned aarch64-unknown-linux-gnu, which matches the
+# interpreter of the committed binary.
+echo "==> DeepFilter binary"
+if [ -f "$ASSETS/deep-filter" ] && [ "$(stat -c%s "$ASSETS/deep-filter")" -gt 1000000 ]; then
+    echo "    using committed deep-filter"
+else
+    DF_URL="https://github.com/Rikorose/DeepFilterNet/releases/download/v${DF_VERSION}/deep-filter-${DF_VERSION}-aarch64-unknown-linux-gnu"
+    echo "    committed binary missing — downloading $DF_URL"
+    curl -fsSL --retry 3 "$DF_URL" -o "$ASSETS/deep-filter"
+fi
 chmod +x "$ASSETS/deep-filter"
-# Same ELF-arch guard the app applies on-device (bytes 18-19: aarch64 = b7 00)
-ARCH_BYTES=$(dd if="$ASSETS/deep-filter" bs=1 skip=18 count=2 2>/dev/null | xxd -p)
+# Same ELF-arch guard the app applies on-device (bytes 18-19: aarch64 = b7 00).
+# od (coreutils) instead of xxd — always present.
+ARCH_BYTES=$(od -An -tx1 -j18 -N2 "$ASSETS/deep-filter" | tr -d ' \n')
 if [ "$ARCH_BYTES" != "b700" ]; then
     echo "ERROR: deep-filter is not aarch64 (e_machine=$ARCH_BYTES)"; exit 1
 fi
