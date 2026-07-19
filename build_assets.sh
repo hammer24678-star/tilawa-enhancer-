@@ -46,18 +46,23 @@ docker run --rm \
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 
-# ── 3. DeepFilter — build inside arm64 Alpine Docker (same as Python env) ──
-echo "==> Building deep-filter for aarch64 inside arm64 Docker"
-docker run --rm --platform linux/arm64 \
-    --volume "$PWD/$ASSETS:/out" \
-    alpine:3.21 sh -c "
-        apk add --no-progress rust cargo musl-dev 2>&1 | tail -3
-        cargo install deep_filter --root /tmp/df 2>&1 | tail -3
-        cp /tmp/df/bin/deep_filter /out/deep-filter
-        chmod +x /out/deep-filter
-        echo done
-    "
-echo "    deep-filter: $(du -sh $ASSETS/deep-filter 2>/dev/null | cut -f1 || echo FAILED)"
+# ── 3. DeepFilter — official prebuilt aarch64-musl binary ─────────────────────
+# S240 FIX: this used to `cargo install deep_filter` inside QEMU arm64 Docker —
+# compiling a large Rust ML project under CPU emulation. That took multiple
+# hours and killed the S239 CI runs twice (runner died mid-build at ~1.5h and
+# ~3.6h, job stuck on this step). Upstream publishes a prebuilt musl aarch64
+# binary — the SAME artifact LocalEngineRunner.kt already downloads as its
+# on-device fallback — so just fetch it (seconds, deterministic).
+echo "==> Downloading prebuilt deep-filter $DF_VERSION (aarch64 musl)"
+DF_URL="https://github.com/Rikorose/DeepFilterNet/releases/download/v${DF_VERSION}/deep-filter-${DF_VERSION//./_}-aarch64-unknown-linux-musl"
+curl -fsSL --retry 3 "$DF_URL" -o "$ASSETS/deep-filter"
+chmod +x "$ASSETS/deep-filter"
+# Same ELF-arch guard the app applies on-device (bytes 18-19: aarch64 = b7 00)
+ARCH_BYTES=$(dd if="$ASSETS/deep-filter" bs=1 skip=18 count=2 2>/dev/null | xxd -p)
+if [ "$ARCH_BYTES" != "b700" ]; then
+    echo "ERROR: deep-filter is not aarch64 (e_machine=$ARCH_BYTES)"; exit 1
+fi
+echo "    deep-filter: $(du -sh $ASSETS/deep-filter | cut -f1) (aarch64 ✓)"
 
 # ── 4. Reference audio ────────────────────────────────────────────────────────
 echo "==> Downloading reference audio"

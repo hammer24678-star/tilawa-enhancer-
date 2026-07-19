@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # S240: asset step used to hang for hours when the QEMU DeepFilter build
+    # stalled (now removed) — cap the job so any future hang fails fast.
+    timeout-minutes: 120
     permissions:
       contents: write
     steps:
