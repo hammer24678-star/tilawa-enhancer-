@@ -25,6 +25,20 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # S241: Tajawal — custom Arabic typeface (SIL OFL, Boutros International).
+  # Bundled so Arabic text renders with proper, beautiful letterforms fully
+  # offline; its Latin glyphs keep English looking consistent too.
+  fonts:
+    - family: Tajawal
+      fonts:
+        - asset: assets/fonts/Tajawal-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Tajawal-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Tajawal-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Tajawal-ExtraBold.ttf
+          weight: 800
   assets:
     - assets/
     - assets/servers.json

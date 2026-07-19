@@ -42,6 +42,7 @@ ThemeData _buildDarkTheme() => ThemeData(
     background: Color(0xFF020D0C),
   ),
   useMaterial3: true,
+  fontFamily: 'Tajawal',  // S241: custom Arabic typeface (bundled, offline)
   scaffoldBackgroundColor: const Color(0xFF020D0C),
   appBarTheme: const AppBarTheme(
     backgroundColor: Color(0xFF020D0C),
@@ -58,6 +59,7 @@ ThemeData _buildLightTheme() => ThemeData(
     background: Color(0xFFFAF7EE),
   ),
   useMaterial3: true,
+  fontFamily: 'Tajawal',  // S241: custom Arabic typeface (bundled, offline)
   scaffoldBackgroundColor: const Color(0xFFFAF7EE),
   cardColor: const Color(0xFFF3EED9),
   appBarTheme: const AppBarTheme(

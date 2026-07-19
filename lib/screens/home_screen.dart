@@ -3477,8 +3477,9 @@ class _HomeScreenState extends State<HomeScreen>
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.equalizer_rounded, color: _teal, size: 18),
             const SizedBox(width: 8),
-            const Text('محرر الصوت',
-                style: TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
+            // S241: was hardcoded Arabic — leaked محرر الصوت into English mode
+            Text(s.ar ? 'محرر الصوت' : 'Audio Editor',
+                style: const TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
                 color: Color(0xFF484F58), size: 18),

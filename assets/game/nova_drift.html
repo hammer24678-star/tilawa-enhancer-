@@ -226,6 +226,10 @@
   .relicName{font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:.5px; color:var(--ink); margin-bottom:5px; line-height:1.4;}
   .relicDesc{font-size:9px; color:var(--dim); line-height:1.4;}
 
+  /* S241: the shared overlay background (rgba .95) let the menu behind —
+     NOVA DRIFT title, ship cards, LAUNCH — bleed through between the
+     achievement rows and made the whole screen look broken. Solid bg. */
+  #achievementsOverlay{background:#070914;}
   #achievementsList{display:flex; flex-direction:column; gap:8px; width:100%; max-width:min(340px, calc(100vw - 48px)); box-sizing:border-box;}
   .achRow{
     display:flex; justify-content:space-between; align-items:center; gap:10px;
@@ -249,8 +253,15 @@
     left:50%; transform:translate(-50%,-14px);
     width:max-content; max-width:min(340px, calc(100vw - 32px));
     box-sizing:border-box; overflow-wrap:break-word;
-    background:rgba(13,18,38,.94); border:1px solid rgba(255,194,75,.5);
-    border-radius:4px; padding:10px 20px; text-align:center; z-index:9;
+    background:rgba(13,18,38,.97); border:1px solid rgba(255,194,75,.5);
+    border-radius:4px; padding:10px 20px; text-align:center;
+    /* S241 REAL FIX (verified via headless-Chromium screenshots): z-index was
+       9 — BELOW the menu overlay (10) and the settings/upgrades/achievements
+       modals (15). Achievements that unlock while those are open (Fleet
+       Commander from the ship grid, Fully Loaded from the upgrades list,
+       Salvage Baron on the end screen…) rendered completely hidden behind
+       them. The toast must sit above every overlay. */
+    z-index:30;
     opacity:0; pointer-events:none; transition:opacity .3s ease, transform .3s ease;
     box-shadow:0 0 20px rgba(255,194,75,.25);
   }
