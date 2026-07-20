@@ -33,16 +33,7 @@ void main() async {
 }
 
 // ── S31-F4: Theme helpers & ThemeProvider ─────────────────────────────────────
-// S242: font is now language-aware. Tajawal's Arabic came out cramped and
-// condensed, so Arabic mode uses IBM Plex Sans Arabic (elegant, properly
-// spaced, ships its own clean Latin for embedded terms like numpy/MP3/Hz).
-// English mode keeps Tajawal — the Latin look that was liked. Each family is
-// listed as the other's fallback so any missing glyph still resolves.
-String _primaryFont(bool ar) => ar ? 'IBMPlexSansArabic' : 'Tajawal';
-List<String> _fontFallback(bool ar) =>
-    ar ? const ['Tajawal'] : const ['IBMPlexSansArabic'];
-
-ThemeData _buildDarkTheme(bool ar) => ThemeData(
+ThemeData _buildDarkTheme() => ThemeData(
   colorScheme: const ColorScheme.dark(
     primary:    Color(0xFFD4AF37),
     surface:    Color(0xFF0F2420), // S40-MAIN
@@ -51,8 +42,7 @@ ThemeData _buildDarkTheme(bool ar) => ThemeData(
     background: Color(0xFF020D0C),
   ),
   useMaterial3: true,
-  fontFamily: _primaryFont(ar),
-  fontFamilyFallback: _fontFallback(ar),
+  fontFamily: 'Tajawal',  // S241: custom typeface (bundled, offline)
   scaffoldBackgroundColor: const Color(0xFF020D0C),
   appBarTheme: const AppBarTheme(
     backgroundColor: Color(0xFF020D0C),
@@ -61,7 +51,7 @@ ThemeData _buildDarkTheme(bool ar) => ThemeData(
   ),
 );
 
-ThemeData _buildLightTheme(bool ar) => ThemeData(
+ThemeData _buildLightTheme() => ThemeData(
   colorScheme: const ColorScheme.light(
     primary: Color(0xFFB8941F),   // deeper gold for light bg
     surface: Color(0xFFF3EED9),   // warm parchment
@@ -69,8 +59,7 @@ ThemeData _buildLightTheme(bool ar) => ThemeData(
     background: Color(0xFFFAF7EE),
   ),
   useMaterial3: true,
-  fontFamily: _primaryFont(ar),
-  fontFamilyFallback: _fontFallback(ar),
+  fontFamily: 'Tajawal',  // S241: custom typeface (bundled, offline)
   scaffoldBackgroundColor: const Color(0xFFFAF7EE),
   cardColor: const Color(0xFFF3EED9),
   appBarTheme: const AppBarTheme(
@@ -152,13 +141,12 @@ class _TilawaAppState extends State<TilawaApp> {
               valueListenable: _themeNotifier,
               builder: (context, isDark, __) {
                 final s = S(ar: _langNotifier.value);
-                final ar = _langNotifier.value;  // S242: font follows language
                 return MaterialApp(
                   title: s.appName,
                   debugShowCheckedModeBanner: false,
                   themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
-                  darkTheme: _buildDarkTheme(ar),
-                  theme: _buildLightTheme(ar),
+                  darkTheme: _buildDarkTheme(),
+                  theme: _buildLightTheme(),
                   home: widget.seenWelcome
                       ? const HomeScreen()
                       : const WelcomeScreen(),

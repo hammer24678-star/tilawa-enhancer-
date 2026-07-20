@@ -1087,11 +1087,17 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               blurRadius: 12, offset: const Offset(0, 5))]),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         ClipRRect(borderRadius: BorderRadius.circular(10),
-          child: GestureDetector(
+          // S243: seek used context.findRenderObject() — that's the WHOLE
+          // screen's box, not the waveform's, so the tap fraction was scaled by
+          // screen width and offset by the card margins (seek landed off). Use
+          // the waveform's own width via LayoutBuilder. The wave is drawn
+          // left→right in raw canvas coords (not mirrored), so this stays
+          // correct in RTL too.
+          child: LayoutBuilder(builder: (ctx, cons) => GestureDetector(
             onTapDown: (d) {
-              final box = context.findRenderObject() as RenderBox?;
-              if (box == null) return;
-              final frac = (d.localPosition.dx / box.size.width).clamp(0.0, 1.0);
+              final w = cons.maxWidth;
+              if (w <= 0 || _durationSec <= 0) return;
+              final frac = (d.localPosition.dx / w).clamp(0.0, 1.0);
               _player.seek(Duration(milliseconds: (frac * _durationSec * 1000).round()));
               setState(() => _positionSec = frac * _durationSec);
             },
@@ -1101,7 +1107,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                   painter: _WavePainter(bars: _bars, rms: _rmsBars, playPos: pos,
                     trimStart: _trimStart, trimEnd: _trimEnd,
                     animT: _waveCtrl.value, playing: _playing, analyzed: _analyzed),
-                  size: const Size(double.infinity, 92)))))),
+                  size: const Size(double.infinity, 92))))))),
         // S236 — analysis status + real loudness stats under the waveform
         if (_analyzing || _analyzed)
           Padding(
@@ -1212,7 +1218,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       child: Stack(children: [
         AnimatedAlign(
           duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic,
-          alignment: Alignment(-1 + 2 * _tab.index / (n - 1), 1),
+          // S243 RTL FIX: was plain Alignment (never flips), so in Arabic the
+          // tab Row reversed but the underline stayed LTR — it sat under the
+          // wrong tab. AlignmentDirectional is start-relative, matching the Row.
+          alignment: AlignmentDirectional(-1 + 2 * _tab.index / (n - 1), 1),
           child: FractionallySizedBox(widthFactor: 1 / n,
             child: Container(height: 2.4, margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
@@ -1728,7 +1737,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         Row(children: ['Stereo','Mono'].map((c) {
           final sel = c == _channels;
           return Expanded(child: GestureDetector(onTap: () => setState(() => _channels = c),
-            child: Container(margin: const EdgeInsets.only(right: 6),
+            child: Container(margin: const EdgeInsetsDirectional.only(end: 6),
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
                 color: sel ? _goldDim.withValues(alpha: 0.35) : _card,
@@ -1743,7 +1752,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           Row(children: [16,24,32].map((b) {
             final sel = b == _wavBitDepth;
             return Expanded(child: GestureDetector(onTap: () => setState(() => _wavBitDepth = b),
-              child: Container(margin: const EdgeInsets.only(right: 6),
+              child: Container(margin: const EdgeInsetsDirectional.only(end: 6),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                   color: sel ? _goldDim.withValues(alpha: 0.35) : _card,
@@ -1924,7 +1933,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       onTap: () { HapticFeedback.selectionClick();
         setState(() { for (int i = 0; i < 10; i++) _eq[i] = vals[i]; }); },
       child: AnimatedContainer(duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(right: 8),
+        margin: const EdgeInsetsDirectional.only(end: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
             color: active ? _goldDim.withValues(alpha: 0.55) : _card,
@@ -1960,7 +1969,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   // ── S232: FX rack redesign — collapsible rows, lamp indicators, search ──────
   Widget _rackLamp(bool on) => Container(width: 8, height: 8,
-    margin: const EdgeInsets.only(right: 10),
+    margin: const EdgeInsetsDirectional.only(end: 10),
     decoration: BoxDecoration(shape: BoxShape.circle,
       color: on ? _gold : Colors.transparent,
       border: Border.all(color: on ? _gold : _textDim, width: 1.4),
