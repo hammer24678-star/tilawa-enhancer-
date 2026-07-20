@@ -2438,64 +2438,89 @@ class _WavePainter extends CustomPainter {
   @override
   void paint(Canvas c, Size sz) {
     final n = bars.length; final bw = sz.width / n; final mid = sz.height / 2;
-    final rActive   = Paint()..shader = ui.Gradient.linear(Offset(0,0), Offset(0,sz.height),
-        [const Color(0xFF1DB898), const Color(0xFF0A5A3A)]);
-    final rActiveGhost = Paint()..color = const Color(0xFF1DB898).withOpacity(0.30);
-    final rRmsCore  = Paint()..shader = ui.Gradient.linear(Offset(0,0), Offset(0,sz.height),
-        [const Color(0xFF37E0B8), const Color(0xFF0F7A52)]);
-    final rInactive = Paint()..color = const Color(0xFF1A3A30).withOpacity(0.5);
-    final rInactiveGhost = Paint()..color = const Color(0xFF1A3A30).withOpacity(0.25);
-    final rTrim     = Paint()..color = Colors.black.withOpacity(0.35);
+    final barW = (bw - 2).clamp(1.0, bw);
+
+    // S242: SoundCloud-style progress waveform. Bars the playhead has already
+    // passed light up GOLD; bars still ahead stay TEAL — so the sweep visibly
+    // "intersects" the wave as it plays. A tight energy bump + scan glow marks
+    // the exact play point. (Old code left every bar the same teal with only a
+    // faint flat wash, plus a jumpy global sine that read as broken.)
+    Paint vgrad(Color a, Color b) => Paint()
+      ..shader = ui.Gradient.linear(const Offset(0, 0), Offset(0, sz.height), [a, b]);
+    final playedCore   = vgrad(const Color(0xFFF3D170), const Color(0xFF8A6A12));
+    final playedGhost  = Paint()..color = const Color(0xFFD4AF37).withOpacity(0.30);
+    final aheadCore    = vgrad(const Color(0xFF37E0B8), const Color(0xFF0C5B3C));
+    final aheadGhost   = Paint()..color = const Color(0xFF1DB898).withOpacity(0.26);
+    final inactive     = Paint()..color = const Color(0xFF24463C).withOpacity(0.55);
+    final inactiveGhost= Paint()..color = const Color(0xFF1A3A30).withOpacity(0.22);
+    final hotCore      = vgrad(const Color(0xFFFFF6D0), const Color(0xFFE7BE3F));
+    final rTrim        = Paint()..color = Colors.black.withOpacity(0.35);
 
     final x0 = trimStart * sz.width; final x1 = trimEnd * sz.width;
+
+    final hasRms = rms != null && rms!.length == n;
+    final headF  = playPos * n;  // fractional bar index of the playhead
+
+    void bar(int i, Paint ghost, Paint core, double amp, double rmsAmp) {
+      final x = i * bw + 1.0;
+      final h = amp.clamp(0.05, 1.0) * mid * 0.9;
+      if (hasRms) {
+        c.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(x, mid - h, barW, h * 2), const Radius.circular(2.5)), ghost);
+        final hr = rmsAmp.clamp(0.03, 1.0) * mid * 0.9;
+        c.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(x, mid - hr, barW, hr * 2), const Radius.circular(2.5)), core);
+      } else {
+        c.drawRRect(RRect.fromRectAndRadius(
+            Rect.fromLTWH(x, mid - h, barW, h * 2), const Radius.circular(2.5)), core);
+      }
+    }
+
+    for (int i = 0; i < n; i++) {
+      final frac = i / n;
+      final inTrim = frac >= trimStart && frac < trimEnd;
+      final played = frac < playPos;
+
+      double amp = bars[i];
+      double rmsAmp = hasRms ? rms![i] : 0;
+      // tight reactive bump on the ~2 bars at the play point (localized, not global)
+      if (playing) {
+        final dist = (i - headF).abs();
+        if (dist < 2.4) {
+          final bump = 0.16 * (1 - dist / 2.4) * (0.72 + 0.28 * sin(animT * 2 * pi * 4));
+          amp += bump; rmsAmp += bump * 0.8;
+        } else if (!analyzed) {
+          amp += 0.06 * sin(animT * 2 * pi + i * 0.28);  // placeholder liveliness
+        }
+      }
+
+      Paint core, ghost;
+      if (!inTrim) { core = inactive; ghost = inactiveGhost; }
+      else if (playing && (i - headF).abs() < 0.9) { core = hotCore; ghost = playedGhost; }
+      else if (played) { core = playedCore; ghost = playedGhost; }
+      else { core = aheadCore; ghost = aheadGhost; }
+      bar(i, ghost, core, amp, rmsAmp);
+    }
+
+    // trim shading on top of the bars so out-of-range reads as dimmed
     if (trimStart > 0) c.drawRect(Rect.fromLTWH(0, 0, x0, sz.height), rTrim);
     if (trimEnd   < 1) c.drawRect(Rect.fromLTWH(x1, 0, sz.width - x1, sz.height), rTrim);
 
-    final hasRms = rms != null && rms!.length == n;
-    for (int i = 0; i < n; i++) {
-      final x = i * bw + 1.0; final frac = i / n;
-      final inTrim = frac >= trimStart && frac < trimEnd;
-      double pulse = 0.0;
-      if (playing) {
-        if (analyzed) {
-          // energy ripple centered on the playhead (±~4 bars), pulsing in time
-          final d = (frac - playPos) / 0.04;
-          final envelope = d.abs() < 4 ? (1.0 / (1.0 + d * d)) : 0.0;
-          pulse = 0.16 * envelope * (0.6 + 0.4 * sin(animT * 2 * pi * 3));
-        } else {
-          pulse = 0.08 * sin(animT * 2 * pi + i * 0.25);
-        }
-      }
-      final h = (bars[i] + pulse).clamp(0.05, 1.0) * mid * 0.88;
-      if (hasRms) {
-        // outer translucent peak envelope + solid inner RMS body
-        c.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromLTWH(x, mid - h, bw - 2, h * 2), const Radius.circular(2.5)),
-            inTrim ? rActiveGhost : rInactiveGhost);
-        final hr = ((rms![i] + pulse * 0.7).clamp(0.03, 1.0)) * mid * 0.88;
-        c.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromLTWH(x, mid - hr, bw - 2, hr * 2), const Radius.circular(2.5)),
-            inTrim ? rRmsCore : rInactive);
-      } else {
-        c.drawRRect(RRect.fromRectAndRadius(
-            Rect.fromLTWH(x, mid - h, bw - 2, h * 2), const Radius.circular(2.5)),
-            inTrim ? rActive : rInactive);
-      }
-    }
-
+    // ── playhead: soft scan glow + crisp line + cap dots ──
     final px = playPos * sz.width;
-    c.drawRect(Rect.fromLTWH(0, 0, px, sz.height),
-        Paint()..color = const Color(0xFFD4AF37).withOpacity(0.16));
-    if (playing) {
-      // soft glow behind the playhead while audio is running
-      c.drawLine(Offset(px, 0), Offset(px, sz.height),
-          Paint()..color = const Color(0xFFD4AF37).withOpacity(0.20 + 0.15 * sin(animT * 2 * pi * 2))
-                 ..strokeWidth = 6
-                 ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4));
-    }
+    const glowW = 24.0;
+    c.drawRect(Rect.fromLTWH(px - glowW / 2, 0, glowW, sz.height),
+        Paint()..shader = ui.Gradient.linear(
+            Offset(px - glowW / 2, 0), Offset(px + glowW / 2, 0), [
+          Colors.transparent,
+          const Color(0xFFF3D170).withOpacity(playing ? 0.22 + 0.10 * sin(animT * 2 * pi * 2) : 0.14),
+          Colors.transparent,
+        ]));
     c.drawLine(Offset(px, 0), Offset(px, sz.height),
-        Paint()..color = const Color(0xFFD4AF37)..strokeWidth = 1.5);
-    c.drawCircle(Offset(px, sz.height - 4), 2.5, Paint()..color = const Color(0xFFD4AF37));
+        Paint()..color = const Color(0xFFFFF1C4)..strokeWidth = 1.6);
+    final capPaint = Paint()..color = const Color(0xFFFFF1C4);
+    c.drawCircle(Offset(px, 3), 2.6, capPaint);
+    c.drawCircle(Offset(px, sz.height - 3), 2.6, capPaint);
 
     void handle(double x, Color col, bool start) {
       c.drawLine(Offset(x,0), Offset(x,sz.height), Paint()..color=col..strokeWidth=1.8);
