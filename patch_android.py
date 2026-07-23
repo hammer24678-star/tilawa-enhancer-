@@ -6,7 +6,7 @@ Changes:
              Graceful skip if logo.png missing or PIL unavailable.
   S19-QUERY: <queries> block in manifest for Android 11+ audio player intent
              (needed by url_launcher "Open in Player" feature).
-  VERSION  : versionCode=9, versionName="2.7.0" matches pubspec 2.7.0+9
+  VERSION  : versionCode=10, versionName="2.7.1" matches pubspec 2.7.1+10  # S246
 """
 from pathlib import Path
 
@@ -34,8 +34,8 @@ android {
         applicationId "com.tilawaenhancer"
         minSdk 21
         targetSdk 36
-        versionCode 9
-        versionName "2.7.0"
+        versionCode 10
+        versionName "2.7.1"
     }
     buildTypes {
         release {
@@ -61,7 +61,7 @@ dependencies {
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"
 }
 """)
-print("  build.gradle OK (v11: versionCode=9, versionName=2.7.0)")
+print("  build.gradle OK (v12: versionCode=10, versionName=2.7.1)")  # S246
 
 # ── STEP 2: settings.gradle ───────────────────────────────────────────────────
 (ROOT / "settings.gradle").write_text("""
