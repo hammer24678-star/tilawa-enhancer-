@@ -31,10 +31,16 @@ echo "==> Building Python env inside arm64 Alpine Docker"
 docker run --rm \
     --platform linux/arm64 \
     --volume "$PWD/$ASSETS:/out" \
+    --volume "$PWD/pip_wheels:/pip_wheels:ro" \
     alpine:3.21 \
     sh -c "
         apk update --no-progress 2>&1 | tail -2
-        apk add --no-progress python3 py3-pip py3-numpy py3-scipy ffmpeg 2>&1 | tail -5
+        apk add --no-progress python3 py3-pip py3-numpy py3-scipy ffmpeg \
+            build-base python3-dev libsndfile 2>&1 | tail -5
+        echo '==> Installing embedded audio-editor packages (offline, S247)'
+        pip install --quiet --no-cache-dir --break-system-packages \
+            --no-index --find-links=/pip_wheels \
+            noisereduce nara_wpe pystoi pyloudnorm webrtcvad soundfile soxr audioread decorator joblib lazy_loader pooch tqdm msgpack librosa 2>&1 | tail -30
         rm -rf /var/cache/apk/*
         echo 'Python: '$(python3 --version)
         echo 'ffmpeg: '$(which ffmpeg 2>/dev/null && ffmpeg -version 2>&1 | head -1 || echo 'checking inside tar...')
@@ -45,6 +51,7 @@ docker run --rm \
         echo 'python-env.tar.gz done'
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
+echo "    embedded pip_wheels: $(du -sh pip_wheels 2>/dev/null | cut -f1) (S247: noisereduce, nara_wpe, pystoi, pyloudnorm, webrtcvad + deps)"
 
 # ── 3. DeepFilter — use the committed binary; download only if missing ────────
 # S240 FIX (v2): the original `cargo install deep_filter` inside QEMU arm64
