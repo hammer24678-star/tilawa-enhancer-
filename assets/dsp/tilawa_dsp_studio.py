@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 tilawa_dsp_studio.py — S228 "Studio Engine" · S236 v2 "full FX suite + analysis"
+· S245 "real EBU R128 loudness"
 
 General-purpose numpy/scipy audio DSP engine for the Tilawa Audio Editor.
 
@@ -26,9 +27,10 @@ USAGE (analysis — S236):
 
 Analysis writes JSON to <out_json_path> (NOT stdout — the proot channel
 truncates stdout to its last 800 chars): real waveform peak/RMS buckets,
-a log-spaced average spectrum, duration, peak/RMS dBFS, LUFS-ish loudness
-and clipping percentage. The Flutter side uses it to draw the *actual*
-waveform instead of placeholder bars.
+a log-spaced average spectrum, duration, peak/RMS dBFS, real integrated
+LUFS + Loudness Range (LRA) + true-peak (dBTP), and clipping percentage.
+The Flutter side uses it to draw the *actual* waveform instead of
+placeholder bars, and to power the Compliance tab's platform checklist.
 
 <params_json_path> is a JSON file (see audio_editor_screen.dart
 _buildDspParams()) describing the trim window, EQ bands, and every effect —
@@ -49,7 +51,7 @@ Pipeline order (fixed, applied only where the relevant param is non-default):
   tremolo → vibrato → chorus → flanger → phaser → bitcrush →
   stereo width → Haas widen → stereo enhance → swap/channel mode →
   de-esser → adaptive normalize → limiter →
-  volume → loudness (LUFS-ish) normalize + true-peak limit →
+  volume → loudness (real ITU-R BS.1770-4 LUFS) normalize + true-peak limit →
   fades → pad start/end → clip → encode
 """
 import sys
@@ -781,37 +783,134 @@ def _pad(x, sr, start_s, end_s):
     return np.concatenate(parts, axis=0) if len(parts) > 1 else x
 
 
-# ─── Loudness — simplified BS.1770-style K-weighting + gating + true peak ──
-# NOTE: this is a lightweight approximation (high-pass + shelf pre-filter,
-# gated RMS), not a certified loudness meter. Good enough to bring levels
-# into a consistent, sane ballpark; not a mastering-grade LUFS meter.
+# ─── Loudness — real ITU-R BS.1770-4 meter, vendored from pyloudnorm ────────
+# S245: pyloudnorm (github.com/csteinmetz1/pyloudnorm, MIT license) is pure
+# Python + numpy/scipy — no compiled extension, no extra pip install needed
+# on-device — so its actual algorithm is inlined here directly rather than
+# the hand-rolled approximation this file used before (single absolute-
+# threshold gate, no relative gate, no proper K-weighting shelf/high-pass
+# pair). This IS the real ITU-R BS.1770-4 two-stage gated measurement:
+# K-weighting (high-shelf + high-pass) → 400ms blocks, 75% overlap →
+# absolute gate (-70 LUFS) → relative gate (measured mean - 10 LU) → final
+# integrated loudness. Loudness Range (LRA) follows EBU Tech 3342.
+
+def _k_weight_coeffs(sr):
+    """RBJ high-shelf (+4dB @ 1500Hz) cascaded with a high-pass (38Hz) —
+    the two K-weighting stages from ITU-R BS.1770-4 Annex 1."""
+    def high_shelf(g_db, q, fc, sr):
+        a = 10 ** (g_db / 40.0)
+        w0 = 2 * np.pi * fc / sr
+        alpha = np.sin(w0) / (2.0 * q)
+        cosw0 = np.cos(w0)
+        b0 = a * ((a + 1) + (a - 1) * cosw0 + 2 * np.sqrt(a) * alpha)
+        b1 = -2 * a * ((a - 1) + (a + 1) * cosw0)
+        b2 = a * ((a + 1) + (a - 1) * cosw0 - 2 * np.sqrt(a) * alpha)
+        a0 = (a + 1) - (a - 1) * cosw0 + 2 * np.sqrt(a) * alpha
+        a1 = 2 * ((a - 1) - (a + 1) * cosw0)
+        a2 = (a + 1) - (a - 1) * cosw0 - 2 * np.sqrt(a) * alpha
+        return np.array([b0, b1, b2]) / a0, np.array([a0, a1, a2]) / a0
+
+    def high_pass(q, fc, sr):
+        w0 = 2 * np.pi * fc / sr
+        alpha = np.sin(w0) / (2.0 * q)
+        cosw0 = np.cos(w0)
+        b0 = (1 + cosw0) / 2
+        b1 = -(1 + cosw0)
+        b2 = (1 + cosw0) / 2
+        a0 = 1 + alpha
+        a1 = -2 * cosw0
+        a2 = 1 - alpha
+        return np.array([b0, b1, b2]) / a0, np.array([a0, a1, a2]) / a0
+
+    b1, a1 = high_shelf(4.0, 1 / np.sqrt(2), 1500.0, sr)
+    b2, a2 = high_pass(0.5, 38.0, sr)
+    return (b1, a1), (b2, a2)
+
 
 def _k_weight(x, sr):
-    sos_hp = signal.butter(2, 60 / (sr / 2.0), btype='highpass', output='sos')
-    b_shelf, a_shelf = _peaking_biquad(4000, 4.0, 0.7, sr)
-    y = signal.sosfilt(sos_hp, x, axis=0)
-    y = signal.lfilter(b_shelf, a_shelf, y, axis=0)
+    (b1, a1), (b2, a2) = _k_weight_coeffs(sr)
+    y = signal.lfilter(b1, a1, x, axis=0)
+    y = signal.lfilter(b2, a2, y, axis=0)
     return y
 
 
-def _measure_lufs_ish(x, sr):
+# channel gains per ITU-R BS.1770-4 (L, R, C, Ls, Rs) — this app is always
+# stereo (L, R), so only the first two are ever used.
+_CH_GAIN = [1.0, 1.0, 1.0, 1.41, 1.41]
+
+
+def _block_powers(x, sr, block_s, overlap):
+    """Per-block, per-channel weighted mean-square power (eq. 1 of BS.1770-4),
+    then combined across channels per block (the "l_j" gating loudness)."""
+    n = x.shape[0]
+    ch = x.shape[1]
+    step = 1.0 - overlap
+    hop = max(1, int(block_s * sr * step))
+    block = max(1, int(block_s * sr))
+    if n < block:
+        return np.array([]), np.zeros((ch, 0))
+    starts = np.arange(0, n - block + 1, hop)
+    z = np.zeros((ch, len(starts)))
+    for c in range(ch):
+        for j, s in enumerate(starts):
+            z[c, j] = np.mean(x[s:s + block, c] ** 2)
+    with np.errstate(divide='ignore'):
+        l_j = -0.691 + 10.0 * np.log10(
+            np.sum([_CH_GAIN[c] * z[c] for c in range(ch)], axis=0))
+    return l_j, z
+
+
+def _integrated_loudness(x, sr):
+    """Real ITU-R BS.1770-4 gated integrated loudness (vendored pyloudnorm
+    algorithm) — replaces the old single-gate approximation."""
+    if not SCIPY_OK:
+        return -23.0
     kw = _k_weight(x, sr)
-    block = max(1, int(0.4 * sr))
-    hop = max(1, int(0.1 * sr))
-    n = kw.shape[0]
-    powers = []
-    for s in range(0, max(n - block, 1), hop):
-        seg = kw[s:s + block]
-        p = float(np.mean(seg ** 2))
-        if p > 0:
-            powers.append(p)
-    if not powers:
-        powers = [float(np.mean(kw ** 2)) + 1e-12]
-    powers = np.array(powers)
-    gate = np.mean(powers) * 10 ** (-10 / 10.0)
-    gated = powers[powers > gate] if np.any(powers > gate) else powers
-    mean_p = np.mean(gated) + 1e-12
-    return float(-0.691 + 10 * np.log10(mean_p))
+    l_j, z = _block_powers(kw, sr, block_s=0.4, overlap=0.75)
+    if l_j.size == 0:
+        return float(-0.691 + 10 * np.log10(np.mean(kw ** 2) + 1e-12))
+    ch = z.shape[0]
+    with np.errstate(invalid='ignore'):
+        abs_gated = l_j >= -70.0
+        if not np.any(abs_gated):
+            return -70.0
+        z_avg = np.array([np.mean(z[c, abs_gated]) for c in range(ch)])
+        gamma_r = -0.691 + 10.0 * np.log10(
+            np.sum([_CH_GAIN[c] * z_avg[c] for c in range(ch)])) - 10.0
+        rel_gated = abs_gated & (l_j > gamma_r)
+        if not np.any(rel_gated):
+            rel_gated = abs_gated
+        z_avg = np.nan_to_num(np.array([np.mean(z[c, rel_gated]) for c in range(ch)]))
+    with np.errstate(divide='ignore'):
+        lufs = -0.691 + 10.0 * np.log10(np.sum([_CH_GAIN[c] * z_avg[c] for c in range(ch)]))
+    return float(lufs)
+
+
+def _loudness_range(x, sr):
+    """EBU Tech 3342 Loudness Range (LRA) in LU — 3s blocks / 97% overlap,
+    absolute gate -70 LUFS, relative gate (median - 20 LU), 10th-95th
+    percentile spread. Returns None if the signal is too short/quiet."""
+    if not SCIPY_OK:
+        return None
+    try:
+        pad = np.zeros((int(1.5 * sr), x.shape[1]), dtype=x.dtype)
+        kw = _k_weight(np.concatenate([x, pad], axis=0), sr)
+        l_j, _ = _block_powers(kw, sr, block_s=3.0, overlap=0.97)
+        if l_j.size == 0:
+            return None
+        abs_gated = l_j[l_j >= -70.0]
+        if abs_gated.size == 0:
+            return None
+        n = len(abs_gated)
+        power = np.sum(10 ** (abs_gated / 10.0)) / n
+        integrated = 10 * np.log10(power)
+        rel_gated = abs_gated[abs_gated >= integrated - 20.0]
+        if rel_gated.size == 0:
+            return None
+        lo, hi = np.percentile(rel_gated, [10, 95])
+        return float(hi - lo)
+    except Exception:
+        return None
 
 
 def _true_peak_limit(x, sr, ceiling_db):
@@ -825,10 +924,18 @@ def _true_peak_limit(x, sr, ceiling_db):
     return np.tanh(y / ceiling) * ceiling
 
 
+def _true_peak_db(x, sr):
+    """4x-oversampled true-peak estimate (dBTP), for reporting only."""
+    if not SCIPY_OK:
+        return float(20 * np.log10(np.max(np.abs(x)) + 1e-9))
+    up = signal.resample_poly(x, 4, 1, axis=0)
+    return float(20 * np.log10(np.max(np.abs(up)) + 1e-9))
+
+
 def _loudness_normalize(x, sr, target_lufs, true_peak_db, limiter):
     if not SCIPY_OK or target_lufs is None:
         return x
-    cur = _measure_lufs_ish(x, sr)
+    cur = _integrated_loudness(x, sr)
     gain_db = float(np.clip(target_lufs - cur, -24.0, 24.0))
     y = x * (10 ** (gain_db / 20.0))
     if limiter:
@@ -896,12 +1003,26 @@ def analyze(in_path: str, out_json: str) -> int:
         peak_db = float(20 * np.log10(np.max(np.abs(mono)) + 1e-9))
         rms_db = float(20 * np.log10(np.sqrt(np.mean(mono ** 2)) + 1e-9))
         clip_pct = float(100.0 * np.mean(np.abs(mono) >= 0.985))
+        # S245: real ITU-R BS.1770-4 integrated loudness + EBU Tech 3342
+        # Loudness Range (vendored pyloudnorm algorithm — see above),
+        # replacing the old single-gate approximation.
         lufs = None
+        lra = None
+        true_peak = None
         if SCIPY_OK:
             try:
-                lufs = round(_measure_lufs_ish(x.astype(np.float64), _ANALYZE_SR), 1)
+                lufs = round(_integrated_loudness(x.astype(np.float64), _ANALYZE_SR), 1)
             except Exception:
                 lufs = None
+            try:
+                lra = _loudness_range(x.astype(np.float64), _ANALYZE_SR)
+                lra = round(lra, 1) if lra is not None else None
+            except Exception:
+                lra = None
+            try:
+                true_peak = round(_true_peak_db(x.astype(np.float64), _ANALYZE_SR), 1)
+            except Exception:
+                true_peak = None
 
         # Average spectrum — log-spaced bands, normalized 0..1 over a 60 dB range.
         spectrum = []
@@ -928,6 +1049,8 @@ def analyze(in_path: str, out_json: str) -> int:
             'peak_db': round(peak_db, 1),
             'rms_db': round(rms_db, 1),
             'lufs': lufs,
+            'lra': lra,
+            'true_peak_db': true_peak,
             'clip_pct': round(clip_pct, 2),
             'scipy': SCIPY_OK,
         }

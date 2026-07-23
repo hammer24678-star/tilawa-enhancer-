@@ -40,7 +40,7 @@ const _textB   = Color(0xFF8AACBA);
 const _textDim = Color(0xFF3D5A65);
 const _border  = Color(0xFF1A2E20);
 
-enum _Tab { trim, eq, effects, fx2, studio, merge, export_ }
+enum _Tab { trim, eq, effects, fx2, studio, loudness, merge, export_ }
 
 class AudioEditorScreen extends StatefulWidget {
   const AudioEditorScreen({super.key});
@@ -180,7 +180,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // S236 — real waveform analysis (numpy --analyze) state
   List<double>? _rmsBars;              // real RMS layer under the peak bars
   List<double> _spectrum = const [];   // 30-band average spectrum, 0..1
-  double? _statPeakDb, _statRmsDb, _statLufs, _statClipPct;
+  double? _statPeakDb, _statRmsDb, _statLufs, _statClipPct, _statLra, _statTruePeakDb;
   bool _analyzed  = false;             // bars are the real waveform, not placeholder
   bool _analyzing = false;
   int  _analyzeToken = 0;              // discards stale results after file change
@@ -304,6 +304,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       // S236 — invalidate any previous file's analysis
       _analyzed = false; _analyzing = false; _rmsBars = null; _spectrum = const [];
       _statPeakDb = null; _statRmsDb = null; _statLufs = null; _statClipPct = null;
+      _statLra = null; _statTruePeakDb = null;
       final rng = Random(f.name.hashCode);
       _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
     });
@@ -347,6 +348,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         _statRmsDb   = (m['rms_db']   as num?)?.toDouble();
         _statLufs    = (m['lufs']     as num?)?.toDouble();
         _statClipPct = (m['clip_pct'] as num?)?.toDouble();
+        _statLra        = (m['lra']          as num?)?.toDouble();  // S245
+        _statTruePeakDb = (m['true_peak_db'] as num?)?.toDouble();  // S245
         final d = (m['duration_sec'] as num?)?.toDouble() ?? 0;
         if (_durationSec == 0 && d > 0) _durationSec = d;
         _barsFrom = List.of(_bars);
@@ -635,7 +638,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Future<String> _ensureDspScript() async {
     if (_dspScriptPath != null && File(_dspScriptPath!).existsSync()) return _dspScriptPath!;
     final dir  = await getTemporaryDirectory();
-    final dst  = File('${dir.path}/tilawa_dsp_studio_v2.py');  // S236: v2 — new name busts any cached v1 copy
+    final dst  = File('${dir.path}/tilawa_dsp_studio_v3.py');  // S245: v3 — busts any cached v2 copy (real loudness algorithm)
     final data = await rootBundle.load('assets/dsp/tilawa_dsp_studio.py');
     await dst.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), flush: true);
     _dspScriptPath = dst.path;
@@ -921,6 +924,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               '• تأثيرات: تلاشي، طبقة صوت، سرعة، صدى، إرجاع، عكس، تقليص ضوضاء طيفي، ضغط.\n'
               '• FX+‏: ٢٦ تأثيرًا تعمل كلها داخل محرك numpy/scipy مباشرة.\n'
               '• استوديو: إزالة طقطقة، نوع الصدى، ديناميكية الضاغط، تطبيع الصوت LUFS.\n'
+              '• التوافق: قياس جهارة حقيقي (LUFS/LRA/Peak) وفق ITU-R BS.1770-4 (pyloudnorm) '
+              'مع قائمة توافق لمنصات النشر الشهيرة.\n'
               '• معاينة: استمع لـ٨ ثوانٍ بالإعدادات الحالية قبل التصدير الكامل.\n'
               '• دمج: جمع ملفين صوتيين. تصدير دفعي بمحرك الاستوديو.\n'
               '• تصدير: MP3/WAV/M4A + معدل عينة/قنوات/عمق بت + بيانات وصفية + نغمة رنين.\n'
@@ -936,6 +941,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               '• Effects: fade, pitch, speed, echo, reverb, reverse, spectral noise reduction, compressor.\n'
               '• FX+: all 26 effects run natively inside the numpy/scipy engine.\n'
               '• Studio: declick, reverb type, compressor dynamics, LUFS loudness normalize.\n'
+              '• Compliance: real ITU-R BS.1770-4 loudness measurement (LUFS/LRA/True Peak, '
+              'via a vendored pyloudnorm) checked against major publishing platform targets.\n'
               '• Preview: audition 8s with your current settings before a full export.\n'
               '• Merge: join two audio files. Batch export runs the Studio Engine too.\n'
               '• Export: MP3/WAV/M4A + sample rate/channels/bit depth + metadata + ringtone.\n'
@@ -1254,11 +1261,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
-    final labels = ar ? ['قص','EQ','تأثيرات','FX+','استوديو','دمج','تصدير']
-                      : ['Trim','EQ','Effects','FX+','Studio','Merge','Export'];
+    final labels = ar ? ['قص','EQ','تأثيرات','FX+','استوديو','التوافق','دمج','تصدير']
+                      : ['Trim','EQ','Effects','FX+','Studio','Compliance','Merge','Export'];
     final icons = [Icons.content_cut_rounded, Icons.equalizer_rounded,
                    Icons.auto_fix_high_rounded, Icons.graphic_eq_rounded, Icons.science_rounded,
-                   Icons.merge_type_rounded, Icons.ios_share_rounded];
+                   Icons.rule_rounded, Icons.merge_type_rounded, Icons.ios_share_rounded];
     final n = _Tab.values.length;
     return Container(
       decoration: BoxDecoration(color: _surface, border: Border(bottom: BorderSide(color: _border)),
@@ -1304,6 +1311,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.effects: child = _effectsTab(); break;
       case _Tab.fx2:     child = _fx2Tab(); break;
       case _Tab.studio:  child = _studioTab(); break;
+      case _Tab.loudness: child = _loudnessTab(); break;
       case _Tab.merge:   child = _mergeTab(); break;
       case _Tab.export_: child = _exportTab(); break;
     }
@@ -1660,6 +1668,153 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ]),
     ]);
   }
+
+  // ── S245: COMPLIANCE TAB — real EBU R128 loudness checklist ─────────────
+  // Backed by tilawa_dsp_studio.py's vendored pyloudnorm algorithm (real
+  // ITU-R BS.1770-4 gated integrated loudness + EBU Tech 3342 Loudness
+  // Range), not an approximation. Uses the SAME analysis already run for
+  // the waveform — no extra processing needed to show this tab.
+  static const _kComplianceTargets = [
+    // label(EN), label(AR), target LUFS, tolerance LU, loudnessTarget preset string
+    ('Spotify / Apple Podcasts', 'Spotify / آبل بودكاست', -14.0, 1.0, '-14 LUFS (Streaming)'),
+    ('YouTube', 'يوتيوب', -14.0, 1.0, '-14 LUFS (Streaming)'),
+    ('Apple Music', 'آبل ميوزك', -16.0, 1.0, '-16 LUFS (Mobile)'),
+    ('Broadcast (EBU R128)', 'البث الإذاعي (EBU R128)', -23.0, 0.5, '-23 LUFS (Broadcast)'),
+  ];
+
+  Widget _loudnessTab() {
+    final ar = LangProvider.strings(context).ar;
+    if (_filePath == null) {
+      return Center(child: Text(ar ? 'افتح ملفًا أولًا' : 'Open a file first',
+          style: const TextStyle(color: _textDim)));
+    }
+    if (!_analyzed) {
+      return ListView(padding: const EdgeInsets.all(14), children: [
+        _card_(ar ? 'التوافق مع منصات النشر' : 'Publishing Compliance', Icons.rule_rounded, [
+          Text(ar
+              ? 'يقيس هذا التبويب الجهارة الحقيقية (LUFS) ونطاق الجهارة (LRA) والذروة '
+                'الحقيقية (True Peak) باستخدام خوارزمية ITU-R BS.1770-4 الفعلية '
+                '(المستمدة من مكتبة pyloudnorm)، ويقارنها بأهداف منصات النشر الشائعة.'
+              : 'This tab measures real loudness (LUFS), Loudness Range (LRA), and '
+                'True Peak using the actual ITU-R BS.1770-4 algorithm (vendored from '
+                'the pyloudnorm library), and checks them against common publishing targets.',
+              style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _analyzing ? null : _analyzeAudio,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _teal.withValues(alpha: 0.4))),
+              child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (_analyzing)
+                  const SizedBox(width: 14, height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                else
+                  const Icon(Icons.analytics_rounded, color: _teal, size: 17),
+                const SizedBox(width: 8),
+                Text(_analyzing ? (ar ? 'جارٍ التحليل…' : 'Analyzing…') : (ar ? 'تحليل الآن' : 'Analyze Now'),
+                    style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w700)),
+              ])))),
+        ]),
+      ]);
+    }
+
+    final lufs = _statLufs;
+    final lra = _statLra;
+    final tp = _statTruePeakDb;
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      _card_(ar ? 'قياسات الجهارة الحقيقية' : 'Real Loudness Measurements', Icons.analytics_rounded, [
+        Row(children: [
+          Expanded(child: _loudnessStatBlock(ar ? 'الجهارة المتكاملة' : 'Integrated',
+              lufs != null ? '${lufs.toStringAsFixed(1)}' : '—', 'LUFS')),
+          Expanded(child: _loudnessStatBlock(ar ? 'نطاق الجهارة' : 'Loudness Range',
+              lra != null ? lra.toStringAsFixed(1) : '—', 'LU')),
+          Expanded(child: _loudnessStatBlock(ar ? 'الذروة الحقيقية' : 'True Peak',
+              tp != null ? '${tp >= 0 ? "+" : ""}${tp.toStringAsFixed(1)}' : '—', 'dBTP',
+              warn: tp != null && tp > -1.0)),
+        ]),
+        const SizedBox(height: 4),
+        Text(ar ? 'وفق ITU-R BS.1770-4 / EBU Tech 3342 — خوارزمية pyloudnorm الحقيقية'
+                : 'Per ITU-R BS.1770-4 / EBU Tech 3342 — the real pyloudnorm algorithm',
+            style: const TextStyle(color: _textDim, fontSize: 10.5)),
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'قائمة التوافق' : 'Compliance Checklist', Icons.checklist_rounded,
+          lufs == null ? [
+            Text(ar ? 'تعذّر قياس الجهارة لهذا الملف' : 'Could not measure loudness for this file',
+                style: const TextStyle(color: _textDim, fontSize: 12)),
+          ] : _kComplianceTargets.map((t) {
+            final label = ar ? t.$2 : t.$1;
+            final target = t.$3;
+            final tol = t.$4;
+            final preset = t.$5;
+            final diff = lufs - target;
+            final pass = diff.abs() <= tol;
+            final tooLoud = diff > tol;
+            final icon = pass ? Icons.check_circle_rounded
+                : (tooLoud ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded);
+            final color = pass ? _teal : _gold;
+            return Padding(padding: const EdgeInsets.symmetric(vertical: 7),
+              child: Row(children: [
+                Icon(icon, color: color, size: 18),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(label, style: const TextStyle(color: _textA, fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(
+                      pass
+                          ? (ar ? 'ضمن الهدف (${target.toStringAsFixed(0)} LUFS)' : 'Within target (${target.toStringAsFixed(0)} LUFS)')
+                          : (tooLoud
+                              ? (ar ? 'أعلى من الهدف بـ ${diff.abs().toStringAsFixed(1)} LU' : '${diff.abs().toStringAsFixed(1)} LU too loud')
+                              : (ar ? 'أهدأ من الهدف بـ ${diff.abs().toStringAsFixed(1)} LU' : '${diff.abs().toStringAsFixed(1)} LU too quiet')),
+                      style: TextStyle(color: color, fontSize: 11)),
+                ])),
+                if (!pass)
+                  GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() { _loudnessTarget = preset; _truePeakLimiter = true; _tab = _Tab.studio; });
+                      _snack(ar ? '✓ تم ضبط الهدف — راجع تبويب الاستوديو' : '✓ Target set — check the Studio tab');
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(color: _goldDim.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: _gold.withValues(alpha: 0.5))),
+                      child: Text(ar ? 'إصلاح' : 'Fix',
+                          style: const TextStyle(color: _gold, fontSize: 11, fontWeight: FontWeight.w700))),
+                  ),
+              ]));
+          }).toList()),
+      const SizedBox(height: 10),
+      if (lra != null)
+        _card_(ar ? 'نطاق الجهارة (LRA)' : 'Loudness Range (LRA)', Icons.expand_rounded, [
+          Text(
+              lra < 4
+                  ? (ar ? 'نطاق ضيق — ديناميكية مضغوطة، مناسب لرسائل صوتية/بودكاست.'
+                        : 'Narrow range — compressed dynamics, good for voice notes/podcasts.')
+                  : lra < 9
+                      ? (ar ? 'نطاق معتدل — ديناميكية طبيعية.' : 'Moderate range — natural dynamics.')
+                      : (ar ? 'نطاق واسع — ديناميكية كبيرة بين الأجزاء الهادئة والصاخبة.'
+                            : 'Wide range — large swing between quiet and loud sections.'),
+              style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+        ]),
+      if ((_statClipPct ?? 0) > 0.5) ...[const SizedBox(height: 10),
+        _card_(ar ? 'تحذير' : 'Warning', Icons.warning_amber_rounded, [
+          Text(ar ? '${_statClipPct!.toStringAsFixed(1)}٪ من العينات مقطوعة (Clipping) — فعّل "إزالة التقطيع" في FX+.'
+                  : '${_statClipPct!.toStringAsFixed(1)}% of samples are clipped — enable Declip in FX+.',
+              style: const TextStyle(color: _red, fontSize: 12, height: 1.5)),
+        ])],
+    ]);
+  }
+
+  Widget _loudnessStatBlock(String label, String value, String unit, {bool warn = false}) => Column(children: [
+    Text(label, style: const TextStyle(color: _textDim, fontSize: 10), textAlign: TextAlign.center),
+    const SizedBox(height: 4),
+    Text(value, style: TextStyle(color: warn ? _red : _gold, fontSize: 20,
+        fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+    Text(unit, style: const TextStyle(color: _textDim, fontSize: 10)),
+  ]);
 
   // ── MERGE TAB ─────────────────────────────────────────────────────────────
   Widget _mergeTab() {
