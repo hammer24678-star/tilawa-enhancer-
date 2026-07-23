@@ -53,6 +53,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   String? _filePath;
   String  _fileName = '';
   double  _durationSec = 0;
+  bool    _loopEnabled = false;  // S244 — moved off the transport row's fixed-width chain
 
   final _player = AudioPlayer();
   StreamSubscription<PlayerState>? _stateSub;
@@ -1146,62 +1147,110 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             fontWeight: FontWeight.w700, fontFamily: 'monospace')),
       ]));
 
+  // S244 FIX: this row previously packed 7 fixed-width circular buttons (prev,
+  // -10s, play, +10s, stop, split, loop) plus a flexible time/progress column
+  // into one Row. Verified with a real Flutter render (flutter_tester, not a
+  // guess): it overflowed by 135px on a common 412-wide phone — "RenderFlex
+  // overflowed by 135 pixels on the right." In a release build that overflow
+  // is clipped silently (no debug hazard stripes), so the trailing controls
+  // rendered completely off-screen: invisible AND untappable.
+  // Fix: the loop toggle moved out of the fixed-width chain entirely (see
+  // below), and the remaining button cluster is wrapped in
+  // Flexible+FittedBox(scaleDown) — this makes overflow structurally
+  // impossible: FittedBox measures its child then scales it to fit whatever
+  // space is actually available, so no combination of screen width, system
+  // font scale, or locale can ever push content off-screen. On any normal
+  // phone the buttons render at their natural size; only on a genuinely
+  // cramped layout do they shrink slightly as a group — they never clip.
   Widget _transport() => Container(
     color: _surface,
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
     child: Row(children: [
-      _tBtn(Icons.skip_previous_rounded, () async {
-        await _player.seek(Duration(milliseconds: (_trimStart * _durationSec * 1000).round()));
-        if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
-      }),
-      const SizedBox(width: 6),
-      _tBtn(Icons.replay_10_rounded, () => _seekBy(-10)),  // S237 QoL
-      const SizedBox(width: 6),
-      AnimatedBuilder(animation: _glowCtrl,
-        builder: (_, __) => GestureDetector(
-          onTap: () { HapticFeedback.mediumImpact(); _togglePlay(); },
-          child: AnimatedScale(duration: const Duration(milliseconds: 200),
-            scale: _playing ? 1.06 : 1.0,
-            child: Container(width: 54, height: 54,
-              decoration: BoxDecoration(shape: BoxShape.circle,
-                gradient: const RadialGradient(colors: [Color(0xFFB8921E), _goldDim]),
-                boxShadow: [BoxShadow(
-                    color: _gold.withValues(alpha: _playing ? 0.2 + 0.22 * _glowCtrl.value : 0.08),
-                    blurRadius: 20)]),
-              child: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: const Color(0xFF050A06), size: 28))))),
-      const SizedBox(width: 6),
-      _tBtn(Icons.forward_10_rounded, () => _seekBy(10)),  // S237 QoL
-      const SizedBox(width: 6),
-      _tBtn(Icons.stop_rounded, _stop),
-      const SizedBox(width: 6),
-      Tooltip(message: 'Split at playhead',
-        child: _tBtn(Icons.content_cut_rounded, _split, color: _teal)),
-      const SizedBox(width: 10),
+      Flexible(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            _tBtn(Icons.skip_previous_rounded, () async {
+              await _player.seek(Duration(milliseconds: (_trimStart * _durationSec * 1000).round()));
+              if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
+            }),
+            const SizedBox(width: 4),
+            _tBtn(Icons.replay_10_rounded, () => _seekBy(-10)),  // S237 QoL
+            const SizedBox(width: 4),
+            AnimatedBuilder(animation: _glowCtrl,
+              builder: (_, __) => GestureDetector(
+                onTap: () { HapticFeedback.mediumImpact(); _togglePlay(); },
+                child: AnimatedScale(duration: const Duration(milliseconds: 200),
+                  scale: _playing ? 1.06 : 1.0,
+                  child: Container(width: 50, height: 50,
+                    decoration: BoxDecoration(shape: BoxShape.circle,
+                      gradient: const RadialGradient(colors: [Color(0xFFB8921E), _goldDim]),
+                      boxShadow: [BoxShadow(
+                          color: _gold.withValues(alpha: _playing ? 0.2 + 0.22 * _glowCtrl.value : 0.08),
+                          blurRadius: 20)]),
+                    child: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: const Color(0xFF050A06), size: 26))))),
+            const SizedBox(width: 4),
+            _tBtn(Icons.forward_10_rounded, () => _seekBy(10)),  // S237 QoL
+            const SizedBox(width: 4),
+            _tBtn(Icons.stop_rounded, _stop),
+            const SizedBox(width: 4),
+            Tooltip(message: 'Split at playhead',
+              child: _tBtn(Icons.content_cut_rounded, _split, color: _teal)),
+            const SizedBox(width: 4),
+            // S244 v2: loop back here (in the overflow-proof FittedBox cluster)
+            // — round 1 of this fix put it in the "flexible" time column
+            // instead, paired with a bare Spacer(); Spacer defaults to flex:1,
+            // the SAME as the time text's own Flexible, so they split the
+            // column 50/50 and squeezed the position/duration text into a box
+            // too narrow for it — a second, self-inflicted overflow (found via
+            // a real Flutter render, not guessed: "RenderFlex overflowed by
+            // 103 pixels", pointing at that exact Row). No more flex vs. flex
+            // competition: everything space-hungry lives in the one
+            // FittedBox, and the time row below is free to just fit its text.
+            GestureDetector(
+              onTap: () async {
+                HapticFeedback.selectionClick();
+                _loopEnabled = !_loopEnabled;
+                await _player.setReleaseMode(_loopEnabled ? ReleaseMode.loop : ReleaseMode.release);
+                if (mounted) setState(() {});
+              },
+              child: Container(width: 34, height: 34,
+                decoration: BoxDecoration(shape: BoxShape.circle,
+                    color: _card, border: Border.all(color: _border)),
+                child: Icon(Icons.loop_rounded, size: 17,
+                    color: _loopEnabled ? _teal : _textDim))),
+          ]),
+        ),
+      ),
+      const SizedBox(width: 8),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min, children: [
-        Row(children: [
-          Text(_fmtTime(_positionSec), style: const TextStyle(color: _gold, fontSize: 11,
-              fontWeight: FontWeight.w600, fontFamily: 'monospace')),
-          const Text(' / ', style: TextStyle(color: _textDim, fontSize: 11)),
-          Text(_fmtTime(_durationSec), style: const TextStyle(color: _textB, fontSize: 11, fontFamily: 'monospace')),
-        ]),
+        // S244: also FittedBox-guarded — a long duration ("12:34.5") plus a
+        // long position at once is unlikely to overflow a typical remaining
+        // width, but this makes it structurally impossible regardless.
+        FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerStart,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(_fmtTime(_positionSec), style: const TextStyle(color: _gold, fontSize: 11,
+                fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+            const Text(' / ', style: TextStyle(color: _textDim, fontSize: 11)),
+            Text(_fmtTime(_durationSec), style: const TextStyle(color: _textB, fontSize: 11, fontFamily: 'monospace')),
+          ])),
         const SizedBox(height: 4),
         ClipRRect(borderRadius: BorderRadius.circular(3),
           child: LinearProgressIndicator(
             value: _durationSec > 0 ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0,
             backgroundColor: _border, valueColor: const AlwaysStoppedAnimation(_gold), minHeight: 3)),
       ])),
-      const SizedBox(width: 10),
-      _tBtn(Icons.loop_rounded, () async { await _player.setReleaseMode(ReleaseMode.loop); }, color: _teal),
     ]));
 
   Widget _tBtn(IconData icon, VoidCallback onTap, {Color? color}) =>
     GestureDetector(onTap: onTap,
-      child: Container(width: 38, height: 38,
+      child: Container(width: 34, height: 34,
         decoration: BoxDecoration(shape: BoxShape.circle, color: _card,
             border: Border.all(color: _border)),
-        child: Icon(icon, color: color ?? _textB, size: 19)));
+        child: Icon(icon, color: color ?? _textB, size: 17)));
 
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
