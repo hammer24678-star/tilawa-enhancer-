@@ -40,7 +40,7 @@ const _textB   = Color(0xFF8AACBA);
 const _textDim = Color(0xFF3D5A65);
 const _border  = Color(0xFF1A2E20);
 
-enum _Tab { trim, eq, effects, fx2, studio, loudness, merge, export_ }
+enum _Tab { trim, eq, effects, fx2, cleanup, studio, loudness, quality, merge, export_ }
 
 class AudioEditorScreen extends StatefulWidget {
   const AudioEditorScreen({super.key});
@@ -129,6 +129,17 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   int    _dehumBase     = 50;     // 50 Hz (most regions) / 60 Hz (Americas)
   double _dehumStrength = 60;     // 0-100
   double _vocalIso      = 0;      // 0-100 — center/voice-band focus
+
+  // S248 — Cleanup tab: real noisereduce + webrtcvad (bundled via S247)
+  bool   _aiDenoiseOn       = false;
+  double _aiDenoiseStrength = 60;    // 0-100
+  bool   _vadTrimOn         = false;
+  double _vadAggr           = 2;     // 0-3 (webrtcvad aggressiveness)
+
+  // S248 — Quality tab: pystoi intelligibility score (bundled via S247)
+  bool    _qualityChecking = false;
+  double? _statStoi;                 // 0..1, higher = more intelligible
+  String? _qualityError;
 
   // S238 — split-by-silence (Trim tab)
   double _silThresh = -40;        // dB
@@ -305,6 +316,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _analyzed = false; _analyzing = false; _rmsBars = null; _spectrum = const [];
       _statPeakDb = null; _statRmsDb = null; _statLufs = null; _statClipPct = null;
       _statLra = null; _statTruePeakDb = null;
+      _statStoi = null; _qualityError = null;  // S248
       final rng = Random(f.name.hashCode);
       _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
     });
@@ -361,6 +373,51 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       // analysis is a bonus — the editor stays fully usable without it
     } finally {
       if (mounted && token == _analyzeToken) setState(() => _analyzing = false);
+    }
+  }
+
+  // ── S248: QUALITY CHECK — renders current settings, scores vs. original
+  // with pystoi (real speech-intelligibility metric, not just loudness) ──
+  Future<void> _runQualityCheck() async {
+    if (_filePath == null) return;
+    if (!await _checkSetup()) return;
+    if (_qualityChecking) return;
+    HapticFeedback.selectionClick();
+    setState(() { _qualityChecking = true; _qualityError = null; });
+    String? processedOut;
+    String? outJson;
+    try {
+      final inp = await _safeInput(_filePath!);
+      final tmp = await getTemporaryDirectory();
+      processedOut = '${tmp.path}/tl_quality_proc_${DateTime.now().millisecondsSinceEpoch}.wav';
+      final params = _buildDspParams(fullFile: true);
+      params['output'] = {'format': 'WAV', 'sample_rate': 16000, 'channels': 'Mono',
+          'wav_bit_depth': 16, 'metadata': {}};
+      final r = await _runDspEngine(inp, processedOut, params);
+      final rc = (r['rc'] as int?) ?? -1;
+      if (rc != 0 || !File(processedOut).existsSync()) {
+        throw Exception(r['out'] ?? 'Studio Engine render failed');
+      }
+      outJson = '${tmp.path}/tl_quality_${DateTime.now().millisecondsSinceEpoch}.json';
+      final script = await _ensureDspScript();
+      final r2 = await _proot(
+          'python3 "$script" --quality "$inp" "$processedOut" "$outJson"',
+          inp, outJson, timeout: 5);
+      if ((r2?['rc'] as int? ?? 1) != 0 || !File(outJson).existsSync()) {
+        throw Exception('Quality check did not run');
+      }
+      final m = Map<String, dynamic>.from(jsonDecode(await File(outJson).readAsString()));
+      if (m['ok'] != true) {
+        throw Exception(m['error'] ?? 'pystoi unavailable');
+      }
+      if (!mounted) return;
+      setState(() => _statStoi = (m['stoi'] as num?)?.toDouble());
+    } catch (e) {
+      if (mounted) setState(() => _qualityError = '$e');
+    } finally {
+      try { if (processedOut != null) File(processedOut).deleteSync(); } catch (_) {}
+      try { if (outJson != null) File(outJson).deleteSync(); } catch (_) {}
+      if (mounted) setState(() => _qualityChecking = false);
     }
   }
 
@@ -700,6 +757,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         'deesser': _deEsser, 'declip': _declip, 'adaptive_normalize': _autoNormalize,
         'limiter': {'enabled': _limiter, 'ceiling_db': _limiterCeil},
         'auto_trim_silence': _autoTrimSilence,
+        // S248 — Cleanup tab
+        'ai_denoise': {'enabled': _aiDenoiseOn, 'strength': _aiDenoiseStrength},
+        'vad_trim': {'enabled': _vadTrimOn, 'aggressiveness': _vadAggr.round()},
         'pad_start_sec': _padStart, 'pad_end_sec': _padEnd,
       },
       'output': {
@@ -1261,11 +1321,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
-    final labels = ar ? ['قص','EQ','تأثيرات','FX+','استوديو','التوافق','دمج','تصدير']
-                      : ['Trim','EQ','Effects','FX+','Studio','Compliance','Merge','Export'];
+    final labels = ar ? ['قص','EQ','تأثيرات','FX+','تنظيف','استوديو','التوافق','الجودة','دمج','تصدير']
+                      : ['Trim','EQ','Effects','FX+','Cleanup','Studio','Compliance','Quality','Merge','Export'];
     final icons = [Icons.content_cut_rounded, Icons.equalizer_rounded,
-                   Icons.auto_fix_high_rounded, Icons.graphic_eq_rounded, Icons.science_rounded,
-                   Icons.rule_rounded, Icons.merge_type_rounded, Icons.ios_share_rounded];
+                   Icons.auto_fix_high_rounded, Icons.graphic_eq_rounded, Icons.blur_on_rounded,
+                   Icons.science_rounded, Icons.rule_rounded, Icons.fact_check_rounded,
+                   Icons.merge_type_rounded, Icons.ios_share_rounded];
     final n = _Tab.values.length;
     return Container(
       decoration: BoxDecoration(color: _surface, border: Border(bottom: BorderSide(color: _border)),
@@ -1310,8 +1371,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.eq:      child = _eqTab(); break;
       case _Tab.effects: child = _effectsTab(); break;
       case _Tab.fx2:     child = _fx2Tab(); break;
+      case _Tab.cleanup: child = _cleanupTab(); break;
       case _Tab.studio:  child = _studioTab(); break;
       case _Tab.loudness: child = _loudnessTab(); break;
+      case _Tab.quality: child = _qualityTab(); break;
       case _Tab.merge:   child = _mergeTab(); break;
       case _Tab.export_: child = _exportTab(); break;
     }
@@ -1561,6 +1624,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             _eqQ=1.4; _declick=false; _declickSens=50; _reverbType='Room';
             _compAttack=20; _compRelease=200; _compMakeup=0;
             _loudnessTarget='Off'; _truePeakLimiter=true; _fadeCurve='Equal Power';
+            _aiDenoiseOn=false; _aiDenoiseStrength=60; _vadTrimOn=false; _vadAggr=2;  // S248
           });
         },
         child: Container(
@@ -1573,6 +1637,49 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             Text(ar ? 'إعادة ضبط التأثيرات' : 'Reset All Effects',
                 style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w600)),
           ])))),
+    ]);
+  }
+
+  // ── CLEANUP TAB — S248: real noisereduce + webrtcvad (bundled via S247) ──
+  Widget _cleanupTab() {
+    final ar = LangProvider.strings(context).ar;
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      _card_(ar ? 'إزالة الضوضاء (AI)' : 'AI Noise Reduction', Icons.blur_on_rounded, [
+        Text(ar
+            ? 'إزالة ضوضاء طيفية (noisereduce) — أدق من المُقلّص اليدوي في تبويب التأثيرات، ويمكن تشغيلها معه.'
+            : 'Spectral-gating noise reduction (noisereduce) — more accurate than the manual '
+              'reducer in the Effects tab, and can run alongside it.',
+            style: const TextStyle(color: _textDim, fontSize: 11, height: 1.4)),
+        const SizedBox(height: 10),
+        _toggle(ar ? 'تفعيل' : 'Enable', Icons.blur_on_rounded,
+            _aiDenoiseOn, (v) => setState(() => _aiDenoiseOn = v)),
+        if (_aiDenoiseOn) ...[const SizedBox(height: 10),
+          _knob(ar ? 'قوة الإزالة' : 'Strength', '${_aiDenoiseStrength.round()}%',
+              _aiDenoiseStrength, 0, 100, (v) => setState(() => _aiDenoiseStrength = v)),
+        ],
+      ]),
+      const SizedBox(height: 10),
+      _card_(ar ? 'قص السكوت بكشف الصوت (VAD)' : 'Voice-Activity Trim', Icons.record_voice_over_rounded, [
+        Text(ar
+            ? 'يكتشف الكلام فعليًا (webrtcvad) بدل عتبة صوت بسيطة — يقص الصمت وغير الكلام من '
+              'البداية والنهاية بدقة أعلى من "قص السكوت التلقائي" في تبويب FX+.'
+            : 'Real speech detection (webrtcvad) instead of a plain volume threshold — trims '
+              'leading/trailing silence and non-speech more precisely than "Auto-Trim Silence" '
+              'in the FX+ tab.',
+            style: const TextStyle(color: _textDim, fontSize: 11, height: 1.4)),
+        const SizedBox(height: 10),
+        _toggle(ar ? 'تفعيل (يُلغي القص التلقائي البسيط)' : 'Enable (overrides plain auto-trim)',
+            Icons.record_voice_over_rounded, _vadTrimOn, (v) => setState(() => _vadTrimOn = v)),
+        if (_vadTrimOn) ...[const SizedBox(height: 10),
+          _knob(ar ? 'حساسية الكشف' : 'Detection Aggressiveness',
+              _vadAggr.round().toString(),
+              _vadAggr, 0, 3, (v) => setState(() => _vadAggr = v)),
+          const SizedBox(height: 4),
+          Text(ar ? '٠ = متساهل (أقل قصًا) — ٣ = صارم (أكثر قصًا)'
+                  : '0 = lenient (trims less) — 3 = strict (trims more)',
+              style: const TextStyle(color: _textDim, fontSize: 10.5)),
+        ],
+      ]),
     ]);
   }
 
@@ -1815,6 +1922,70 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         fontWeight: FontWeight.w800, fontFamily: 'monospace')),
     Text(unit, style: const TextStyle(color: _textDim, fontSize: 10)),
   ]);
+
+  // ── QUALITY TAB — S248: pystoi intelligibility score (bundled via S247) ──
+  Widget _qualityTab() {
+    final ar = LangProvider.strings(context).ar;
+    if (_filePath == null) {
+      return Center(child: Text(ar ? 'افتح ملفًا أولًا' : 'Open a file first',
+          style: const TextStyle(color: _textDim)));
+    }
+    final stoi = _statStoi;
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      _card_(ar ? 'فحص وضوح الكلام' : 'Speech Intelligibility Check', Icons.fact_check_rounded, [
+        Text(ar
+            ? 'يقارن هذا التبويب الملف الأصلي بمعالجة الإعدادات الحالية باستخدام مقياس STOI '
+              '(pystoi) — تقييم موضوعي لوضوح الكلام، وليس مجرد الجهارة. مفيد للتأكد أن '
+              'التعديلات (تقليل الضوضاء، الموازن، إلخ) لم تُضِرّ بوضوح التلاوة.'
+            : 'This tab compares the original file against a render of your current settings '
+              'using the STOI metric (pystoi) — an objective measure of speech intelligibility, '
+              'not just loudness. Useful for confirming edits (noise reduction, EQ, etc.) '
+              'haven\'t hurt the clarity of the recitation.',
+            style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: _qualityChecking ? null : _runQualityCheck,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _teal.withValues(alpha: 0.4))),
+            child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (_qualityChecking)
+                const SizedBox(width: 14, height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+              else
+                const Icon(Icons.fact_check_rounded, color: _teal, size: 17),
+              const SizedBox(width: 8),
+              Text(_qualityChecking ? (ar ? 'جارٍ الفحص…' : 'Checking…') : (ar ? 'فحص الآن' : 'Check Now'),
+                  style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w700)),
+            ])))),
+      ]),
+      if (_qualityError != null) ...[const SizedBox(height: 10),
+        _card_(ar ? 'تعذّر الفحص' : 'Check Unavailable', Icons.warning_amber_rounded, [
+          Text(_qualityError!, style: const TextStyle(color: _red, fontSize: 11.5, height: 1.4)),
+        ])],
+      if (stoi != null) ...[const SizedBox(height: 10),
+        _card_(ar ? 'نتيجة STOI' : 'STOI Score', Icons.graphic_eq_rounded, [
+          Center(child: Column(children: [
+            Text((stoi * 100).toStringAsFixed(1),
+                style: TextStyle(
+                    color: stoi >= 0.85 ? _teal : (stoi >= 0.7 ? _gold : _red),
+                    fontSize: 34, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+            Text(ar ? '٪ وضوح' : '% intelligibility', style: const TextStyle(color: _textDim, fontSize: 11)),
+          ])),
+          const SizedBox(height: 10),
+          Text(
+              stoi >= 0.85
+                  ? (ar ? 'ممتاز — لا يوجد فقدان وضوح ملحوظ.' : 'Excellent — no noticeable intelligibility loss.')
+                  : stoi >= 0.7
+                      ? (ar ? 'جيد — فقدان طفيف، راجع إعدادات تقليل الضوضاء/الموازن.'
+                            : 'Good — minor loss, worth reviewing noise-reduction/EQ settings.')
+                      : (ar ? 'تحذير — فقدان وضوح واضح، جرّب تخفيف الإعدادات الحالية.'
+                            : 'Warning — noticeable intelligibility loss, try easing back current settings.'),
+              style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+        ])],
+    ]);
+  }
 
   // ── MERGE TAB ─────────────────────────────────────────────────────────────
   Widget _mergeTab() {

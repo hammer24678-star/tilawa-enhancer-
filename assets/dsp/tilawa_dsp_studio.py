@@ -251,6 +251,25 @@ def _spectral_denoise(x, sr, strength):
     return out.astype(np.float32)
 
 
+# ─── S248: real noisereduce library (bundled via S247) ──────────────────────
+def _ai_denoise(x, sr, strength):
+    """Spectral-gating denoise via the real noisereduce package — separate
+    from, and more accurate than, the DIY STFT gate above. Fails soft (no-op)
+    if noisereduce isn't installed yet (pre-S247 python-env.tar.gz)."""
+    if strength <= 0:
+        return x
+    try:
+        import noisereduce as nr
+    except Exception:
+        return x
+    amt = min(max(strength, 0.0), 100.0) / 100.0
+    out = np.zeros_like(x)
+    for ch in range(x.shape[1]):
+        out[:, ch] = nr.reduce_noise(y=x[:, ch].astype(np.float32), sr=sr,
+                                      prop_decrease=amt, stationary=True)
+    return out.astype(np.float32)
+
+
 # ─── Echo — true feedback delay line (IIR, not ffmpeg aecho) ────────────────
 
 def _echo(x, sr, mix, delay_s=0.35, feedback=0.35):
@@ -773,6 +792,48 @@ def _auto_trim_silence(x, sr, thresh_db=-45.0, pad_s=0.08):
     return x[s:e].copy()
 
 
+# ─── S248: real webrtcvad voice-activity trim (bundled via S247) ────────────
+def _vad_trim(x, sr, aggressiveness=2, pad_s=0.15):
+    """Real speech detection instead of a plain energy threshold — trims
+    leading/trailing silence AND non-speech noise the energy gate above
+    would miss. Falls back to _auto_trim_silence if webrtcvad isn't
+    installed yet (pre-S247 python-env.tar.gz)."""
+    try:
+        import webrtcvad
+    except Exception:
+        return _auto_trim_silence(x, sr)
+    vad = webrtcvad.Vad(int(min(max(aggressiveness, 0), 3)))
+    mono = x.mean(axis=1)
+    frame_ms = 30
+    # webrtcvad only accepts 8k/16k/32k/48k mono 16-bit PCM frames
+    vad_sr = sr if sr in (8000, 16000, 32000, 48000) else 48000
+    if vad_sr != sr and SCIPY_OK:
+        mono_r = signal.resample(mono, int(len(mono) * vad_sr / sr))
+    else:
+        mono_r = mono
+        vad_sr = sr if vad_sr != sr else vad_sr  # no scipy — can't resample, best effort
+    frame_len = int(vad_sr * frame_ms / 1000)
+    pcm16 = (np.clip(mono_r, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
+    frame_bytes = frame_len * 2
+    voiced = []
+    for i in range(0, len(pcm16) - frame_bytes, frame_bytes):
+        try:
+            voiced.append(vad.is_speech(pcm16[i:i + frame_bytes], vad_sr))
+        except Exception:
+            voiced.append(True)  # fail open — never over-trim
+    if not any(voiced):
+        return x
+    first = voiced.index(True)
+    last = len(voiced) - 1 - voiced[::-1].index(True)
+    ratio = sr / vad_sr
+    pad = int(pad_s * sr)
+    s = max(0, int(first * frame_len * ratio) - pad)
+    e = min(x.shape[0], int((last + 1) * frame_len * ratio) + pad)
+    if e - s < int(0.05 * sr):
+        return x
+    return x[s:e].copy()
+
+
 def _pad(x, sr, start_s, end_s):
     parts = []
     if start_s > 0:
@@ -1145,6 +1206,46 @@ def split_mode(in_path: str, out_base: str, params_path: str) -> int:
 
 # ─── Main pipeline ───────────────────────────────────────────────────────────
 
+# ─── S248: pystoi intelligibility score (bundled via S247) ──────────────────
+_QUALITY_SR = 16000  # pystoi's standard analysis rate
+
+def quality_check(orig_path: str, proc_path: str, out_json: str) -> int:
+    """Compares original vs. processed audio with the STOI metric — an
+    objective measure of speech intelligibility (0..1), not loudness.
+    Writes JSON to out_json (same convention as analyze()) and returns
+    0/1. Fails soft with an 'error' field if pystoi isn't installed yet
+    (pre-S247 python-env.tar.gz) or either file can't be decoded."""
+    result = {'ok': False}
+    try:
+        from pystoi import stoi
+    except Exception as e:
+        result['error'] = f'pystoi not installed: {e}'
+        with open(out_json, 'w', encoding='utf-8') as fh:
+            json.dump(result, fh)
+        return 1
+    try:
+        sr = _QUALITY_SR
+        a = _decode(orig_path, sr, 0.0, 0.0)
+        b = _decode(proc_path, sr, 0.0, 0.0)
+        if a is None or b is None or a.shape[0] == 0 or b.shape[0] == 0:
+            raise RuntimeError('ffmpeg decode failed for one or both files')
+        am = a.mean(axis=1).astype(np.float64)
+        bm = b.mean(axis=1).astype(np.float64)
+        n = min(len(am), len(bm))
+        if n < sr // 2:
+            raise RuntimeError('audio too short to score (need at least 0.5s)')
+        score = float(stoi(am[:n], bm[:n], sr, extended=False))
+        result['ok'] = True
+        result['stoi'] = round(score, 4)
+        result['sr'] = sr
+        result['compared_sec'] = round(n / sr, 2)
+    except Exception as e:
+        result['error'] = str(e)
+    with open(out_json, 'w', encoding='utf-8') as fh:
+        json.dump(result, fh)
+    return 0 if result.get('ok') else 1
+
+
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] == '--split':
         if len(sys.argv) < 5:
@@ -1159,6 +1260,13 @@ def main():
                               'error': 'usage: tilawa_dsp_studio.py --analyze <in> <out.json>'}))
             return 1
         return analyze(sys.argv[2], sys.argv[3])
+
+    if len(sys.argv) >= 2 and sys.argv[1] == '--quality':
+        if len(sys.argv) < 5:
+            print(json.dumps({'ok': False,
+                              'error': 'usage: tilawa_dsp_studio.py --quality <original> <processed> <out.json>'}))
+            return 1
+        return quality_check(sys.argv[2], sys.argv[3], sys.argv[4])
 
     if len(sys.argv) < 4:
         print(json.dumps({'ok': False, 'error': 'usage: tilawa_dsp_studio.py <in> <out> <params.json>'}))
@@ -1188,7 +1296,12 @@ def main():
             x = x[::-1].copy()
 
         # ── cleanup first: silence trim, declip, declick, gate ──
-        if fx.get('auto_trim_silence'):
+        vad_cfg = fx.get('vad_trim', {}) or {}
+        if vad_cfg.get('enabled'):
+            # S248 — real webrtcvad trim takes priority over the plain
+            # energy-threshold auto-trim below
+            x = _vad_trim(x, sr, int(vad_cfg.get('aggressiveness', 2)))
+        elif fx.get('auto_trim_silence'):
             x = _auto_trim_silence(x, sr)
 
         if fx.get('declip'):
@@ -1215,6 +1328,11 @@ def main():
         nr = float((p.get('noise_reduction', {}) or {}).get('strength', 0))
         if nr > 0:
             x = _spectral_denoise(x, sr, nr)
+
+        # S248 — real noisereduce (separate toggle, can stack with the gate above)
+        ai_dn = fx.get('ai_denoise', {}) or {}
+        if ai_dn.get('enabled'):
+            x = _ai_denoise(x, sr, float(ai_dn.get('strength', 60)))
 
         x = _hp_lp(x, sr, float(fx.get('highpass_hz', 0) or 0),
                    float(fx.get('lowpass_hz', 20000) or 20000))
