@@ -1392,30 +1392,57 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Widget _trimTab() {
     final ar = LangProvider.strings(context).ar;
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _card_(ar ? 'نقطة البداية' : 'Start Point', Icons.align_horizontal_left_rounded, [
+      _card_(ar ? 'نطاق القص' : 'Trim Range', Icons.content_cut_rounded, [
         Row(children: [
-          Text(_fmtTime(_trimStart * _durationSec),
-              style: const TextStyle(color: _teal, fontSize: 15, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(ar ? 'البداية' : 'Start', style: const TextStyle(color: _textDim, fontSize: 10.5)),
+            const SizedBox(height: 2),
+            Text(_fmtTime(_trimStart * _durationSec),
+                style: const TextStyle(color: _teal, fontSize: 17, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+          ]),
           const Spacer(),
-          _chip_(ar ? 'بداية' : 'Start', () => setState(() => _trimStart = 0)),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(ar ? 'النهاية' : 'End', style: const TextStyle(color: _textDim, fontSize: 10.5)),
+            const SizedBox(height: 2),
+            Text(_fmtTime(_trimEnd * _durationSec),
+                style: const TextStyle(color: _gold, fontSize: 17, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+          ]),
         ]),
-        _slider(_trimStart, 0, _trimEnd - 0.005, _teal, (v) => setState(() => _trimStart = v)),
-      ]),
-      const SizedBox(height: 10),
-      _card_(ar ? 'نقطة النهاية' : 'End Point', Icons.align_horizontal_right_rounded, [
+        const SizedBox(height: 6),
+        // Single RangeSlider replaces the old two separate full-width Sliders —
+        // both handles visible on one track instead of two stacked bars.
+        Directionality(textDirection: TextDirection.ltr,
+          child: SliderTheme(data: SliderThemeData(
+              trackHeight: 5,
+              rangeThumbShape: const RoundRangeSliderThumbShape(enabledThumbRadius: 9),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+              activeTrackColor: _gold,
+              inactiveTrackColor: _border,
+              thumbColor: _teal,
+              overlayColor: _teal.withValues(alpha: 0.15)),
+            child: RangeSlider(
+              values: RangeValues(_trimStart, _trimEnd),
+              onChanged: (r) => setState(() {
+                _trimStart = r.start.clamp(0.0, _trimEnd - 0.005);
+                _trimEnd = r.end.clamp(_trimStart + 0.005, 1.0);
+              }),
+              onChangeStart: (_) => HapticFeedback.selectionClick(),
+            ))),
         Row(children: [
-          Text(_fmtTime(_trimEnd * _durationSec),
-              style: const TextStyle(color: _gold, fontSize: 15, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+          _chip_(ar ? 'بداية' : 'Start', () => setState(() => _trimStart = 0)),
           const Spacer(),
           _chip_(ar ? 'نهاية' : 'End', () => setState(() => _trimEnd = 1)),
         ]),
-        _slider(_trimEnd, _trimStart + 0.005, 1.0, _gold, (v) => setState(() => _trimEnd = v)),
-      ]),
-      const SizedBox(height: 10),
-      _card_(ar ? 'مدة التحديد' : 'Selection Duration', Icons.timer_outlined, [
-        Center(child: Text(_fmtTime((_trimEnd - _trimStart) * _durationSec),
-          style: const TextStyle(color: _gold, fontSize: 30, fontWeight: FontWeight.w800,
-              letterSpacing: 1.5, fontFamily: 'monospace'))),
+        const SizedBox(height: 14),
+        Divider(height: 1, color: _border.withValues(alpha: 0.6)),
+        const SizedBox(height: 12),
+        Center(child: Column(children: [
+          Text(_fmtTime((_trimEnd - _trimStart) * _durationSec),
+              style: const TextStyle(color: _gold, fontSize: 28, fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2, fontFamily: 'monospace')),
+          const SizedBox(height: 2),
+          Text(ar ? 'مدة التحديد' : 'Selection Duration', style: const TextStyle(color: _textDim, fontSize: 10.5)),
+        ])),
         const SizedBox(height: 12),
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
           _chip_(ar ? 'الكل' : 'All', () => setState(() { _trimStart = 0; _trimEnd = 1; })),
