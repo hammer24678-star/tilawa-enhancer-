@@ -11,3 +11,4 @@ ios/
 # S238: byte-compiled cache from local test runs of the DSP asset script
 assets/dsp/__pycache__/
 pubspec.lock
+test/.screenshots/

@@ -303,6 +303,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   bool _analyzing = false;
   int  _analyzeToken = 0;              // discards stale results after file change
   late AnimationController _barMorphCtrl;
+  // S250d — trim-handle grab emphasis (swell + glow while dragging)
+  late AnimationController _grabCtrl;
+  late Animation<double> _grabAnim;
   List<double>  _barsFrom = const [], _barsTo = const [];
   List<double>? _rmsTo;
   static const int _kBars = 96;        // must match _WAVE_BUCKETS in the py engine
@@ -318,6 +321,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     _waveCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
     _glowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     // S236 — morphs the placeholder bars into the real analyzed waveform
+    _grabCtrl = AnimationController(vsync: this,
+        duration: const Duration(milliseconds: 160));
+    _grabAnim = CurvedAnimation(parent: _grabCtrl, curve: Curves.easeOutBack);
     _barMorphCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))
       ..addListener(() {
         if (_barsTo.isEmpty) return;
@@ -402,6 +408,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     _progressTimer?.cancel();
     _player.dispose(); _waveCtrl.dispose(); _glowCtrl.dispose();
     _barMorphCtrl.dispose();
+    _grabCtrl.dispose();
     _tabScroll.dispose();
     _metaTitleCtrl.dispose(); _metaArtistCtrl.dispose(); _metaAlbumCtrl.dispose();
     _fx2SearchCtrl.dispose();
@@ -1656,7 +1663,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       )));
 
   Widget _processingOverlay() => AbsorbPointer(
-    child: AnimatedBuilder(animation: _glowCtrl,
+    child: AnimatedBuilder(animation: Listenable.merge([_glowCtrl, _waveCtrl]),
       builder: (_, __) => Container(
         color: Colors.black.withValues(alpha: 0.72),
         alignment: Alignment.center,
@@ -1674,7 +1681,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                   strokeWidth: 3, backgroundColor: _border,
                   valueColor: AlwaysStoppedAnimation(Color.lerp(_teal, _gold, _glowCtrl.value)!),
                   strokeCap: StrokeCap.round)),
-              const Icon(Icons.audio_file_rounded, color: _gold, size: 26),
+              // S250d — a counter-rotating sweep on top of the progress ring,
+              // so a long DSP stage still looks like it is doing something even
+              // while the determinate value sits still between stage ticks.
+              SizedBox(width: 84, height: 84,
+                child: Transform.rotate(
+                  angle: -_waveCtrl.value * 2 * pi,
+                  child: CustomPaint(
+                      painter: _SweepPainter(t: _waveCtrl.value)))),
+              AnimatedScale(
+                duration: const Duration(milliseconds: 400),
+                scale: 0.94 + 0.06 * _glowCtrl.value,
+                child: const Icon(Icons.audio_file_rounded, color: _gold, size: 26)),
             ])),
           const SizedBox(height: 18),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1929,7 +1947,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                   onTap: canPreview ? _previewDsp : null),
               const SizedBox(width: 6),
               Tooltip(message: ar ? 'معالجة وتصدير' : 'Process & Export',
-                child: GestureDetector(
+                child: _pressable(
                   onTap: canExport ? _export : null,
                   child: Opacity(opacity: canExport ? 1 : 0.4,
                     child: Container(
@@ -1952,6 +1970,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       }));
   }
 
+  /// S250d — press feedback. A tap on a flat container gave no acknowledgement
+  /// at all before the (often slow) action started, which reads as a dropped
+  /// tap. Scales down while held, springs back on release.
+  Widget _pressable({required Widget child, VoidCallback? onTap}) =>
+      _PressScale(onTap: onTap, child: child);
+
   Widget _barIconBtn(IconData icon, VoidCallback? onTap, String tip) => Tooltip(
     message: tip,
     child: GestureDetector(
@@ -1964,7 +1988,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Widget _barChip({required IconData icon, String? label,
       required Color color, required Color bg, VoidCallback? onTap,
       bool busy = false, String? tip}) {
-    final chip = GestureDetector(
+    final chip = _pressable(
       onTap: onTap,
       child: Opacity(opacity: onTap == null ? 0.4 : 1,
         child: Container(
@@ -2043,6 +2067,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     } else {
       _dragTarget = 0;
     }
+    if (_dragTarget != 0) _grabCtrl.forward();   // S250d
   }
 
   void _onWaveDrag(double dx, double w) {
@@ -2125,16 +2150,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               if (_dragTarget != 0) HapticFeedback.selectionClick();
             },
             onHorizontalDragUpdate: (d) => _onWaveDrag(d.localPosition.dx, cons.maxWidth),
-            onHorizontalDragEnd: (_) => _dragTarget = 0,
-            onHorizontalDragCancel: () => _dragTarget = 0,
-            child: AnimatedBuilder(animation: _waveCtrl,
+            onHorizontalDragEnd: (_) { _dragTarget = 0; _grabCtrl.reverse(); },
+            onHorizontalDragCancel: () { _dragTarget = 0; _grabCtrl.reverse(); },
+            child: AnimatedBuilder(
+              animation: Listenable.merge([_waveCtrl, _grabCtrl]),
               builder: (_, __) => SizedBox(height: 118,
                 child: CustomPaint(
+                  key: const ValueKey('waveform'),   // S250d: targetable in tests
                   painter: _WavePainter(bars: _bars, rms: _rmsBars, playPos: pos,
                     trimStart: _trimStart, trimEnd: _trimEnd,
                     animT: _waveCtrl.value, playing: _playing && !_previewMode,
                     analyzed: _analyzed, durationSec: _durationSec,
-                    dimmed: _previewMode),
+                    dimmed: _previewMode, grab: _grabAnim.value),
                   size: const Size(double.infinity, 118))))))),
         // S250 — selection readout right under the wave, where you're looking
         if (_durationSec > 0)
@@ -2373,7 +2400,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   void _selectTab(_Tab t) {
     HapticFeedback.selectionClick();
-    setState(() => _tab = t);
+    setState(() { _prevTabIndex = _tab.index; _tab = t; });
     // keep the chosen tab visible (approximate width per tab is fine — the
     // clamp keeps it inside the scroll extent either way)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2450,6 +2477,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ));
   }
 
+  int _prevTabIndex = 0;   // S250d — direction of travel for the transition
+
   Widget _tabBody() {
     late final Widget child;
     switch (_tab) {
@@ -2464,12 +2493,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.merge:   child = _mergeTab(); break;
       case _Tab.export_: child = _exportTab(); break;
     }
+    // S250d — the transition now carries DIRECTION: move right through the
+    // tabs and content enters from the right, move left and it enters from the
+    // left. The old version always slid a flat 2% upward regardless, which read
+    // as a twitch rather than as navigation.
+    final forward = _tab.index >= _prevTabIndex;
+    final dx = forward ? 0.18 : -0.18;
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 260),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
       transitionBuilder: (c, anim) => FadeTransition(opacity: anim,
           child: SlideTransition(
-              position: Tween<Offset>(begin: const Offset(0, 0.02), end: Offset.zero).animate(anim),
+              position: Tween<Offset>(begin: Offset(dx, 0.015), end: Offset.zero)
+                  .animate(anim),
               child: c)),
+      // keep the outgoing child under the incoming one so the slide reads
+      layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.topCenter,
+          children: [...previous, if (current != null) current]),
       child: KeyedSubtree(key: ValueKey(_tab), child: child),
     );
   }
@@ -2663,9 +2705,15 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       // S236 — real frequency profile of the loaded file (numpy Welch analysis)
       if (_spectrum.isNotEmpty) ...[
         _card_(ar ? 'الطيف الترددي للملف' : 'Frequency Profile', Icons.bar_chart_rounded, [
-          SizedBox(height: 64, child: CustomPaint(
-              painter: _SpectrumPainter(bands: _spectrum),
-              size: const Size(double.infinity, 64))),
+          // S250d — staggered rise so the analyser reads as filling up
+          SizedBox(height: 64, child: TweenAnimationBuilder<double>(
+              key: ValueKey(_spectrum.length),
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 650),
+              curve: Curves.easeOutCubic,
+              builder: (_, t, __) => CustomPaint(
+                  painter: _SpectrumPainter(bands: _spectrum, reveal: t),
+                  size: const Size(double.infinity, 64)))),
           const SizedBox(height: 6),
           const Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('60Hz', style: TextStyle(color: _textDim, fontSize: 9, fontFamily: 'monospace')),
@@ -3362,12 +3410,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _card_(ar ? 'قياسات الجهارة الحقيقية' : 'Real Loudness Measurements', Icons.analytics_rounded, [
         Row(children: [
           Expanded(child: _loudnessStatBlock(ar ? 'الجهارة المتكاملة' : 'Integrated',
-              lufs != null ? lufs.toStringAsFixed(1) : '—', 'LUFS')),
+              lufs != null ? lufs.toStringAsFixed(1) : '—', 'LUFS',
+              animateTo: lufs)),
           Expanded(child: _loudnessStatBlock(ar ? 'نطاق الجهارة' : 'Loudness Range',
-              lra != null ? lra.toStringAsFixed(1) : '—', 'LU')),
+              lra != null ? lra.toStringAsFixed(1) : '—', 'LU', animateTo: lra)),
           Expanded(child: _loudnessStatBlock(ar ? 'الذروة الحقيقية' : 'True Peak',
               tp != null ? '${tp >= 0 ? "+" : ""}${tp.toStringAsFixed(1)}' : '—', 'dBTP',
-              warn: tp != null && tp > -1.0)),
+              warn: tp != null && tp > -1.0, animateTo: tp)),
         ]),
         const SizedBox(height: 4),
         Text(ar ? 'وفق ITU-R BS.1770-4 / EBU Tech 3342 — خوارزمية pyloudnorm الحقيقية'
@@ -3408,7 +3457,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                   GestureDetector(
                     onTap: () {
                       HapticFeedback.selectionClick();
-                      setState(() { _loudnessTarget = preset; _truePeakLimiter = true; _tab = _Tab.studio; });
+                      setState(() { _loudnessTarget = preset; _truePeakLimiter = true;
+                        _prevTabIndex = _tab.index; _tab = _Tab.studio; });
                       _snack(ar ? '✓ تم ضبط الهدف — راجع تبويب الاستوديو' : '✓ Target set — check the Studio tab');
                     },
                     child: Container(
@@ -3443,11 +3493,26 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     ]);
   }
 
-  Widget _loudnessStatBlock(String label, String value, String unit, {bool warn = false}) => Column(children: [
+  // S250d — measured values count up from zero when a fresh analysis lands, so
+  // the numbers read as "just measured" rather than as static labels that may
+  // or may not belong to the current file.
+  Widget _loudnessStatBlock(String label, String value, String unit,
+      {bool warn = false, double? animateTo, int decimals = 1}) => Column(children: [
     Text(label, style: const TextStyle(color: _textDim, fontSize: 10), textAlign: TextAlign.center),
     const SizedBox(height: 4),
-    Text(value, style: TextStyle(color: warn ? _red : _gold, fontSize: 20,
-        fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+    if (animateTo == null)
+      Text(value, style: TextStyle(color: warn ? _red : _gold, fontSize: 20,
+          fontWeight: FontWeight.w800, fontFamily: 'monospace'))
+    else
+      TweenAnimationBuilder<double>(
+        key: ValueKey('$label$animateTo'),
+        tween: Tween(begin: 0, end: animateTo),
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
+        builder: (_, v, __) => Text(
+            '${v > 0 && animateTo > 0 ? "+" : ""}${v.toStringAsFixed(decimals)}',
+            style: TextStyle(color: warn ? _red : _gold, fontSize: 20,
+                fontWeight: FontWeight.w800, fontFamily: 'monospace'))),
     Text(unit, style: const TextStyle(color: _textDim, fontSize: 10)),
   ]);
 
@@ -3942,12 +4007,31 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // ── FX+ TAB — S229: tone shaping, character FX, stereo/space, cleanup ────
 
   // ── S232: FX rack redesign — collapsible rows, lamp indicators, search ──────
-  Widget _rackLamp(bool on) => Container(width: 8, height: 8,
-    margin: const EdgeInsetsDirectional.only(end: 10),
-    decoration: BoxDecoration(shape: BoxShape.circle,
-      color: on ? _gold : Colors.transparent,
-      border: Border.all(color: on ? _gold : _textDim, width: 1.4),
-      boxShadow: on ? [BoxShadow(color: _gold.withValues(alpha: 0.6), blurRadius: 7, spreadRadius: 1)] : null));
+  // S250d — a lit lamp now breathes with the shared glow controller, the way a
+  // real rack's indicators do. Unlit lamps stay perfectly static (no animation
+  // cost for the common case) and the widget is otherwise unchanged.
+  Widget _rackLamp(bool on) {
+    if (!on) {
+      return Container(width: 8, height: 8,
+        margin: const EdgeInsetsDirectional.only(end: 10),
+        decoration: BoxDecoration(shape: BoxShape.circle,
+          color: Colors.transparent,
+          border: Border.all(color: _textDim, width: 1.4)));
+    }
+    return AnimatedBuilder(
+      animation: _glowCtrl,
+      builder: (_, __) {
+        final g = _glowCtrl.value;
+        return Container(width: 8, height: 8,
+          margin: const EdgeInsetsDirectional.only(end: 10),
+          decoration: BoxDecoration(shape: BoxShape.circle,
+            color: Color.lerp(_gold, const Color(0xFFFFF1C4), g * 0.5),
+            border: Border.all(color: _gold, width: 1.4),
+            boxShadow: [BoxShadow(
+                color: _gold.withValues(alpha: 0.35 + 0.45 * g),
+                blurRadius: 5 + 6 * g, spreadRadius: 0.5 + g)]));
+      });
+  }
 
   Widget _rackRow({required String id, required String label, required String valueStr,
       required bool on, Widget? rightControl, Widget? body}) {
@@ -4482,6 +4566,34 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   }
 }
 
+// ── S250d: PRESS-SCALE ──────────────────────────────────────────────────────
+// Stateful so the scale survives the parent's frequent rebuilds (the editor
+// rebuilds on every animation tick; a plain AnimatedScale driven by a local
+// bool in the parent would be reset constantly).
+class _PressScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  const _PressScale({required this.child, this.onTap});
+  @override State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _down = false;
+  void _set(bool v) { if (mounted && _down != v) setState(() => _down = v); }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: widget.onTap,
+    onTapDown: widget.onTap == null ? null : (_) => _set(true),
+    onTapUp: (_) => _set(false),
+    onTapCancel: () => _set(false),
+    child: AnimatedScale(
+      scale: _down ? 0.93 : 1.0,
+      duration: Duration(milliseconds: _down ? 90 : 220),
+      curve: _down ? Curves.easeOut : Curves.elasticOut,
+      child: widget.child));
+}
+
 // ── WAVEFORM PAINTER ──────────────────────────────────────────────────────────
 // S236: dual-layer (peak outline + solid RMS core) once the numpy analysis
 // lands, with an *accurate* play animation — instead of the old fake global
@@ -4495,10 +4607,11 @@ class _WavePainter extends CustomPainter {
   final bool playing, analyzed;
   final double durationSec;   // S250 — for the time ruler
   final bool dimmed;          // S250 — a preview is playing, this isn't it
+  final double grab;          // S250d — 0..1 trim-handle grab emphasis
   _WavePainter({required this.bars, this.rms, required this.playPos,
       required this.trimStart, required this.trimEnd,
       required this.animT, required this.playing, this.analyzed = false,
-      this.durationSec = 0, this.dimmed = false});
+      this.durationSec = 0, this.dimmed = false, this.grab = 0});
 
   // S250 — the strip along the bottom that carries the time ruler
   static const double _rulerH = 16.0;
@@ -4647,9 +4760,19 @@ class _WavePainter extends CustomPainter {
     // S250 — handles now look grabbable: a full-height rail plus a wide grip
     // pill with grip lines, matching the ±26 px drag hit-box in the widget.
     void handle(double x, Color col, bool start) {
+      // S250d — the grabbed handle swells and casts a glow, so a drag has
+      // physical feedback instead of the bar simply teleporting.
+      final g = grab.clamp(0.0, 1.0);
+      if (g > 0) {
+        c.drawRect(Rect.fromLTWH(x - 16, 0, 32, sz.height),
+            Paint()..shader = ui.Gradient.linear(
+                Offset(x - 16, 0), Offset(x + 16, 0),
+                [Colors.transparent, col.withValues(alpha: 0.22 * g), Colors.transparent],
+                const [0.0, 0.5, 1.0]));
+      }
       c.drawLine(Offset(x, 0), Offset(x, sz.height),
-          Paint()..color = col..strokeWidth = 2.0);
-      const gw = 13.0, gh = 30.0;
+          Paint()..color = col..strokeWidth = 2.0 + 1.4 * g);
+      final gw = 13.0 + 4.0 * g, gh = 30.0 + 10.0 * g;
       final gx = start ? x : x - gw;
       final rect = RRect.fromRectAndCorners(
           Rect.fromLTWH(gx, mid - gh / 2, gw, gh),
@@ -4675,6 +4798,32 @@ class _WavePainter extends CustomPainter {
     handle(x0, const Color(0xFF1DB898), true);
     handle(x1, const Color(0xFFD4AF37), false);
 
+    // S250d — IDLE SHIMMER. Verified by the animation gate in
+    // test/screenshot_test.dart, which measured a 0.00% frame-to-frame diff on
+    // the idle editor: with playback paused nothing on the screen moved at all,
+    // because the only motion was gated behind `playing`. A soft highlight now
+    // sweeps the selected region so the waveform reads as live rather than as a
+    // frozen screenshot. It is deliberately confined to the trim window — that
+    // is the part the user is working on — and skipped entirely while playing,
+    // where the playhead already carries the motion.
+    if (!playing && !dimmed && x1 > x0) {
+      final sweep = (animT * 1.6) % 1.6 - 0.3;      // travels, with a pause
+      final cx = x0 + (x1 - x0) * sweep.clamp(0.0, 1.0);
+      const w = 64.0;
+      if (sweep >= 0 && sweep <= 1) {
+        c.save();
+        c.clipRect(Rect.fromLTWH(x0, 0, x1 - x0, sz.height));
+        c.drawRect(Rect.fromLTWH(cx - w / 2, 0, w, sz.height),
+            Paint()..shader = ui.Gradient.linear(
+                Offset(cx - w / 2, 0), Offset(cx + w / 2, 0),
+                [Colors.transparent,
+                 const Color(0xFF37E0B8).withValues(alpha: 0.10),
+                 Colors.transparent],
+                const [0.0, 0.5, 1.0]));
+        c.restore();
+      }
+    }
+
     _paintRuler(c, szFull);
 
     // S250 — a preview is playing something else; grey the source wave so the
@@ -4693,18 +4842,48 @@ class _WavePainter extends CustomPainter {
       o.dimmed != dimmed ||
       o.analyzed != analyzed ||
       o.durationSec != durationSec ||
+      o.grab != grab ||
       o.bars.length != bars.length ||
-      // only the animated states need the per-frame repaint the old
-      // `=> true` forced on every rebuild
-      (playing && o.animT != animT) ||
+      // S250d: animT now matters whether or not playback is running — the
+      // idle shimmer needs it. (The earlier `playing && ...` guard is exactly
+      // why the animation gate measured a 0.00% idle diff.) Still far cheaper
+      // than the original unconditional `=> true`, which repainted on every
+      // rebuild including ones with no visual change at all.
+      o.animT != animT ||
       !identical(o.bars, bars) ||
       !identical(o.rms, rms);
+}
+
+// ── S250d: PROCESSING SWEEP ─────────────────────────────────────────────────
+// A short, fading arc that chases the progress ring. Deliberately tiny: one
+// arc, no shader allocation per frame beyond the sweep gradient.
+class _SweepPainter extends CustomPainter {
+  final double t;
+  const _SweepPainter({required this.t});
+
+  @override
+  void paint(Canvas c, Size sz) {
+    final r = sz.shortestSide / 2 - 2;
+    final rect = Rect.fromCircle(center: Offset(sz.width / 2, sz.height / 2), radius: r);
+    c.drawArc(rect, -pi / 2, pi * 0.55, false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2
+          ..strokeCap = StrokeCap.round
+          ..shader = ui.Gradient.sweep(
+              rect.center,
+              [const Color(0x001DB898), const Color(0xFF37E0B8), const Color(0x00D4AF37)],
+              const [0.0, 0.14, 0.28]));
+  }
+
+  @override bool shouldRepaint(_SweepPainter o) => o.t != t;
 }
 
 // ── SPECTRUM PAINTER — S236: 30-band average spectrum from numpy analysis ────
 class _SpectrumPainter extends CustomPainter {
   final List<double> bands;
-  _SpectrumPainter({required this.bands});
+  final double reveal;   // S250d — 0..1 staggered entrance
+  _SpectrumPainter({required this.bands, this.reveal = 1});
 
   @override
   void paint(Canvas c, Size sz) {
@@ -4718,7 +4897,10 @@ class _SpectrumPainter extends CustomPainter {
     final n = bands.length;
     final bw = sz.width / n;
     for (int i = 0; i < n; i++) {
-      final v = bands[i].clamp(0.0, 1.0);
+      // each band starts slightly after the one before it
+      final lead = (i / n) * 0.35;
+      final t = ((reveal - lead) / (1 - 0.35)).clamp(0.0, 1.0);
+      final v = bands[i].clamp(0.0, 1.0) * t;
       final h = v * (sz.height - 2);
       final x = i * bw + 1.0;
       c.drawRRect(RRect.fromRectAndRadius(
@@ -4731,6 +4913,7 @@ class _SpectrumPainter extends CustomPainter {
   }
 
   @override bool shouldRepaint(_SpectrumPainter o) {
+    if (o.reveal != reveal) return true;
     if (o.bands.length != bands.length) return true;
     for (int i = 0; i < bands.length; i++) {
       if (o.bands[i] != bands[i]) return true;
