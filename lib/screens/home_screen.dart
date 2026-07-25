@@ -110,6 +110,15 @@ class _HomeScreenState extends State<HomeScreen>
   bool   _localMode  = false;  // S65: run via proot (offline)
   bool   _engineTintEnabled = true;  // S188-B: engine-color background tint intensity toggle
   bool   _localReady = false;  // S65: setup confirmed complete
+  // S250 — engine ids with a runnable on-device script. Empty = not yet known
+  // (setup not run / channel unavailable), which must NOT restrict the UI.
+  List<String> _localEngines = const [];
+  // S250 — armed by the first back-press during processing; a second press
+  // while armed is allowed through (see the PopScope in build()). A Timer
+  // disarms it so the state is always accurate — deriving it from a deadline
+  // would leave canPop stale until something else happened to rebuild.
+  bool _exitArmed = false;
+  Timer? _exitArmTimer;
   bool   _aggressive = false;  // S173: safaa standard / aggressive mode
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
@@ -234,6 +243,7 @@ class _HomeScreenState extends State<HomeScreen>
         const Duration(seconds: 6), (_) => _checkServer());
     LocalEngineService.isSetupComplete() // S65
         .then((r) { if (mounted) setState(() => _localReady = r); });
+    _refreshLocalEngines();  // S250: which engines can run offline at all
     // S65: pre-warm both servers on app init
     ApiService.preWarm();
     // S30-F1: restored — one loadLastEngine call
@@ -261,6 +271,7 @@ class _HomeScreenState extends State<HomeScreen>
     _serverTimer?.cancel();
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
+    _exitArmTimer?.cancel();  // S250
     _resultCtrl.dispose();
     _scrollCtrl.dispose(); // S92-SCROLL
     _particleCtrl.dispose(); // S58
@@ -1064,6 +1075,36 @@ class _HomeScreenState extends State<HomeScreen>
     _tSub = _cSub(context); _tDim = _cDim(context); _tGold = _cGold(context);
     final dark = _tDark; // used in gradient below
     final cBg = _tBg;   // used in Scaffold backgroundColor
+    // S250 QoL — the back button was unguarded here. This is the root route, so
+    // on Android back EXITS THE APP: a tap during a multi-minute local
+    // restoration killed the proot process and lost the whole run with no
+    // warning. (The audio editor has had this guard since S203; the screen that
+    // runs the long jobs did not.) First press warns, a second within 3 s
+    // leaves — so it can't trap someone who really does want out.
+    return PopScope(
+      canPop: !_busy || _exitArmed,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || !mounted) return;
+        setState(() => _exitArmed = true);
+        _exitArmTimer?.cancel();
+        _exitArmTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _exitArmed = false);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: const Color(0xFF1A1200),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+          content: Text(
+            s.ar
+              ? 'المعالجة جارية — اضغط رجوع مرة أخرى للخروج وإلغاء العمل'
+              : 'Still processing — press back again to exit and cancel the run',
+            style: const TextStyle(color: Color(0xFFF0D882), fontSize: 12)),
+        ));
+      },
+      child: _buildHome(s, dark, cBg));
+  }
+
+  Widget _buildHome(S s, bool dark, Color cBg) {
     return Scaffold(
       backgroundColor: cBg,
       body: Container(
@@ -1331,6 +1372,22 @@ class _HomeScreenState extends State<HomeScreen>
   // ── LOCAL PROCESS (S65) — proot offline engine ────────────────────────────
   Future<void> _processLocal() async {
     if (_file == null || _busy) return;
+    // S250: last line of defence. The engine could still be one with no
+    // on-device script — selected before the availability list arrived, or
+    // restored from saveLastEngine() on a fresh launch. Fail here with a
+    // sentence the user can act on rather than deep inside proot.
+    await _refreshLocalEngines();
+    if (!mounted) return;
+    if (_engineBlocked(_engine)) {
+      final s = LangProvider.strings(context);
+      setState(() {
+        _busy = false;
+        _status = s.ar
+          ? 'هذا المحرك غير متوفر بدون إنترنت — اختر محركًا آخر أو أوقف الوضع المحلي'
+          : 'This engine has no offline version — pick another, or turn off local mode';
+      });
+      return;
+    }
     HapticFeedback.mediumImpact(); // S146: removed server-only guard — allow all engines in local mode
     _wakeCh.invokeMethod('acquire').catchError((_) {}); // S141: keep CPU alive during proot
     setState(() {
@@ -1627,6 +1684,7 @@ class _HomeScreenState extends State<HomeScreen>
                             Navigator.of(context).pop();
                             LocalEngineService.isSetupComplete()
                               .then((r) { if (mounted) setState(() => _localReady = r); });
+                            _refreshLocalEngines();  // S250
                           },
                           onSkip: () {
                             Navigator.of(context).pop();
@@ -1642,7 +1700,16 @@ class _HomeScreenState extends State<HomeScreen>
                     color: Color(0xFFF0D882), fontSize: 10,
                     decoration: TextDecoration.underline))),
             if (_localMode && _localReady)
-              Text(s.ar ? 'جاهز — تشغيل بدون إنترنت' : 'Ready — processes fully offline', // S147
+              // S250 QoL — say how many engines are actually runnable offline.
+              // "Ready — processes fully offline" was true of the environment
+              // but said nothing about the engines, which is what silently
+              // varied (and was silently broken for five of them).
+              Text(
+                _localEngines.isEmpty
+                  ? (s.ar ? 'جاهز — تشغيل بدون إنترنت' : 'Ready — processes fully offline')
+                  : (s.ar
+                      ? 'جاهز — ${_localEngines.length} محركات تعمل بدون إنترنت'
+                      : 'Ready — ${_localEngines.length} engines run offline'),
                 style: const TextStyle(color: teal, fontSize: 10)),
             if (!_localMode)
               Text(s.ar ? 'فعِّل للمعالجة خارج الإنترنت' : 'Switch for offline, private processing', // S147
@@ -1995,12 +2062,43 @@ class _HomeScreenState extends State<HomeScreen>
       ]));
   }
 
+  Future<void> _refreshLocalEngines() async {
+    final list = await LocalEngineService.availableLocalEngines();
+    if (mounted) setState(() => _localEngines = list);
+  }
+
+  /// S250 — true when this engine cannot run in the current mode. Only ever
+  /// true in local mode, and only once we actually know the on-device list.
+  bool _engineBlocked(String id) =>
+      _localMode && _localEngines.isNotEmpty && !_localEngines.contains(id);
+
   Widget _engineCard(_EngineData e, S s) {
     final sel = _engine == e.id;
     final col = _badgeColor(e.bc);
+    final blocked = _engineBlocked(e.id);  // S250
     return GestureDetector(  // S87: removed Opacity/AbsorbPointer wrapper
       onTap: () {
         HapticFeedback.selectionClick(); // S30-P1
+        // S250: selecting an engine with no on-device script used to "work"
+        // right up until processing failed inside proot with an unreadable
+        // error. Explain it at the point of choice instead.
+        if (_engineBlocked(e.id)) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            backgroundColor: const Color(0xFF200D0D),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+            content: Text(
+              s.ar
+                ? '${e.nameAr} غير متوفر بدون إنترنت — أوقف الوضع المحلي لاستخدامه'
+                : '${e.nameEn} isn\'t available offline — turn off local mode to use it',
+              style: const TextStyle(color: Color(0xFFF85149), fontSize: 12)),
+            action: SnackBarAction(
+              label: s.ar ? 'أوقف' : 'Turn off',
+              textColor: _gold,
+              onPressed: () => setState(() => _localMode = false)),
+          ));
+          return;
+        }
         setState(() {
               _engine = e.id;
               // S87: removed auto-mode switch — user controls mode
@@ -2011,15 +2109,24 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.fromLTRB(8,3,8,3),
         // S32-ENGINE-GLASS
+        // S250: dim + red-tint an engine that has no offline script, so the
+        // constraint is visible before it is tapped.
+        foregroundDecoration: blocked
+          ? BoxDecoration(
+              color: const Color(0xFF020D0C).withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(14))
+          : null,
         decoration: BoxDecoration(
           color: sel
             ? col.withValues(alpha: 0.10)
             : const Color(0xFF0D2B22).withValues(alpha: 0.70),  // S85: grey handled by Opacity wrapper
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: sel
-              ? col.withValues(alpha: 0.70)
-              : const Color(0xFF1DB898).withValues(alpha: 0.22),
+            color: blocked
+              ? const Color(0xFFF85149).withValues(alpha: 0.35)
+              : sel
+                ? col.withValues(alpha: 0.70)
+                : const Color(0xFF1DB898).withValues(alpha: 0.22),
             width: sel ? 1.8 : 0.8),
           boxShadow: sel ? [
             BoxShadow(

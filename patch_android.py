@@ -442,6 +442,25 @@ class LocalEngineRunner(
         private const val DF_VERSION   = "0.5.6"
         private const val ALPINE_VER   = "3.21.3"
         private const val PROOT_VER    = "5.3.0"
+
+        val ENGINE_SCRIPTS: Map<String, String> = mapOf(
+            "v11.0" to "engine_safaa_v4.py",           // S199-BUG-2: tajalli file never existed
+            "v11.1" to "engine_itiqan_v6_official.py", // S199-BUG-3: ditto
+            "v11.2" to "engine_isteidad_v21.py",
+            "v11.3" to "ihyaa_ve.py",                  // S199-BUG-4: real bundled filename
+            "v10.0" to "engine_v100.py",               // S250: now actually bundled
+            "v8.5"  to "engine_v85.py",                // S250: now actually bundled
+            "v7.0"  to "engine_v70.py",                // S250: now actually bundled
+            // v9.0 and v8.0 are deliberately absent: no engine_v90.py /
+            // engine_v80.py exists anywhere in the project, so they cannot run
+            // offline. availableLocalEngines() reports that to the UI instead
+            // of letting the user pick an engine that is guaranteed to fail.
+        )
+        // Helper scripts the engines above import or shell out to.
+        val SUPPORT_SCRIPTS = listOf(
+            "idrak_text_v2.py", "miraat_ref_v2.py", "hakim_gen_v2.py",
+            "naqaa_v1_tested.py", "bayan_ve_v2fix.py", "noor_v5.py",
+        )
     }
 
     private val dataDir     = context.filesDir
@@ -499,6 +518,9 @@ class LocalEngineRunner(
                     result.success(null)
                 }
                 "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S193
+                // S250: which engines can actually run offline. The UI used to
+                // offer all nine and let five of them fail inside proot.
+                "availableLocalEngines" -> result.success(availableLocalEngines())
                 "runProotCmd" -> {  // S202: was missing entirely — every audio-editor
                     // export (and any LocalEngineService.runProotCmd caller) fell through
                     // to notImplemented() below and threw a MissingPluginException in Dart.
@@ -861,17 +883,16 @@ class LocalEngineRunner(
         aggressive: Boolean = false) =  // S173
         withContext(Dispatchers.IO) {
         try {
-            val script = mapOf(
-                "v11.0" to "engine_safaa_v4.py",  // S199-BUG-2: tajalli file never existed
-                "v11.1" to "engine_itiqan_v6_official.py",  // S199-BUG-3: ditto
-                "v11.2" to "engine_isteidad_v21.py",
-                "v11.3" to "ihyaa_ve.py",  // S199-BUG-4: real bundled filename
-                "v10.0" to "engine_v100.py",
-                "v9.0"  to "engine_v90.py",
-                "v8.5"  to "engine_v85.py",
-                "v8.0"  to "engine_v80.py",
-                "v7.0"  to "engine_v70.py",
-            )[engineId] ?: "engine_safaa_v4.py"  // S199: match BUG-2 fix
+            // S250: one shared table (see ENGINE_SCRIPTS) — this used to be a
+            // second copy that had drifted out of sync with extractEngines().
+            val script = ENGINE_SCRIPTS[engineId] ?: "engine_safaa_v4.py"
+            // S250: fail with something the user can act on, instead of letting
+            // proot report "can't open file /engines/<name>".
+            if (!File(enginesDir, script).exists()) {
+                throw java.io.IOException(
+                    "Engine $engineId is not available offline (missing $script). " +
+                    "Pick another engine, or turn off local mode for this one.")
+            }
 
             // v11.0 (tajalli) outputs WAV; v11.1/v11.2 output MP3
             val outExt = if (engineId == "v11.0") "wav" else "mp3"
@@ -1211,21 +1232,50 @@ class LocalEngineRunner(
         }
     }
 
+    // S250: SINGLE SOURCE OF TRUTH for engine id -> script.
+    // Until now the id->script map in runEngine() and the filename list in
+    // extractEngines() were two separate literals, and they had drifted:
+    // extractEngines asked for engine_v90.py and engine_v80.py, which exist
+    // nowhere in the repo, while runEngine happily pointed v9.0 and v8.0 at
+    // them. Both extraction failures were swallowed by empty catch blocks and
+    // setup still reported success, so choosing v9.0/v8.0 (or v10.0/v8.5/v7.0,
+    // whose scripts were also never bundled) in local mode failed at the
+    // python3 invocation with "can't open file" and no explanation.
+    // Deriving both from one table makes that drift impossible.
+
+    /// Engine ids whose script is present on disk and therefore runnable
+    /// offline. Exposed on the channel so the UI can stop offering the rest.
+    fun availableLocalEngines(): List<String> =
+        ENGINE_SCRIPTS.filter { (_, script) ->
+            File(enginesDir, script).let { it.exists() && it.length() > 1024 }
+        }.keys.toList()
+
     private fun extractEngines() {
         enginesDir.mkdirs()
-        listOf("engine_safaa_v4.py","engine_itiqan_v6_official.py",  // S199-BUG-1/2/3: fixed names + missing comma
-               "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",  // S199-BUG-4: ihya real filename
-               "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
+        val wanted = (ENGINE_SCRIPTS.values + SUPPORT_SCRIPTS).distinct()
+        val failed = mutableListOf<String>()
+        wanted.forEach { name ->
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88
+            var ok = false
             try { context.assets.open("flutter_assets/assets/engines/$name").use { inp ->
                 FileOutputStream(dest).use { inp.copyTo(it) } }
+                ok = dest.exists() && dest.length() > 1024
             } catch (_: Exception) {
                 try { context.assets.open("engines/$name").use { inp ->
                     FileOutputStream(dest).use { inp.copyTo(it) } }
+                    ok = dest.exists() && dest.length() > 1024
                 } catch (_: Exception) {}
             }
+            // S250: no longer silent — a missing engine script is the single
+            // most confusing local-mode failure there is.
+            if (!ok) { failed += name; android.util.Log.w("Tilawa",
+                "extractEngines: could not extract $name from assets") }
+        }
+        if (failed.isNotEmpty()) {
+            File(dataDir, "engines_missing.txt").writeText(failed.joinToString("\n"))
+        } else {
+            File(dataDir, "engines_missing.txt").delete()
         }
     }
 

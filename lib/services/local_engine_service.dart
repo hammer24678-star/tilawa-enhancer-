@@ -13,6 +13,29 @@ class LocalEngineService {
   static const _ch =
       MethodChannel('com.tilawa.tilawa_enhancer/local_engine');
 
+  /// S250 — engine ids that can actually run offline, i.e. whose Python script
+  /// is present in the on-device engines dir.
+  ///
+  /// This exists because the app offered all nine engines in local mode while
+  /// five of them (v10.0, v9.0, v8.5, v8.0, v7.0) had no bundled script at all:
+  /// extractEngines() asked the APK for filenames that were never in
+  /// assets/engines/, the failure was swallowed, setup still reported success,
+  /// and choosing one of them died inside proot with "can't open file".
+  /// v10.0/v8.5/v7.0 are bundled as of S250; v9.0 and v8.0 have no script
+  /// anywhere in the project, so they remain server-only and the UI now says so
+  /// instead of letting the user pick a guaranteed failure.
+  ///
+  /// Returns an empty list if the channel is unavailable (e.g. setup not run),
+  /// which callers treat as "unknown — don't restrict anything yet".
+  static Future<List<String>> availableLocalEngines() async {
+    try {
+      final r = await _ch.invokeMethod<List<Object?>>('availableLocalEngines');
+      return (r ?? const []).whereType<String>().toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   // ── Setup check ──────────────────────────────────────────────────────────
 
   // S157: active controllers — handler routes to whichever is open
