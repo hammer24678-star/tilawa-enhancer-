@@ -153,7 +153,57 @@ print('  all 14 packages + numpy/scipy still import after apk del')\"
             --exclude=./proc --exclude=./sys --exclude=./dev \
             --exclude=./out \
             -C / .
-        echo 'python-env.tar.gz done'
+
+        # ── S250e: VERIFY THE TARBALL, NOT THE CONTAINER ────────────────────
+        # Everything above proves the packages work *in this container*. The
+        # device runs whatever came out of `tar`, and those are not the same
+        # thing: the python-env.tar.gz committed before S250e passed every
+        # in-container check and was still unusable on-device --
+        #   * /usr/lib/libopenblas.so.3 was a DANGLING SYMLINK (its target,
+        #     libopenblas_armv8p-r0.3.30.so, was simply not in the archive), so
+        #     import numpy died with: Error loading shared library
+        #     libopenblas.so.3 -- and every numpy engine with it;
+        #   * ffmpeg could not start either -- libavdevice needs libdrm.so.2,
+        #     libxcb.so.1 and libxcb-shm.so.0, none of which were archived.
+        # Both were confirmed by extracting that committed tarball and running
+        # it under qemu-aarch64. So: unpack what we just produced into a clean
+        # prefix and exercise it there. A check that never runs the shipped
+        # artifact cannot catch this class of failure.
+        echo '==> Verifying the produced tarball (not just the container)'
+        rm -rf /verify && mkdir -p /verify
+        tar xzf /out/python-env.tar.gz -C /verify
+        BAD=\$(find /verify -type l ! -exec test -e {} \; -print 2>/dev/null | head -20)
+        if [ -n \"\$BAD\" ]; then
+            echo '    !! dangling symlinks in the archive:'
+            echo \"\$BAD\"
+            exit 1
+        fi
+        echo '    no dangling symlinks'
+        export LD_LIBRARY_PATH=/verify/usr/lib:/verify/lib
+        /verify/usr/bin/python3 - <<'VEOF' || { echo '    !! numpy/scipy unusable from the archive'; exit 1; }
+import numpy, scipy, numpy as np
+from scipy import signal
+b, a = signal.butter(4, 0.2)
+assert np.isfinite(signal.lfilter(b, a, np.random.randn(4096))).all()
+print('    extracted numpy %s + scipy %s work' % (numpy.__version__, scipy.__version__))
+VEOF
+        /verify/usr/bin/ffmpeg -hide_banner -f lavfi \
+            -i anullsrc=r=44100:cl=stereo -t 1 -f wav /verify/t.wav -y \
+            >/dev/null 2>&1 \
+            || { echo '    !! ffmpeg from the archive cannot encode'; exit 1; }
+        echo '    extracted ffmpeg encodes'
+        /verify/usr/bin/python3 - <<'VEOF2' || exit 1
+import importlib.util, sys
+mods = ['nara_wpe','noisereduce','pystoi','pyloudnorm','webrtcvad','soundfile',
+        'soxr','audioread','joblib','decorator','tqdm','msgpack','pooch','lazy_loader']
+bad = [m for m in mods if importlib.util.find_spec(m) is None]
+print('    extracted audio packages: %d/%d' % (len(mods) - len(bad), len(mods)))
+if bad:
+    sys.exit('    !! missing from archive: %s' % ', '.join(bad))
+VEOF2
+        unset LD_LIBRARY_PATH
+        rm -rf /verify
+        echo 'python-env.tar.gz done (verified)'
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
 echo "    pip_wheels cache: $(du -sh pip_wheels 2>/dev/null | cut -f1) (14 packages, S250-verified)"
