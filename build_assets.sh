@@ -28,22 +28,127 @@ echo "==> Setting up QEMU for arm64 Docker"
 docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
 echo "==> Building Python env inside arm64 Alpine Docker"
+# ── S250 FIX: the S247/S248 offline install NEVER WORKED ──────────────────────
+# The previous command was:
+#   pip install --no-index --find-links=/pip_wheels noisereduce nara_wpe pystoi
+#       pyloudnorm webrtcvad soundfile soxr audioread decorator joblib
+#       lazy_loader pooch tqdm msgpack librosa   2>&1 | tail -30
+# It fails, every run, for three independent reasons — and because it is piped
+# into `tail` inside a `sh -c` with no `set -e`, the pipeline's exit status is
+# tail's (0), so the failure was swallowed and a python-env.tar.gz containing
+# NONE of the packages shipped as if all was well. That is why the S248 Cleanup
+# and Quality tabs did nothing on-device: noisereduce/webrtcvad/pystoi were
+# never actually installed.
+#   1. 12 of the 15 entries are sdists, and building an sdist needs the PEP 517
+#      backend (setuptools / poetry-core / scikit-build-core / Cython) in an
+#      isolated build env that pip fetches from an index — which --no-index
+#      forbids. It dies at "Could not find a version that satisfies the
+#      requirement setuptools".
+#   2. The wheels' own runtime dependencies were never vendored: cffi +
+#      pycparser (soundfile), click (nara_wpe), packaging (lazy_loader),
+#      platformdirs + requests (pooch), typing_extensions. Resolution fails
+#      even if the build backends were present.
+#   3. librosa hard-imports numba → llvmlite, which publishes no musl/aarch64
+#      wheel at all, so it could only be satisfied by compiling LLVM under
+#      QEMU on every CI run — the precise trap S240 had to undo for
+#      DeepFilter. librosa is therefore dropped; tilawa_dsp_studio.py now
+#      implements HPSS, F0 tracking, spectral centroid and onset detection
+#      natively in numpy/scipy (faster on-device too: no numba JIT warm-up).
+#
+# The fix: install the 14 remaining packages *with* the network CI already has,
+# from pinned versions, preferring the committed pip_wheels copies, with the
+# transitive closure listed explicitly (--no-deps) so pip can never quietly
+# replace the apk-provided numpy/scipy with a different build. Then VERIFY by
+# importing all 14 and failing the build if any is missing — this class of
+# silent shipping failure must not be possible again.
 docker run --rm \
     --platform linux/arm64 \
     --volume "$PWD/$ASSETS:/out" \
     --volume "$PWD/pip_wheels:/pip_wheels:ro" \
     alpine:3.21 \
-    sh -c "
+    sh -eu -c "
         apk update --no-progress 2>&1 | tail -2
+        # libgcc/libstdc++ are named explicitly so the 'apk del build-base'
+        # below cannot take them with it — the compiled C extensions link them.
+        # Required — a missing name here must fail the build (sh -e).
         apk add --no-progress python3 py3-pip py3-numpy py3-scipy ffmpeg \
-            build-base python3-dev libsndfile 2>&1 | tail -5
-        echo '==> Installing embedded audio-editor packages (offline, S247)'
-        pip install --quiet --no-cache-dir --break-system-packages \
-            --no-index --find-links=/pip_wheels \
-            noisereduce nara_wpe pystoi pyloudnorm webrtcvad soundfile soxr audioread decorator joblib lazy_loader pooch tqdm msgpack librosa 2>&1 | tail -30
-        rm -rf /var/cache/apk/*
-        echo 'Python: '$(python3 --version)
-        echo 'ffmpeg: '$(which ffmpeg 2>/dev/null && ffmpeg -version 2>&1 | head -1 || echo 'checking inside tar...')
+            build-base python3-dev libsndfile libsndfile-dev \
+            libgcc libstdc++ 2>&1 | tail -5
+        # Optional build accelerators: soxr's scikit-build-core backend prefers
+        # cmake+ninja but falls back to make from build-base, and pip can fetch
+        # musl/aarch64 cmake+ninja wheels itself — so never fail on these.
+        apk add --no-progress cmake samurai 2>&1 | tail -2 || \
+            echo '    (cmake/samurai unavailable — pip will supply them)'
+
+        echo '==> Installing the 14 embedded audio-editor packages (S250)'
+        # --no-deps + explicit closure: nothing here may pull in a second numpy.
+        # Status is checked explicitly — piping into tail would hide a failure
+        # behind tail's exit code, which is how the S247 breakage went unnoticed.
+        if pip install --no-cache-dir --break-system-packages --prefer-binary \\
+            --find-links=/pip_wheels --no-deps \\
+            'nara_wpe==0.0.11' 'noisereduce==3.0.3' 'pystoi==0.4.1' \\
+            'pyloudnorm==0.2.0' 'webrtcvad==2.0.10' 'soundfile==0.14.0' \\
+            'soxr==1.1.0' 'audioread==3.1.0' 'joblib==1.5.3' \\
+            'decorator==5.3.1' 'tqdm==4.69.0' 'msgpack==1.2.1' \\
+            'pooch==1.9.0' 'lazy_loader==0.5' \\
+            cffi pycparser typing_extensions click packaging platformdirs \\
+            requests urllib3 idna certifi charset-normalizer \\
+            > /pip-install.log 2>&1; then
+            tail -8 /pip-install.log
+        else
+            echo '    !! pip install FAILED — full log follows'
+            tail -60 /pip-install.log
+            exit 1
+        fi
+
+        echo '==> Verifying every package imports (build fails if not)'
+        python3 - <<'PYEOF'
+import importlib, sys
+mods = ['nara_wpe', 'noisereduce', 'pystoi', 'pyloudnorm', 'webrtcvad',
+        'soundfile', 'soxr', 'audioread', 'joblib', 'decorator', 'tqdm',
+        'msgpack', 'pooch', 'lazy_loader']
+bad = []
+for m in mods:
+    try:
+        mod = importlib.import_module(m)
+        print('  OK   %-12s %s' % (m, getattr(mod, '__version__', '')))
+    except Exception as e:
+        print('  FAIL %-12s %s: %s' % (m, type(e).__name__, e))
+        bad.append(m)
+# the two that need a working C extension AND real data
+import numpy as np
+from nara_wpe.wpe import wpe_v8
+from nara_wpe.utils import stft
+Y = stft(np.random.randn(2, 16000) * 0.05, size=512, shift=128).transpose(2, 0, 1)
+assert wpe_v8(Y, taps=8, delay=2, iterations=1).shape == Y.shape
+import webrtcvad
+assert webrtcvad.Vad(2).is_speech(b'\\x00\\x00' * 480, 16000) in (True, False)
+import soxr
+assert len(soxr.resample(np.zeros(1000, dtype='float32'), 16000, 8000)) == 500
+import soundfile as sf
+assert 'PCM_24' in sf.available_subtypes('WAV')
+print('  smoke tests passed (nara_wpe, webrtcvad, soxr, soundfile)')
+if bad:
+    sys.exit('MISSING PACKAGES: %s' % ', '.join(bad))
+PYEOF
+
+        # Shrink the shipped rootfs: the toolchain was only needed to build the
+        # C extensions above and is dead weight on the device (~180 MB).
+        echo '==> Removing build toolchain from the shipped rootfs'
+        apk del --no-progress build-base python3-dev libsndfile-dev 2>&1 | tail -3 || true
+        apk del --no-progress cmake samurai 2>&1 | tail -1 || true
+        rm -rf /var/cache/apk/* /root/.cache /tmp/* /pip-install.log 2>/dev/null || true
+        find / -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+        echo '==> Re-verifying after toolchain removal'
+        python3 -c \"
+import importlib
+for m in ['nara_wpe','noisereduce','pystoi','pyloudnorm','webrtcvad','soundfile','soxr','audioread','joblib','decorator','tqdm','msgpack','pooch','lazy_loader','numpy','scipy']:
+    importlib.import_module(m)
+print('  all 14 packages + numpy/scipy still import after apk del')\"
+
+        echo 'Python: '\$(python3 --version)
+        ffmpeg -version 2>&1 | head -1 || echo 'ffmpeg MISSING'
         tar -czf /out/python-env.tar.gz \
             --exclude=./proc --exclude=./sys --exclude=./dev \
             --exclude=./out \
@@ -51,7 +156,7 @@ docker run --rm \
         echo 'python-env.tar.gz done'
     "
 echo "    python-env.tar.gz: $(du -sh $ASSETS/python-env.tar.gz | cut -f1)"
-echo "    embedded pip_wheels: $(du -sh pip_wheels 2>/dev/null | cut -f1) (S247: noisereduce, nara_wpe, pystoi, pyloudnorm, webrtcvad + deps)"
+echo "    pip_wheels cache: $(du -sh pip_wheels 2>/dev/null | cut -f1) (14 packages, S250-verified)"
 
 # ── 3. DeepFilter — use the committed binary; download only if missing ────────
 # S240 FIX (v2): the original `cargo install deep_filter` inside QEMU arm64

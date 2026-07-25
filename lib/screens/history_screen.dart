@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart'; // S30-P8
@@ -34,10 +33,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Color _tCard   = const Color(0xFF0F2420);
   Color _tBorder = const Color(0xFF1A4035);
   Color _tText   = const Color(0xFFC9D1D9);
-  Color _tSub    = const Color(0xFF8B949E);
-  Color _tDim    = const Color(0xFF484F58);
   Color _tGold   = const Color(0xFFD4AF37);
-  bool  _tDark   = true;
   @override
   void initState() {
     super.initState();
@@ -154,9 +150,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     // S32: update theme cache
-    _tDark = _isDark(context); _tBg = _cBg(context); _tCard = _cCard(context);
+    _tBg = _cBg(context); _tCard = _cCard(context);
     _tBorder = _cBorder(context); _tText = _cText(context);
-    _tSub = _cSub(context); _tDim = _cDim(context); _tGold = _cGold(context);
+    _tGold = _cGold(context);
     final cBg = _tBg; final cGold = _tGold;
     return Scaffold(
       backgroundColor: cBg,

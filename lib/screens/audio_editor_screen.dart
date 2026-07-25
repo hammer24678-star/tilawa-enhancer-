@@ -11,6 +11,25 @@
 // stats (peak/RMS dBFS, LUFS, clipping) and a 30-band spectrum analyzer.
 // Trim · Split · 10-band EQ · Effects (Noise Reduce/Compress/Normalize/Reverse)
 // Merge · Set as Ringtone · Export via ffmpeg (proot local engine)
+//
+// S250 — UI rebuild + the bugs behind it:
+//  · Tab strip is now scrollable. Ten fixed-width tabs in one Row meant the
+//    later labels ("Compliance", "Quality", "Export") were clipped to ~41 px
+//    each and unreadable on any normal phone.
+//  · Auditioning no longer corrupts the edit. Loading a preview into the
+//    shared AudioPlayer fired onDurationChanged, which overwrote _durationSec
+//    with the 8-second preview's length — after one Preview tap every trim
+//    handle, every time readout and the whole waveform mapped to the wrong
+//    duration. The real duration is now held separately and preview playback
+//    is an explicit, exitable mode.
+//  · Trim handles are draggable directly on the waveform, which also gained a
+//    time ruler and dB grid.
+//  · Undo/redo across every control, a persistent transport/action bar, real
+//    per-stage progress from the engine, and an "Engine Libraries" panel that
+//    shows which of the 14 embedded audio packages are live on-device.
+//  · New DSP exposed: WPE dereverb, pause squeezing, harmonic focus,
+//    non-stationary denoise, plus content insights (pitch, brightness, pace,
+//    speech ratio) with one-tap fixes.
 
 import 'dart:async';
 import 'dart:convert';
@@ -42,8 +61,34 @@ const _border  = Color(0xFF1A2E20);
 
 enum _Tab { trim, eq, effects, fx2, cleanup, studio, loudness, quality, merge, export_ }
 
+/// S250 — one row of the scrollable tab strip.
+class _TabSpec {
+  final _Tab tab;
+  final IconData icon;
+  final String en, ar;
+  const _TabSpec(this.tab, this.icon, this.en, this.ar);
+}
+
+const List<_TabSpec> _kTabs = [
+  _TabSpec(_Tab.trim,     Icons.content_cut_rounded,   'Trim',       'قص'),
+  _TabSpec(_Tab.eq,       Icons.equalizer_rounded,     'EQ',         'الموازن'),
+  _TabSpec(_Tab.effects,  Icons.auto_fix_high_rounded, 'Effects',    'تأثيرات'),
+  _TabSpec(_Tab.fx2,      Icons.graphic_eq_rounded,    'FX+',        'FX+'),
+  _TabSpec(_Tab.cleanup,  Icons.blur_on_rounded,       'Cleanup',    'تنظيف'),
+  _TabSpec(_Tab.studio,   Icons.science_rounded,       'Studio',     'استوديو'),
+  _TabSpec(_Tab.loudness, Icons.rule_rounded,          'Compliance', 'التوافق'),
+  _TabSpec(_Tab.quality,  Icons.fact_check_rounded,    'Quality',    'الجودة'),
+  _TabSpec(_Tab.merge,    Icons.merge_type_rounded,    'Merge',      'دمج'),
+  _TabSpec(_Tab.export_,  Icons.ios_share_rounded,     'Export',     'تصدير'),
+];
+
 class AudioEditorScreen extends StatefulWidget {
-  const AudioEditorScreen({super.key});
+  /// S250 — open straight onto a file instead of the picker. The home screen
+  /// uses it to hand a just-restored recitation to the editor ("Open in
+  /// Editor"), which previously meant finding the output again by hand in the
+  /// file picker.
+  final String? initialPath;
+  const AudioEditorScreen({super.key, this.initialPath});
   @override State<AudioEditorScreen> createState() => _AudioEditorScreenState();
 }
 
@@ -53,6 +98,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   String? _filePath;
   String  _fileName = '';
   double  _durationSec = 0;
+  int     _fileBytes = 0;        // S250 — shown in the file bar
   bool    _loopEnabled = false;  // S244 — moved off the transport row's fixed-width chain
 
   final _player = AudioPlayer();
@@ -61,6 +107,22 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   StreamSubscription<Duration>?    _durSub;
   bool   _playing = false;
   double _positionSec = 0;
+
+  // S250 BUG FIX — auditioning used to destroy the edit state.
+  // _previewDsp()/_playOriginalSlice() point the shared AudioPlayer at a
+  // different file; audioplayers then emits onDurationChanged for THAT file and
+  // the listener wrote it straight into _durationSec. An 8-second preview of a
+  // 40-minute recitation therefore left the editor believing the file was 8
+  // seconds long: trim handles, the selection duration, the waveform playhead
+  // and every exported time offset were all computed from the wrong total.
+  // Position updates were equally wrong (preview-relative, drawn as absolute).
+  // Now: preview playback is an explicit mode. While it is active the source
+  // duration is preserved, position updates are tracked separately, and the UI
+  // shows an exit affordance instead of silently lying about the file.
+  bool   _previewMode    = false;   // player is on a rendered preview, not the file
+  double _previewLenSec  = 0;       // that preview's own length
+  double _previewPosSec  = 0;       // playhead inside the preview
+  bool   _previewIsOriginalAb = false;  // A/B: raw file from the preview offset
 
   double _trimStart = 0;
   double _trimEnd   = 1;
@@ -133,13 +195,42 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // S248 — Cleanup tab: real noisereduce + webrtcvad (bundled via S247)
   bool   _aiDenoiseOn       = false;
   double _aiDenoiseStrength = 60;    // 0-100
+  bool   _aiDenoiseNonStat  = false; // S250 — moving noise estimate
   bool   _vadTrimOn         = false;
   double _vadAggr           = 2;     // 0-3 (webrtcvad aggressiveness)
+
+  // S250 — Cleanup tab: nara_wpe dereverb + webrtcvad pause squeezing
+  double _dereverb      = 0;      // 0-100 (0 = off)
+  bool   _squeezeOn     = false;
+  double _squeezeMax    = 1.2;    // pauses longer than this get shortened (s)
+  double _squeezeKeep   = 0.35;   // …down to this (s)
+  double _harmonicFocus = 0;      // 0-100 — HPSS transient-noise removal
 
   // S248 — Quality tab: pystoi intelligibility score (bundled via S247)
   bool    _qualityChecking = false;
   double? _statStoi;                 // 0..1, higher = more intelligible
+  double? _statEstoi;                // S250 — modulation-sensitive variant
+  double? _statLufsDelta;            // S250 — loudness change of the render
+  double? _statDriftSec;             // S250 — length mismatch (invalidates STOI)
   String? _qualityError;
+
+  // S250 — Studio tab: which embedded packages are live on this device
+  List<Map<String, dynamic>>? _libs;
+  int     _libsOk = 0, _libsTotal = 0;
+  bool    _libsLoading = false;
+  String? _libsError;
+
+  // S250 — content insights from --analyze (drive the one-tap fixes)
+  double? _insF0, _insBrightness, _insOnsets, _insSpeechPct, _insStereoCorr, _insDc;
+  int?    _insLongPauses;
+  String? _insNote;
+
+  // S250 — live progress + per-stage timings reported by the engine
+  String  _stageLabel = '';
+  Timer?  _progressTimer;
+  String? _progressPath;
+  List<Map<String, dynamic>> _lastStages = const [];
+  double? _lastRunMs;
 
   // S238 — split-by-silence (Trim tab)
   double _silThresh = -40;        // dB
@@ -177,6 +268,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   String _metaTitle   = '';
   String _metaArtist  = '';
   String _metaAlbum   = '';
+  // S250 — the metadata fields had no controllers, so S237 deliberately refused
+  // to persist them ("restored text would be invisible in the UI") and undo
+  // couldn't touch them either. With controllers they persist and restore.
+  final _metaTitleCtrl  = TextEditingController();
+  final _metaArtistCtrl = TextEditingController();
+  final _metaAlbumCtrl  = TextEditingController();
+  final _fx2SearchCtrl  = TextEditingController();
   bool   _busy     = false;
   double _pct      = 0;
   String? _outPath;
@@ -184,6 +282,15 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   DateTime? _busyStart;  // S237: elapsed time shown in the processing overlay
 
   _Tab _tab = _Tab.trim;
+  final _tabScroll = ScrollController();   // S250 — scrollable tab strip
+
+  // S250 — undo/redo over every editable setting. Snapshots are taken lazily:
+  // _pushUndo() is called on the *first* change of a gesture (slider drag
+  // start, chip tap, switch flip) so a 200-event drag is one undo step.
+  final List<Map<String, dynamic>> _undo = [];
+  final List<Map<String, dynamic>> _redo = [];
+  static const int _kUndoDepth = 40;
+
   late AnimationController _waveCtrl;
   late AnimationController _glowCtrl;
   late List<double> _bars;
@@ -227,21 +334,112 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     _stateSub = _player.onPlayerStateChanged.listen((s) {
       if (mounted) setState(() => _playing = s == PlayerState.playing);
     });
+    // S250 — route position/duration by mode. While a preview is loaded these
+    // describe the PREVIEW, not the edited file, so they must not touch
+    // _positionSec/_durationSec (see the _previewMode comment above).
     _posSub = _player.onPositionChanged.listen((d) {
-      if (mounted) setState(() => _positionSec = d.inMilliseconds / 1000.0);
+      if (!mounted) return;
+      final t = d.inMilliseconds / 1000.0;
+      setState(() {
+        if (_previewMode) {
+          _previewPosSec = t;
+          // A/B plays the raw file from the preview offset, so its position IS
+          // a real position in the source — keep the playhead in sync for it.
+          if (_previewIsOriginalAb) _positionSec = t;
+        } else {
+          _positionSec = t;
+        }
+      });
     });
     _durSub = _player.onDurationChanged.listen((d) {
-      if (mounted) setState(() => _durationSec = d.inMilliseconds / 1000.0);
+      if (!mounted) return;
+      final t = d.inMilliseconds / 1000.0;
+      if (t <= 0) return;
+      setState(() {
+        if (_previewMode && !_previewIsOriginalAb) {
+          _previewLenSec = t;
+        } else if (!_previewMode) {
+          _durationSec = t;
+        }
+      });
     });
     _loadEditorPrefs();  // S237 QoL — restore last-used export/studio settings
+    unawaited(_cleanTempFiles());  // S250 — reclaim earlier sessions' scratch
+    final initial = widget.initialPath;
+    if (initial != null && initial.isNotEmpty) {
+      unawaited(_openPath(initial));  // S250 — deep-linked file
+    }
+  }
+
+  /// S250 — load a known path (no picker). Shared by [widget.initialPath] and
+  /// anything else that wants to hand the editor a file.
+  Future<void> _openPath(String path) async {
+    int bytes = 0;
+    try { bytes = File(path).lengthSync(); } catch (_) { return; }
+    if (!mounted) return;
+    setState(() {
+      _filePath = path;
+      _fileName = path.split('/').last;
+      _fileBytes = bytes;
+      _durationSec = 0; _positionSec = 0; _trimStart = 0; _trimEnd = 1;
+      _outPath = null;
+      _previewMode = false; _previewIsOriginalAb = false;
+      _undo.clear(); _redo.clear();
+      final rng = Random(_fileName.hashCode);
+      _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
+    });
+    try {
+      await _player.setSource(DeviceFileSource(path));
+    } catch (_) {
+      // duration still arrives from the analysis pass below
+    }
+    unawaited(_analyzeAudio());
   }
 
   @override
   void dispose() {
     _stateSub?.cancel(); _posSub?.cancel(); _durSub?.cancel();
+    _progressTimer?.cancel();
     _player.dispose(); _waveCtrl.dispose(); _glowCtrl.dispose();
     _barMorphCtrl.dispose();
+    _tabScroll.dispose();
+    _metaTitleCtrl.dispose(); _metaArtistCtrl.dispose(); _metaAlbumCtrl.dispose();
+    _fx2SearchCtrl.dispose();
     super.dispose();
+  }
+
+  void _syncMetaControllers() {
+    if (_metaTitleCtrl.text != _metaTitle) _metaTitleCtrl.text = _metaTitle;
+    if (_metaArtistCtrl.text != _metaArtist) _metaArtistCtrl.text = _metaArtist;
+    if (_metaAlbumCtrl.text != _metaAlbum) _metaAlbumCtrl.text = _metaAlbum;
+  }
+
+  // S250 — _safeInput() copies every input into the temp dir on every
+  // operation (analyse, preview, quality check, each export, each batch file)
+  // and nothing ever deleted them, so the cache dir grew without bound —
+  // gigabytes after a few long recitations. Sweep anything of ours older than
+  // an hour at startup, and delete the per-run copies inline (see _dropTemp).
+  Future<void> _cleanTempFiles() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+      for (final e in dir.listSync()) {
+        if (e is! File) continue;
+        final name = e.path.split('/').last;
+        if (!name.startsWith('tl_')) continue;
+        try {
+          if (e.statSync().modified.isBefore(cutoff)) e.deleteSync();
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  void _dropTemp(String? path) {
+    if (path == null) return;
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
   }
 
   String _fmtTime(double s) {
@@ -301,26 +499,66 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       duration: const Duration(seconds: 4)));
   }
 
-  void _warnBusy() => _snack('Processing… please wait', color: _gold);
+  // S250 — engine failures come back as long multi-line ffmpeg/python output.
+  // A 4-second snackbar truncated them into uselessness; now the message is
+  // trimmed for display and the full text is one tap from the clipboard.
+  void _snackError(Object e) {
+    if (!mounted) return;
+    final ar = LangProvider.strings(context).ar;
+    final full = e.toString();
+    final short = full.length > 160 ? '${full.substring(0, 160)}…' : full;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: _card, behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: _red, width: 0.7)),
+      content: Text(short, style: const TextStyle(color: _red, fontSize: 11), maxLines: 4),
+      duration: const Duration(seconds: 8),
+      action: SnackBarAction(
+        label: ar ? 'نسخ' : 'Copy', textColor: _gold,
+        onPressed: () => Clipboard.setData(ClipboardData(text: full))),
+    ));
+  }
+
+  void _warnBusy() {
+    final ar = LangProvider.strings(context).ar;
+    _snack(ar ? 'جارٍ المعالجة… انتظر قليلًا' : 'Processing… please wait', color: _gold);
+  }
 
   Future<void> _pick() async {
+    if (_busy) { _warnBusy(); return; }
     if (_playing) await _player.stop();
     final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: false);
     if (r == null || r.files.isEmpty || r.files.first.path == null) return;
     final f = r.files.first;
+    final path = f.path!;
+    int bytes = 0;
+    try { bytes = File(path).lengthSync(); } catch (_) {}
     if (!mounted) return;
     setState(() {
-      _filePath = f.path; _fileName = f.name;
+      _filePath = path; _fileName = f.name; _fileBytes = bytes;
       _durationSec = 0; _positionSec = 0; _trimStart = 0; _trimEnd = 1; _outPath = null;
+      _previewMode = false; _previewIsOriginalAb = false;  // S250
+      _previewLenSec = 0; _previewPosSec = 0;
+      _undo.clear(); _redo.clear();                        // S250 — new file, new history
       // S236 — invalidate any previous file's analysis
       _analyzed = false; _analyzing = false; _rmsBars = null; _spectrum = const [];
       _statPeakDb = null; _statRmsDb = null; _statLufs = null; _statClipPct = null;
       _statLra = null; _statTruePeakDb = null;
-      _statStoi = null; _qualityError = null;  // S248
+      _statStoi = null; _statEstoi = null; _statLufsDelta = null;
+      _statDriftSec = null; _qualityError = null;          // S248/S250
+      _insF0 = null; _insNote = null; _insBrightness = null; _insOnsets = null;
+      _insSpeechPct = null; _insLongPauses = null; _insStereoCorr = null; _insDc = null;
+      _lastStages = const []; _lastRunMs = null;
       final rng = Random(f.name.hashCode);
       _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
     });
-    await _player.setSource(DeviceFileSource(f.path!));
+    try {
+      await _player.setSource(DeviceFileSource(path));
+    } catch (e) {
+      // S250: this was unguarded — an unsupported/corrupt file threw straight
+      // out of _pick() and the screen just stopped responding to the tap.
+      _snack('Could not open this file: $e', color: _red);
+    }
     unawaited(_analyzeAudio());
   }
 
@@ -332,20 +570,21 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     final token = ++_analyzeToken;
     final path = _filePath;
     if (path == null) return;
+    String? inp;
+    String? outJson;
     try {
       final ok = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
       if (!ok || !mounted) return;
       setState(() => _analyzing = true);
-      final inp = await _safeInput(path);
+      inp = await _safeInput(path);
       final tmp = await getTemporaryDirectory();
-      final outJson = '${tmp.path}/tl_analysis_${DateTime.now().millisecondsSinceEpoch}.json';
+      outJson = '${tmp.path}/tl_analysis_${DateTime.now().millisecondsSinceEpoch}.json';
       final script = await _ensureDspScript();
       final r = await _proot('python3 "$script" --analyze "$inp" "$outJson"',
           inp, outJson, timeout: 5);
       if (token != _analyzeToken || !mounted) return;
       if ((r?['rc'] as int? ?? 1) != 0 || !File(outJson).existsSync()) return;
       final m = Map<String, dynamic>.from(jsonDecode(await File(outJson).readAsString()));
-      try { File(outJson).deleteSync(); } catch (_) {}
       if (m['ok'] != true) return;
       final peaks = ((m['peaks'] as List?) ?? const [])
           .map((e) => ((e as num).toDouble()).clamp(0.04, 1.0)).cast<double>().toList();
@@ -362,6 +601,15 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         _statClipPct = (m['clip_pct'] as num?)?.toDouble();
         _statLra        = (m['lra']          as num?)?.toDouble();  // S245
         _statTruePeakDb = (m['true_peak_db'] as num?)?.toDouble();  // S245
+        // S250 — content insights that power the one-tap fixes
+        _insF0         = (m['f0_hz']         as num?)?.toDouble();
+        _insNote       =  m['note']          as String?;
+        _insBrightness = (m['brightness_hz'] as num?)?.toDouble();
+        _insOnsets     = (m['onsets_per_min'] as num?)?.toDouble();
+        _insSpeechPct  = (m['speech_pct']    as num?)?.toDouble();
+        _insLongPauses = (m['long_pauses']   as num?)?.toInt();
+        _insStereoCorr = (m['stereo_corr']   as num?)?.toDouble();
+        _insDc         = (m['dc_offset']     as num?)?.toDouble();
         final d = (m['duration_sec'] as num?)?.toDouble() ?? 0;
         if (_durationSec == 0 && d > 0) _durationSec = d;
         _barsFrom = List.of(_bars);
@@ -372,8 +620,103 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     } catch (_) {
       // analysis is a bonus — the editor stays fully usable without it
     } finally {
+      _dropTemp(outJson);
+      _dropTemp(inp);            // S250 — was leaked on every file open
       if (mounted && token == _analyzeToken) setState(() => _analyzing = false);
     }
+  }
+
+  // ── S250: ENGINE LIBRARIES — which embedded packages are live on-device ────
+  // Renders in the Studio tab. This is the answer to "are the bundled audio
+  // packages actually there?", which until S250 was unanswerable from the app
+  // (and the honest answer was "no" — see build_assets.sh).
+  Future<void> _loadLibs() async {
+    if (_libsLoading) return;
+    setState(() { _libsLoading = true; _libsError = null; });
+    String? outJson;
+    try {
+      final ok = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
+      if (!ok) throw Exception('local engine not set up yet');
+      final tmp = await getTemporaryDirectory();
+      outJson = '${tmp.path}/tl_libs_${DateTime.now().millisecondsSinceEpoch}.json';
+      final script = await _ensureDspScript();
+      final r = await _proot('python3 "$script" --libs "$outJson"', outJson, outJson,
+          timeout: 3);
+      if ((r?['rc'] as int? ?? 1) != 0 || !File(outJson).existsSync()) {
+        throw Exception(r?['out'] ?? 'engine did not report');
+      }
+      final m = Map<String, dynamic>.from(jsonDecode(await File(outJson).readAsString()));
+      final pkgs = ((m['packages'] as List?) ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      if (!mounted) return;
+      setState(() {
+        _libs = pkgs;
+        _libsOk = (m['count_ok'] as num?)?.toInt() ?? pkgs.where((p) => p['ok'] == true).length;
+        _libsTotal = (m['count_total'] as num?)?.toInt() ?? pkgs.length;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _libsError = '$e');
+    } finally {
+      _dropTemp(outJson);
+      if (mounted) setState(() => _libsLoading = false);
+    }
+  }
+
+  // ── S250: LIVE PROGRESS — poll the sidecar file tqdm writes in the engine ──
+  // The proot channel is one blocking call, so the only way to show real
+  // progress (instead of an indeterminate spinner for minutes) is to watch the
+  // file the engine updates as each stage completes.
+  void _startProgressPolling(String path) {
+    _progressTimer?.cancel();
+    _progressPath = path;
+    _dropTemp(path);
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
+      if (!mounted || !_busy) return;
+      try {
+        final f = File(path);
+        if (!f.existsSync()) return;
+        final line = f.readAsStringSync().trim();      // "3/9|dereverb"
+        if (line.isEmpty) return;
+        final parts = line.split('|');
+        final frac = parts[0].split('/');
+        if (frac.length == 2) {
+          final n = double.tryParse(frac[0].trim());
+          final total = double.tryParse(frac[1].trim());
+          if (n != null && total != null && total > 0) {
+            // hold the bar inside 0.15..0.95 — the Dart side owns the ends
+            final p = (0.15 + 0.80 * (n / total)).clamp(0.15, 0.95);
+            final label = parts.length > 1 ? parts[1].trim() : '';
+            setState(() { _pct = p; _stageLabel = label; });
+          }
+        }
+      } catch (_) {}
+    });
+  }
+
+  void _stopProgressPolling() {
+    _progressTimer?.cancel();
+    _progressTimer = null;
+    _dropTemp(_progressPath);
+    _progressPath = null;
+    if (mounted && _stageLabel.isNotEmpty) setState(() => _stageLabel = '');
+  }
+
+  /// Reads the per-stage timing report the engine leaves next to its output.
+  Future<void> _readRunReport(String outPath) async {
+    try {
+      final f = File('$outPath.report.json');
+      if (!f.existsSync()) return;
+      final m = Map<String, dynamic>.from(jsonDecode(await f.readAsString()));
+      final stages = ((m['stages'] as List?) ?? const [])
+          .map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      if (mounted) {
+        setState(() {
+          _lastStages = stages;
+          _lastRunMs = (m['total_ms'] as num?)?.toDouble();
+        });
+      }
+      f.deleteSync();
+    } catch (_) {}
   }
 
   // ── S248: QUALITY CHECK — renders current settings, scores vs. original
@@ -381,45 +724,93 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Future<void> _runQualityCheck() async {
     if (_filePath == null) return;
     if (!await _checkSetup()) return;
-    if (_qualityChecking) return;
+    if (_qualityChecking || _busy) return;
     HapticFeedback.selectionClick();
-    setState(() { _qualityChecking = true; _qualityError = null; });
+    setState(() {
+      _qualityChecking = true;
+      _qualityError = null;
+      _statStoi = null; _statEstoi = null; _statLufsDelta = null; _statDriftSec = null;
+    });
     String? processedOut;
     String? outJson;
+    String? refSlice;
+    String? inp;
     try {
-      final inp = await _safeInput(_filePath!);
+      inp = await _safeInput(_filePath!);
       final tmp = await getTemporaryDirectory();
-      processedOut = '${tmp.path}/tl_quality_proc_${DateTime.now().millisecondsSinceEpoch}.wav';
-      final params = _buildDspParams(fullFile: true);
-      params['output'] = {'format': 'WAV', 'sample_rate': 16000, 'channels': 'Mono',
-          'wav_bit_depth': 16, 'metadata': {}};
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      // S250 — score the SELECTION, not the whole file. Rendering a 40-minute
+      // recitation just to get one number was a multi-minute wait, and scoring
+      // a full render against a full original also mixes in the trim itself.
+      // Both sides are now cut to the same window: like against like.
+      final ss  = _trimStart * _durationSec;
+      final dur = (_trimEnd - _trimStart) * _durationSec;
+      const q = {'format': 'WAV', 'sample_rate': 16000, 'channels': 'Mono',
+                 'wav_bit_depth': 16, 'metadata': <String, String>{}};
+
+      processedOut = '${tmp.path}/tl_quality_proc_$stamp.wav';
+      final params = _buildDspParams();
+      params['output'] = Map<String, dynamic>.from(q);
       final r = await _runDspEngine(inp, processedOut, params);
-      final rc = (r['rc'] as int?) ?? -1;
-      if (rc != 0 || !File(processedOut).existsSync()) {
+      if (((r['rc'] as int?) ?? -1) != 0 || !File(processedOut).existsSync()) {
         throw Exception(r['out'] ?? 'Studio Engine render failed');
       }
-      outJson = '${tmp.path}/tl_quality_${DateTime.now().millisecondsSinceEpoch}.json';
+
+      // untouched reference cut to the same window (no FX at all)
+      refSlice = '${tmp.path}/tl_quality_ref_$stamp.wav';
+      final refParams = _neutralDspParams(trimStart: ss, trimDur: dur)
+        ..['output'] = Map<String, dynamic>.from(q);
+      final rRef = await _runDspEngine(inp, refSlice, refParams);
+      final ref = (((rRef['rc'] as int?) ?? -1) == 0 && File(refSlice).existsSync())
+          ? refSlice : inp;   // fall back to the full original if that failed
+
+      outJson = '${tmp.path}/tl_quality_$stamp.json';
       final script = await _ensureDspScript();
       final r2 = await _proot(
-          'python3 "$script" --quality "$inp" "$processedOut" "$outJson"',
-          inp, outJson, timeout: 5);
-      if ((r2?['rc'] as int? ?? 1) != 0 || !File(outJson).existsSync()) {
-        throw Exception('Quality check did not run');
+          'python3 "$script" --quality "$ref" "$processedOut" "$outJson"',
+          ref, outJson, timeout: 5);
+      if (!File(outJson).existsSync()) {
+        throw Exception(r2?['out'] ?? 'Quality check did not run');
       }
       final m = Map<String, dynamic>.from(jsonDecode(await File(outJson).readAsString()));
       if (m['ok'] != true) {
         throw Exception(m['error'] ?? 'pystoi unavailable');
       }
       if (!mounted) return;
-      setState(() => _statStoi = (m['stoi'] as num?)?.toDouble());
+      setState(() {
+        _statStoi      = (m['stoi']             as num?)?.toDouble();
+        _statEstoi     = (m['estoi']            as num?)?.toDouble();
+        _statLufsDelta = (m['lufs_delta']       as num?)?.toDouble();
+        _statDriftSec  = (m['length_drift_sec'] as num?)?.toDouble();
+      });
     } catch (e) {
       if (mounted) setState(() => _qualityError = '$e');
     } finally {
-      try { if (processedOut != null) File(processedOut).deleteSync(); } catch (_) {}
-      try { if (outJson != null) File(outJson).deleteSync(); } catch (_) {}
+      _dropTemp(processedOut);
+      _dropTemp(outJson);
+      _dropTemp(refSlice);
+      _dropTemp(inp);
       if (mounted) setState(() => _qualityChecking = false);
     }
   }
+
+  /// S250 — an all-defaults param set: decode + trim only, no processing.
+  /// Used to cut the untouched reference slice the STOI score compares against.
+  Map<String, dynamic> _neutralDspParams({required double trimStart,
+      required double trimDur}) => {
+    'sr': 48000, 'trim_start': trimStart, 'trim_dur': trimDur, 'reverse': false,
+    'eq_freqs': _freqs, 'eq_gains': List.filled(10, 0.0), 'eq_q': 1.4,
+    'declick': {'enabled': false, 'sensitivity': 50},
+    'noise_reduction': {'strength': 0.0},
+    'fade_in': 0.0, 'fade_out': 0.0, 'fade_curve': 'Equal Power',
+    'pitch_semitones': 0.0, 'tempo': 1.0,
+    'echo': {'mix': 0.0}, 'reverb': {'mix': 0.0, 'type': 'Room'},
+    'compressor': {'enabled': false, 'threshold_db': -18.0, 'ratio': 1.0,
+                   'attack_ms': 20.0, 'release_ms': 200.0, 'makeup_db': 0.0},
+    'stereo_width': 1.0, 'volume': 1.0,
+    'loudness': {'target_lufs': null, 'true_peak_limit_db': -1.0, 'limiter': false},
+    'fx2': const <String, dynamic>{},
+  };
 
   Future<void> _pickMerge() async {
     final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: false);
@@ -432,24 +823,56 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (_filePath == null) return;
     HapticFeedback.lightImpact();
     if (_playing) { await _player.pause(); return; }
+    if (_previewMode) { await _player.resume(); return; }   // S250
     await _player.seek(Duration(milliseconds: (_trimStart * _durationSec * 1000).round()));
     await _player.resume();
   }
 
   Future<void> _stop() async {
     await _player.stop();
-    if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
+    if (!mounted) return;
+    setState(() {
+      if (_previewMode) {
+        _previewPosSec = 0;
+      } else {
+        _positionSec = _trimStart * _durationSec;
+      }
+    });
   }
 
-  // S237 QoL — export & studio settings persist across sessions. Only chip/
-  // slider-backed state is saved (metadata TextFields have no controllers, so
-  // restored text would be invisible in the UI — deliberately not persisted).
-  static const _prefsKey = 'audio_editor_prefs_v1';
+  /// S250 — leave preview playback and put the player back on the real file so
+  /// the transport, waveform and trim controls describe the edit again.
+  Future<void> _exitPreview({bool silent = false}) async {
+    if (!_previewMode) return;
+    final path = _filePath;
+    try {
+      await _player.stop();
+      if (path != null) await _player.setSource(DeviceFileSource(path));
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _previewMode = false;
+      _previewIsOriginalAb = false;
+      _previewLenSec = 0;
+      _previewPosSec = 0;
+    });
+    if (!silent) {
+      final ar = LangProvider.strings(context).ar;
+      _snack(ar ? '↩ عودة إلى الملف الأصلي' : '↩ Back to the source file', color: _textB);
+    }
+  }
+
+  // S237 QoL — export & studio settings persist across sessions.
+  // S250: the metadata tags are persisted too now that the fields are
+  // controller-backed (S237 skipped them because restored text would have been
+  // invisible), and so are the Cleanup-tab settings, which are per-recording-
+  // setup choices you'd otherwise re-dial on every file.
+  static const _prefsKey = 'audio_editor_prefs_v2';
 
   Future<void> _loadEditorPrefs() async {
     try {
       final p = await SharedPreferences.getInstance();
-      final raw = p.getString(_prefsKey);
+      final raw = p.getString(_prefsKey) ?? p.getString('audio_editor_prefs_v1');
       if (raw == null || !mounted) return;
       final m = Map<String, dynamic>.from(jsonDecode(raw));
       setState(() {
@@ -463,7 +886,21 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         _fadeCurve      = (m['fadeCurve'] as String?) ?? _fadeCurve;
         _eqQ            = (m['eqQ'] as num?)?.toDouble() ?? _eqQ;
         _reverbType     = (m['reverbType'] as String?) ?? _reverbType;
+        // S250
+        _metaArtist        = (m['metaArtist'] as String?) ?? _metaArtist;
+        _metaAlbum         = (m['metaAlbum'] as String?) ?? _metaAlbum;
+        _aiDenoiseOn       = (m['aiDenoiseOn'] as bool?) ?? _aiDenoiseOn;
+        _aiDenoiseStrength = (m['aiDenoiseStrength'] as num?)?.toDouble() ?? _aiDenoiseStrength;
+        _aiDenoiseNonStat  = (m['aiDenoiseNonStat'] as bool?) ?? _aiDenoiseNonStat;
+        _vadTrimOn         = (m['vadTrimOn'] as bool?) ?? _vadTrimOn;
+        _vadAggr           = (m['vadAggr'] as num?)?.toDouble() ?? _vadAggr;
+        _dereverb          = (m['dereverb'] as num?)?.toDouble() ?? _dereverb;
+        _squeezeOn         = (m['squeezeOn'] as bool?) ?? _squeezeOn;
+        _squeezeMax        = (m['squeezeMax'] as num?)?.toDouble() ?? _squeezeMax;
+        _squeezeKeep       = (m['squeezeKeep'] as num?)?.toDouble() ?? _squeezeKeep;
+        _harmonicFocus     = (m['harmonicFocus'] as num?)?.toDouble() ?? _harmonicFocus;
       });
+      _syncMetaControllers();
     } catch (_) {}
   }
 
@@ -475,40 +912,235 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         'channels': _channels, 'wavBitDepth': _wavBitDepth,
         'loudnessTarget': _loudnessTarget, 'truePeakLimiter': _truePeakLimiter,
         'fadeCurve': _fadeCurve, 'eqQ': _eqQ, 'reverbType': _reverbType,
+        // S250 — title is per-file, so only artist/album carry over
+        'metaArtist': _metaArtist, 'metaAlbum': _metaAlbum,
+        'aiDenoiseOn': _aiDenoiseOn, 'aiDenoiseStrength': _aiDenoiseStrength,
+        'aiDenoiseNonStat': _aiDenoiseNonStat,
+        'vadTrimOn': _vadTrimOn, 'vadAggr': _vadAggr,
+        'dereverb': _dereverb, 'squeezeOn': _squeezeOn,
+        'squeezeMax': _squeezeMax, 'squeezeKeep': _squeezeKeep,
+        'harmonicFocus': _harmonicFocus,
       }));
     } catch (_) {}
   }
 
+  // ── S250: UNDO / REDO ─────────────────────────────────────────────────────
+  // Every control funnels through _pushUndo() before it mutates state. Slider
+  // drags snapshot once on onChangeStart, so a drag is a single undo step
+  // rather than one per pixel.
+
+  Map<String, dynamic> _snapshotAll() => {
+    'trimStart': _trimStart, 'trimEnd': _trimEnd,
+    'eq': List<double>.of(_eq), 'eqQ': _eqQ,
+    'fadeIn': _fadeIn, 'fadeOut': _fadeOut, 'fadeCurve': _fadeCurve,
+    'pitch': _pitch, 'tempo': _tempo, 'echo': _echo, 'reverb': _reverb,
+    'vol': _vol, 'stereoW': _stereoW, 'reverse': _reverse,
+    'noiseReduc': _noiseReduc, 'compress': _compress,
+    'compThresh': _compThresh, 'compRatio': _compRatio,
+    'compAttack': _compAttack, 'compRelease': _compRelease, 'compMakeup': _compMakeup,
+    'declick': _declick, 'declickSens': _declickSens, 'reverbType': _reverbType,
+    'loudnessTarget': _loudnessTarget, 'truePeakLimiter': _truePeakLimiter,
+    'bassBoost': _bassBoost, 'trebleBoost': _trebleBoost, 'subBass': _subBass,
+    'presence': _presence, 'hpFreq': _hpFreq, 'lpFreq': _lpFreq,
+    'tremolo': _tremolo, 'vibrato': _vibrato, 'chorus': _chorus,
+    'flanger': _flanger, 'phaser': _phaser, 'crusher': _crusher,
+    'haasWiden': _haasWiden, 'stereoFx': _stereoFx,
+    'channelMode': _channelMode, 'swapLR': _swapLR,
+    'dehumOn': _dehumOn, 'dehumBase': _dehumBase, 'dehumStrength': _dehumStrength,
+    'vocalIso': _vocalIso, 'noiseGate': _noiseGate, 'gateThresh': _gateThresh,
+    'deEsser': _deEsser, 'declip': _declip, 'autoNormalize': _autoNormalize,
+    'limiter': _limiter, 'limiterCeil': _limiterCeil,
+    'autoTrimSilence': _autoTrimSilence, 'padStart': _padStart, 'padEnd': _padEnd,
+    'harmonicFocus': _harmonicFocus,
+    'aiDenoiseOn': _aiDenoiseOn, 'aiDenoiseStrength': _aiDenoiseStrength,
+    'aiDenoiseNonStat': _aiDenoiseNonStat,
+    'vadTrimOn': _vadTrimOn, 'vadAggr': _vadAggr,
+    'dereverb': _dereverb, 'squeezeOn': _squeezeOn,
+    'squeezeMax': _squeezeMax, 'squeezeKeep': _squeezeKeep,
+    'silThresh': _silThresh, 'silMin': _silMin,
+    'fmt': _fmt, 'kbps': _kbps, 'sampleRate': _sampleRate, 'channels': _channels,
+    'wavBitDepth': _wavBitDepth, 'asRingtone': _asRingtone,
+    'metaTitle': _metaTitle, 'metaArtist': _metaArtist, 'metaAlbum': _metaAlbum,
+  };
+
+  double _d(Map<String, dynamic> m, String k, double dflt) =>
+      (m[k] as num?)?.toDouble() ?? dflt;
+  bool _b(Map<String, dynamic> m, String k, bool dflt) => (m[k] as bool?) ?? dflt;
+
+  void _restoreAll(Map<String, dynamic> m) {
+    setState(() {
+      _trimStart = _d(m, 'trimStart', _trimStart);
+      _trimEnd   = _d(m, 'trimEnd', _trimEnd);
+      final eq = (m['eq'] as List?)?.cast<double>();
+      if (eq != null && eq.length == _eq.length) {
+        for (int i = 0; i < _eq.length; i++) { _eq[i] = eq[i]; }
+      }
+      _eqQ = _d(m, 'eqQ', _eqQ);
+      _fadeIn = _d(m, 'fadeIn', _fadeIn);
+      _fadeOut = _d(m, 'fadeOut', _fadeOut);
+      _fadeCurve = (m['fadeCurve'] as String?) ?? _fadeCurve;
+      _pitch = _d(m, 'pitch', _pitch);
+      _tempo = _d(m, 'tempo', _tempo);
+      _echo = _d(m, 'echo', _echo);
+      _reverb = _d(m, 'reverb', _reverb);
+      _vol = _d(m, 'vol', _vol);
+      _stereoW = _d(m, 'stereoW', _stereoW);
+      _reverse = _b(m, 'reverse', _reverse);
+      _noiseReduc = _d(m, 'noiseReduc', _noiseReduc);
+      _compress = _b(m, 'compress', _compress);
+      _compThresh = _d(m, 'compThresh', _compThresh);
+      _compRatio = _d(m, 'compRatio', _compRatio);
+      _compAttack = _d(m, 'compAttack', _compAttack);
+      _compRelease = _d(m, 'compRelease', _compRelease);
+      _compMakeup = _d(m, 'compMakeup', _compMakeup);
+      _declick = _b(m, 'declick', _declick);
+      _declickSens = _d(m, 'declickSens', _declickSens);
+      _reverbType = (m['reverbType'] as String?) ?? _reverbType;
+      _loudnessTarget = (m['loudnessTarget'] as String?) ?? _loudnessTarget;
+      _truePeakLimiter = _b(m, 'truePeakLimiter', _truePeakLimiter);
+      _bassBoost = _d(m, 'bassBoost', _bassBoost);
+      _trebleBoost = _d(m, 'trebleBoost', _trebleBoost);
+      _subBass = _d(m, 'subBass', _subBass);
+      _presence = _d(m, 'presence', _presence);
+      _hpFreq = _d(m, 'hpFreq', _hpFreq);
+      _lpFreq = _d(m, 'lpFreq', _lpFreq);
+      _tremolo = _d(m, 'tremolo', _tremolo);
+      _vibrato = _d(m, 'vibrato', _vibrato);
+      _chorus = _b(m, 'chorus', _chorus);
+      _flanger = _b(m, 'flanger', _flanger);
+      _phaser = _b(m, 'phaser', _phaser);
+      _crusher = _d(m, 'crusher', _crusher);
+      _haasWiden = _b(m, 'haasWiden', _haasWiden);
+      _stereoFx = _d(m, 'stereoFx', _stereoFx);
+      _channelMode = (m['channelMode'] as String?) ?? _channelMode;
+      _swapLR = _b(m, 'swapLR', _swapLR);
+      _dehumOn = _b(m, 'dehumOn', _dehumOn);
+      _dehumBase = (m['dehumBase'] as num?)?.toInt() ?? _dehumBase;
+      _dehumStrength = _d(m, 'dehumStrength', _dehumStrength);
+      _vocalIso = _d(m, 'vocalIso', _vocalIso);
+      _noiseGate = _b(m, 'noiseGate', _noiseGate);
+      _gateThresh = _d(m, 'gateThresh', _gateThresh);
+      _deEsser = _d(m, 'deEsser', _deEsser);
+      _declip = _b(m, 'declip', _declip);
+      _autoNormalize = _b(m, 'autoNormalize', _autoNormalize);
+      _limiter = _b(m, 'limiter', _limiter);
+      _limiterCeil = _d(m, 'limiterCeil', _limiterCeil);
+      _autoTrimSilence = _b(m, 'autoTrimSilence', _autoTrimSilence);
+      _padStart = _d(m, 'padStart', _padStart);
+      _padEnd = _d(m, 'padEnd', _padEnd);
+      _harmonicFocus = _d(m, 'harmonicFocus', _harmonicFocus);
+      _aiDenoiseOn = _b(m, 'aiDenoiseOn', _aiDenoiseOn);
+      _aiDenoiseStrength = _d(m, 'aiDenoiseStrength', _aiDenoiseStrength);
+      _aiDenoiseNonStat = _b(m, 'aiDenoiseNonStat', _aiDenoiseNonStat);
+      _vadTrimOn = _b(m, 'vadTrimOn', _vadTrimOn);
+      _vadAggr = _d(m, 'vadAggr', _vadAggr);
+      _dereverb = _d(m, 'dereverb', _dereverb);
+      _squeezeOn = _b(m, 'squeezeOn', _squeezeOn);
+      _squeezeMax = _d(m, 'squeezeMax', _squeezeMax);
+      _squeezeKeep = _d(m, 'squeezeKeep', _squeezeKeep);
+      _silThresh = _d(m, 'silThresh', _silThresh);
+      _silMin = _d(m, 'silMin', _silMin);
+      _fmt = (m['fmt'] as String?) ?? _fmt;
+      _kbps = (m['kbps'] as num?)?.toInt() ?? _kbps;
+      _sampleRate = (m['sampleRate'] as num?)?.toInt() ?? _sampleRate;
+      _channels = (m['channels'] as String?) ?? _channels;
+      _wavBitDepth = (m['wavBitDepth'] as num?)?.toInt() ?? _wavBitDepth;
+      _asRingtone = _b(m, 'asRingtone', _asRingtone);
+      _metaTitle = (m['metaTitle'] as String?) ?? _metaTitle;
+      _metaArtist = (m['metaArtist'] as String?) ?? _metaArtist;
+      _metaAlbum = (m['metaAlbum'] as String?) ?? _metaAlbum;
+    });
+    _syncMetaControllers();
+  }
+
+  void _pushUndo() {
+    _undo.add(_snapshotAll());
+    if (_undo.length > _kUndoDepth) _undo.removeAt(0);
+    if (_redo.isNotEmpty) _redo.clear();
+  }
+
+  /// Snapshot-then-mutate. Use for anything that isn't a slider drag.
+  void _edit(VoidCallback fn) {
+    _pushUndo();
+    setState(fn);
+  }
+
+  void _undoOnce() {
+    if (_undo.isEmpty) return;
+    HapticFeedback.selectionClick();
+    _redo.add(_snapshotAll());
+    _restoreAll(_undo.removeLast());
+  }
+
+  void _redoOnce() {
+    if (_redo.isEmpty) return;
+    HapticFeedback.selectionClick();
+    _undo.add(_snapshotAll());
+    _restoreAll(_redo.removeLast());
+  }
+
   // S237 QoL — jump the playhead by ±N seconds from the transport bar
   Future<void> _seekBy(double deltaSec) async {
-    if (_filePath == null || _durationSec <= 0) return;
+    if (_filePath == null) return;
     HapticFeedback.selectionClick();
-    final target = (_positionSec + deltaSec).clamp(0.0, _durationSec);
+    // S250 — seek within whichever timeline is actually loaded
+    final total = _previewMode && !_previewIsOriginalAb ? _previewLenSec : _durationSec;
+    if (total <= 0) return;
+    final cur = _previewMode && !_previewIsOriginalAb ? _previewPosSec : _positionSec;
+    final target = (cur + deltaSec).clamp(0.0, total);
     await _player.seek(Duration(milliseconds: (target * 1000).round()));
-    if (mounted) setState(() => _positionSec = target);
+    if (!mounted) return;
+    setState(() {
+      if (_previewMode && !_previewIsOriginalAb) {
+        _previewPosSec = target;
+      } else {
+        _positionSec = target;
+      }
+    });
   }
 
   // ── SPLIT ─────────────────────────────────────────────────────────────────
   Future<void> _split() async {
     if (_filePath == null) return;
+    if (_busy) { _warnBusy(); return; }
+    final ar = LangProvider.strings(context).ar;
+    // S250 — splitting at 0:00 (or past the end) produced one empty file and
+    // one copy, reported as success. Require a real cut point.
+    if (_previewMode) {
+      _snack(ar ? 'اخرج من المعاينة أولًا' : 'Exit preview first', color: _gold);
+      return;
+    }
+    if (_durationSec <= 0 || _positionSec < 0.25 || _positionSec > _durationSec - 0.25) {
+      _snack(ar ? 'حرّك مؤشر التشغيل إلى موضع القص أولًا'
+                : 'Move the playhead to where you want the cut first', color: _gold);
+      return;
+    }
     if (!await _checkSetup()) return;
     HapticFeedback.mediumImpact();
-    setState(() { _busy = true; _busyStart = DateTime.now(); _busyLabel = 'Splitting…'; _pct = 0.1; });
+    setState(() { _busy = true; _busyStart = DateTime.now();
+      _busyLabel = ar ? 'جارٍ التقسيم…' : 'Splitting…'; _pct = 0.1; });
+    String? inp;
     try {
-      final inp = await _safeInput(_filePath!);
+      inp = await _safeInput(_filePath!);
       final ext = _fmt.toLowerCase();
       final outA = await _outFile('part1', ext);
       final outB = await _outFile('part2', ext);
       final sp   = _positionSec.toStringAsFixed(3);
       final r1 = await _proot('ffmpeg -y -i "$inp" -t $sp -acodec ${_codec()} ${_br()} "$outA"', inp, outA);
-      if ((r1?['rc'] as int? ?? 1) != 0) throw Exception('Split part1 failed');
+      if ((r1?['rc'] as int? ?? 1) != 0) throw Exception('Split part1 failed: ${r1?['out'] ?? ''}');
+      if (!mounted) return;
       setState(() => _pct = 0.6);
       final r2 = await _proot('ffmpeg -y -ss $sp -i "$inp" -acodec ${_codec()} ${_br()} "$outB"', inp, outB);
-      if ((r2?['rc'] as int? ?? 1) != 0) throw Exception('Split part2 failed');
+      if ((r2?['rc'] as int? ?? 1) != 0) throw Exception('Split part2 failed: ${r2?['out'] ?? ''}');
+      if (!mounted) return;
       setState(() { _pct = 1.0; _busy = false; });
-      _snack('✓ Split: part1.$ext + part2.$ext');
+      _snack('✓ ${ar ? "تم التقسيم" : "Split"}: part1.$ext + part2.$ext');
     } catch (e) {
-      setState(() => _busy = false); _snack('Error: $e', color: _red);
+      if (mounted) setState(() => _busy = false);
+      _snackError(e);
+    } finally {
+      _dropTemp(inp);
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 
@@ -517,14 +1149,17 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // _silMin below _silThresh dB and writes one file per spoken segment —
   // made for cutting a long recitation into ayah-sized files.
   Future<void> _splitBySilence() async {
-    if (_filePath == null || _busy) return;
+    if (_filePath == null) return;
+    if (_busy) { _warnBusy(); return; }
     if (!await _checkSetup()) return;
+    if (!mounted) return;
     HapticFeedback.mediumImpact();
     final ar = LangProvider.strings(context).ar;
     setState(() { _busy = true; _busyStart = DateTime.now();
       _busyLabel = ar ? 'تقسيم عند السكتات…' : 'Splitting at pauses…'; _pct = 0.1; });
+    String? inp;
     try {
-      final inp    = await _safeInput(_filePath!);
+      inp    = await _safeInput(_filePath!);
       final script = await _ensureDspScript();
       final tmp    = await getTemporaryDirectory();
       final dir    = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
@@ -554,38 +1189,74 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _snack('✓ ${ar ? "تم التقسيم إلى" : "Split into"} $count ${ar ? "مقطعًا في" : "parts in"} ${dir.path}');
     } catch (e) {
       if (mounted) setState(() => _busy = false);
-      _snack('Error: $e', color: _red);
+      _snackError(e);
+    } finally {
+      _dropTemp(inp);
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 
   // ── MERGE ─────────────────────────────────────────────────────────────────
   Future<void> _merge() async {
     if (_filePath == null || _mergePath == null) return;
+    if (_busy) { _warnBusy(); return; }
     if (!await _checkSetup()) return;
+    if (!mounted) return;
     HapticFeedback.mediumImpact();
-    setState(() { _busy = true; _busyStart = DateTime.now(); _busyLabel = 'Merging…'; _pct = 0.1; });
+    final ar = LangProvider.strings(context).ar;
+    setState(() { _busy = true; _busyStart = DateTime.now();
+      _busyLabel = ar ? 'جارٍ الدمج…' : 'Merging…'; _pct = 0.1; });
+    final scratch = <String>[];
     try {
       final tmp  = await getTemporaryDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
       final inpA = await _safeInput(_filePath!);
       final inpB = await _safeInput(_mergePath!);
-      final wavA = '${tmp.path}/tl_mA.wav'; final wavB = '${tmp.path}/tl_mB.wav';
-      final list = '${tmp.path}/tl_list.txt';
+      // S250: these were fixed names (tl_mA/tl_mB/tl_list), so a second merge
+      // reused stale intermediates, and none of them were ever deleted.
+      final wavA = '${tmp.path}/tl_mA_$stamp.wav';
+      final wavB = '${tmp.path}/tl_mB_$stamp.wav';
+      final list = '${tmp.path}/tl_list_$stamp.txt';
+      scratch.addAll([inpA, inpB, wavA, wavB, list]);
       final ext  = _fmt.toLowerCase();
       final out  = await _outFile('merged', ext);
-      await _proot('ffmpeg -y -i "$inpA" -ar 48000 -ac 2 "$wavA"', inpA, wavA);
+      // S250: both decodes ignored their exit codes, so a bad second file
+      // surfaced as an opaque concat error about a file that was never written.
+      final rA = await _proot('ffmpeg -y -i "$inpA" -ar 48000 -ac 2 "$wavA"', inpA, wavA);
+      if ((rA?['rc'] as int? ?? 1) != 0 || !File(wavA).existsSync()) {
+        throw Exception('Could not decode "$_fileName": ${rA?['out'] ?? ''}');
+      }
+      if (!mounted) return;
       setState(() => _pct = 0.3);
-      await _proot('ffmpeg -y -i "$inpB" -ar 48000 -ac 2 "$wavB"', inpB, wavB);
+      final rB = await _proot('ffmpeg -y -i "$inpB" -ar 48000 -ac 2 "$wavB"', inpB, wavB);
+      if ((rB?['rc'] as int? ?? 1) != 0 || !File(wavB).existsSync()) {
+        throw Exception('Could not decode "$_mergeName": ${rB?['out'] ?? ''}');
+      }
+      if (!mounted) return;
       setState(() => _pct = 0.5);
       final fa = _mergeAppend ? wavA : wavB; final fb = _mergeAppend ? wavB : wavA;
       File(list).writeAsStringSync("file '$fa'\nfile '$fb'\n");
+      // S250: merge now honours the Export tab's rate/channels/metadata too —
+      // it used to emit whatever the 48k stereo intermediates happened to be.
       final r = await _proot(
-          'ffmpeg -y -f concat -safe 0 -i "$list" -acodec ${_codec()} ${_br()} "$out"',
+          'ffmpeg -y -f concat -safe 0 -i "$list" ${_metaArgs()} '
+          '-ar $_sampleRate -ac ${_channels == "Mono" ? 1 : 2} '
+          '-acodec ${_codec()} ${_br()} "$out"',
           list, out, timeout: 15);
-      if ((r?['rc'] as int? ?? 1) != 0) throw Exception('Merge failed: ${r?['out']}');
+      if ((r?['rc'] as int? ?? 1) != 0 || !File(out).existsSync()) {
+        throw Exception('Merge failed: ${r?['out'] ?? ''}');
+      }
+      if (!mounted) return;
       setState(() { _pct = 1.0; _busy = false; _outPath = out; });
-      _snack('✓ Merged → $out');
+      _snack('✓ ${ar ? "تم الدمج" : "Merged"} → $out');
     } catch (e) {
-      setState(() => _busy = false); _snack('Error: $e', color: _red);
+      if (mounted) setState(() => _busy = false);
+      _snackError(e);
+    } finally {
+      for (final p in scratch) {
+        _dropTemp(p);
+      }
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 
@@ -595,12 +1266,23 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       : _fmt == 'M4A' ? 'aac' : 'libmp3lame';
   String _br()    => _fmt == 'WAV' ? '' : '-b:a ${_kbps}k';
 
-  // S229 — shared -metadata flags for both single export and batch export
+  // S229 — shared -metadata flags for both single export and batch export.
+  // S250: these are interpolated into a shell command line, and the old
+  // escaping only swapped double quotes for single ones — so a title
+  // containing $, `, \ or a newline was expanded by the shell (at best
+  // mangling the tag, at worst running the substitution). Single-quote the
+  // value instead and escape embedded single quotes the POSIX way, which
+  // leaves nothing for the shell to interpret.
+  static String _shQuote(String v) {
+    final clean = v.replaceAll(RegExp(r'[\r\n]'), ' ').trim();
+    return "'${clean.replaceAll("'", r"'\''")}'";
+  }
+
   String _metaArgs() {
     final parts = <String>[];
-    if (_metaTitle.isNotEmpty)  parts.add('-metadata title="${_metaTitle.replaceAll('"', "'")}"');
-    if (_metaArtist.isNotEmpty) parts.add('-metadata artist="${_metaArtist.replaceAll('"', "'")}"');
-    if (_metaAlbum.isNotEmpty)  parts.add('-metadata album="${_metaAlbum.replaceAll('"', "'")}"');
+    if (_metaTitle.isNotEmpty)  parts.add('-metadata title=${_shQuote(_metaTitle)}');
+    if (_metaArtist.isNotEmpty) parts.add('-metadata artist=${_shQuote(_metaArtist)}');
+    if (_metaAlbum.isNotEmpty)  parts.add('-metadata album=${_shQuote(_metaAlbum)}');
     return parts.join(' ');
   }
 
@@ -608,14 +1290,17 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     final af = <String>[];
     if (_reverse) af.add('areverse');
     // S229 — auto-trim leading/trailing silence, before any other shaping
-    if (_autoTrimSilence)
+    if (_autoTrimSilence) {
       af.add('silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08:'
           'stop_periods=-1:stop_threshold=-45dB:stop_silence=0.08');
-    if (_noiseReduc > 0)
+    }
+    if (_noiseReduc > 0) {
       af.add('afftdn=nr=${(_noiseReduc * 0.97).toStringAsFixed(1)}:nf=-25');
+    }
     if (_declip) af.add('adeclip');
-    if (_noiseGate)
+    if (_noiseGate) {
       af.add('agate=threshold=${_gateThresh.toStringAsFixed(0)}dB:ratio=6:attack=5:release=150');
+    }
     // S238 — de-hum fallback: notch the mains frequency + 4 harmonics
     if (_dehumOn) {
       final w = (2 + _dehumStrength / 100 * 6).toStringAsFixed(1);
@@ -636,8 +1321,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       af.add('afade=t=out:st=$st:d=${_fadeOut.toStringAsFixed(1)}');
     }
     for (int i = 0; i < 10; i++) {
-      if (_eq[i].abs() > 0.5)
+      if (_eq[i].abs() > 0.5) {
         af.add('equalizer=f=${_freqs[i]}:g=${_eq[i].toStringAsFixed(1)}');
+      }
     }
     // S229 — tone shaping
     if (_bassBoost   != 0) af.add('bass=g=${_bassBoost.toStringAsFixed(1)}:f=100:w=0.8');
@@ -660,20 +1346,23 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (_chorus)  af.add('chorus=0.6:0.9:55|60|40:0.4|0.32|0.3:0.25|0.4|0.3:2|2.3|1.3');
     if (_flanger) af.add('flanger');
     if (_phaser)  af.add('aphaser=in_gain=0.5');
-    if (_crusher > 0)
+    if (_crusher > 0) {
       af.add('acrusher=bits=${(16 - (_crusher/100*11)).round()}:mode=log:aa=1');
+    }
     if (_stereoW != 1.0) af.add('stereotools=mlev=${_stereoW.toStringAsFixed(2)}');
     // S229 — stereo & space
     if (_haasWiden) af.add('haas');
-    if (_stereoFx != 0)
+    if (_stereoFx != 0) {
       af.add('extrastereo=m=${(1 + _stereoFx/100).toStringAsFixed(2)}:c=0');
+    }
     if (_swapLR) af.add('pan=stereo|c0=c1|c1=c0');
     if (_channelMode == 'Mono')  af.add('pan=mono|c0=0.5*c0+0.5*c1');
     if (_channelMode == 'Left')  af.add('pan=stereo|c0=c0|c1=c0');
     if (_channelMode == 'Right') af.add('pan=stereo|c0=c1|c1=c1');
-    if (_compress)
+    if (_compress) {
       af.add('acompressor=threshold=${_compThresh.toStringAsFixed(1)}dB'
           ':ratio=${_compRatio.toStringAsFixed(1)}:attack=20:release=200');
+    }
     // S229 — de-esser / adaptive normalize / limiter
     if (_deEsser > 0) af.add('deesser=i=${(_deEsser/100).toStringAsFixed(2)}');
     if (_autoNormalize) af.add('dynaudnorm=f=150:g=15');
@@ -695,7 +1384,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Future<String> _ensureDspScript() async {
     if (_dspScriptPath != null && File(_dspScriptPath!).existsSync()) return _dspScriptPath!;
     final dir  = await getTemporaryDirectory();
-    final dst  = File('${dir.path}/tilawa_dsp_studio_v3.py');  // S245: v3 — busts any cached v2 copy (real loudness algorithm)
+    // S250: v4 — MUST change whenever the bundled script changes, because the
+    // cached copy is reused as-is when it exists. A stale v3 copy would keep
+    // running the old engine (no --libs mode, no dereverb/squeeze/harmonic
+    // focus, no progress sidecar) even after the app updated, and the new
+    // params would be silently ignored.
+    final dst  = File('${dir.path}/tilawa_dsp_studio_v4.py');
     final data = await rootBundle.load('assets/dsp/tilawa_dsp_studio.py');
     await dst.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), flush: true);
     _dspScriptPath = dst.path;
@@ -703,11 +1397,11 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   }
 
   Map<String, dynamic> _buildDspParams({double? previewStart, double? previewDur,
-      bool fullFile = false}) {
+      bool fullFile = false, String? progressPath}) {
     final isPreview = previewStart != null;
     // S236: batch export processes each picked file in full — the trim window
     // belongs to the currently loaded file only.
-    final ss  = fullFile ? 0.0 : isPreview ? previewStart! : (_trimStart * _durationSec);
+    final ss  = fullFile ? 0.0 : isPreview ? previewStart : (_trimStart * _durationSec);
     final dur = fullFile ? 0.0 : isPreview ? (previewDur ?? 0) : ((_trimEnd - _trimStart) * _durationSec);
     double? lufs;
     switch (_loudnessTarget) {
@@ -758,10 +1452,17 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         'limiter': {'enabled': _limiter, 'ceiling_db': _limiterCeil},
         'auto_trim_silence': _autoTrimSilence,
         // S248 — Cleanup tab
-        'ai_denoise': {'enabled': _aiDenoiseOn, 'strength': _aiDenoiseStrength},
+        'ai_denoise': {'enabled': _aiDenoiseOn, 'strength': _aiDenoiseStrength,
+                       'non_stationary': _aiDenoiseNonStat},
         'vad_trim': {'enabled': _vadTrimOn, 'aggressiveness': _vadAggr.round()},
+        // S250 — Cleanup tab: nara_wpe dereverb, pause squeeze, HPSS focus
+        'dereverb': {'strength': _dereverb, 'taps': 10, 'delay': 3},
+        'pause_squeeze': {'enabled': _squeezeOn, 'max_pause_s': _squeezeMax,
+                          'keep_s': _squeezeKeep},
+        'harmonic_focus': _harmonicFocus,
         'pad_start_sec': _padStart, 'pad_end_sec': _padEnd,
       },
+      if (progressPath != null) 'progress_path': progressPath,
       'output': {
         'format': isPreview ? 'WAV' : _fmt, 'kbps': _kbps,
         'sample_rate': _sampleRate, 'channels': _channels, 'wav_bit_depth': _wavBitDepth,
@@ -782,17 +1483,35 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     return Map<String, dynamic>.from(r ?? {'rc': -1, 'out': 'no result'});
   }
 
+  /// S250 — temp path for the engine's progress sidecar (polled by the UI).
+  Future<String> _progressFilePath() async {
+    final tmp = await getTemporaryDirectory();
+    return '${tmp.path}/tl_progress_${DateTime.now().millisecondsSinceEpoch}.txt';
+  }
+
   // S238 QoL — A/B: hear the untouched original from the same spot the last
   // Studio preview started, so processed vs. original is a two-tap compare.
   Future<void> _playOriginalSlice() async {
     if (_filePath == null) return;
     HapticFeedback.selectionClick();
     final ar = LangProvider.strings(context).ar;
-    if (_playing) await _player.stop();
-    await _player.setSource(DeviceFileSource(_filePath!));
-    await _player.seek(Duration(milliseconds: (_lastPreviewStart * 1000).round()));
-    await _player.resume();
-    _snack(ar ? '▶ الأصلي (بدون معالجة)' : '▶ Original (unprocessed)', color: _gold);
+    try {
+      if (_playing) await _player.stop();
+      await _player.setSource(DeviceFileSource(_filePath!));
+      await _player.seek(Duration(milliseconds: (_lastPreviewStart * 1000).round()));
+      await _player.resume();
+      if (!mounted) return;
+      // S250 — A/B plays the real file, so leave preview mode: positions are
+      // genuine source positions again and the waveform playhead is correct.
+      setState(() {
+        _previewMode = false;
+        _previewIsOriginalAb = false;
+        _positionSec = _lastPreviewStart;
+      });
+      _snack(ar ? '▶ الأصلي (بدون معالجة)' : '▶ Original (unprocessed)', color: _gold);
+    } catch (e) {
+      _snack('A/B error: $e', color: _red);
+    }
   }
 
   /// Renders a short slice (current playhead, or trim start) through the
@@ -801,16 +1520,21 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Future<void> _previewDsp() async {
     if (_filePath == null) return;
     if (!await _checkSetup()) return;
-    if (_dspBusy) return;
+    if (_dspBusy || _busy) return;
+    if (!mounted) return;
     HapticFeedback.selectionClick();
+    final ar = LangProvider.strings(context).ar;
     setState(() => _dspBusy = true);
+    String? inp;
     try {
       if (_playing) await _player.stop();
-      final inp = await _safeInput(_filePath!);
+      inp = await _safeInput(_filePath!);
       final tmp = await getTemporaryDirectory();
       final out = '${tmp.path}/tl_preview_${DateTime.now().millisecondsSinceEpoch}.wav';
       final rangeEnd   = _trimEnd * _durationSec;
       final rangeStart = _trimStart * _durationSec;
+      // S250 — with preview mode fixed, _positionSec is always a real source
+      // position here, so "audition from the playhead" finally works as meant.
       final start = (_positionSec >= rangeStart && _positionSec < rangeEnd)
           ? _positionSec : rangeStart;
       _lastPreviewStart = start;  // S238 — A/B jumps back to the same spot
@@ -822,28 +1546,54 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       if (rc != 0 || !File(out).existsSync()) {
         throw Exception(r['out'] ?? 'Studio Engine preview failed');
       }
+      await _readRunReport(out);
+      if (!mounted) return;
+      setState(() {
+        _previewMode = true;              // S250 — explicit, exitable mode
+        _previewIsOriginalAb = false;
+        _previewLenSec = dur;
+        _previewPosSec = 0;
+      });
       await _player.setSource(DeviceFileSource(out));
       await _player.resume();
-      _snack('▶ Previewing ${dur.toStringAsFixed(1)}s with current settings', color: _teal);
+      _snack(ar
+          ? '▶ معاينة ${dur.toStringAsFixed(1)} ثانية بالإعدادات الحالية'
+          : '▶ Previewing ${dur.toStringAsFixed(1)}s with current settings', color: _teal);
     } catch (e) {
       _snack('Preview error: $e', color: _red);
     } finally {
+      _dropTemp(inp);
       if (mounted) setState(() => _dspBusy = false);
     }
   }
 
   Future<void> _export() async {
     if (_filePath == null) return;
+    if (_busy) { _warnBusy(); return; }
+    if (_durationSec <= 0) {
+      final ar = LangProvider.strings(context).ar;
+      _snack(ar ? 'لم تُقرأ مدة الملف بعد' : 'File duration not read yet', color: _red);
+      return;
+    }
     if (!await _checkSetup()) return;
+    if (!mounted) return;
     HapticFeedback.mediumImpact();
-    setState(() { _busy = true; _busyStart = DateTime.now(); _pct = 0.05; _outPath = null; _busyLabel = 'Exporting…'; });
+    final ar = LangProvider.strings(context).ar;
+    setState(() { _busy = true; _busyStart = DateTime.now(); _pct = 0.05;
+      _outPath = null; _busyLabel = ar ? 'جارٍ التصدير…' : 'Exporting…'; });
+    String? inp;
     try {
-      final inp = await _safeInput(_filePath!);
+      inp = await _safeInput(_filePath!);
       final ext = _fmt.toLowerCase();
       final out = await _outFile('edited', ext);
+      if (!mounted) return;
       setState(() => _pct = 0.15);
-      final params = _buildDspParams();
+      final progress = await _progressFilePath();
+      _startProgressPolling(progress);              // S250 — real stage progress
+      final params = _buildDspParams(progressPath: progress);
       final r = await _runDspEngine(inp, out, params);
+      _stopProgressPolling();
+      await _readRunReport(out);
       final rc = (r['rc'] as int?) ?? -1;
       if (rc != 0 || !File(out).existsSync()) {
         // S228: Studio Engine unavailable/failed (e.g. numpy/scipy missing
@@ -866,13 +1616,24 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       setState(() { _pct = 1.0; _outPath = out; _busy = false; });
       unawaited(_saveEditorPrefs());  // S237 QoL — remember these export settings
       if (_asRingtone) {
-        try { await _media.invokeMethod('saveToDownloads',
-            {'path': out, 'filename': out.split('/').last}); }
-        catch (_) {}
+        try {
+          await _media.invokeMethod('saveToDownloads',
+              {'path': out, 'filename': out.split('/').last});
+        } catch (e) {
+          // S250: this was swallowed silently — the user ticked "Set as
+          // Ringtone", nothing landed in Downloads, and nothing said why.
+          _snack(ar ? 'تم التصدير، لكن النسخ إلى التنزيلات فشل: $e'
+                    : 'Exported, but copying to Downloads failed: $e', color: _gold);
+        }
       }
-      _snack('✓ Saved: $out');
+      _snack('✓ ${ar ? "تم الحفظ" : "Saved"}: $out');
     } catch (e) {
-      setState(() => _busy = false); _snack('Error: $e', color: _red);
+      if (mounted) setState(() => _busy = false);
+      _snackError(e);
+    } finally {
+      _stopProgressPolling();
+      _dropTemp(inp);
+      if (mounted && _busy) setState(() => _busy = false);
     }
   }
 
@@ -916,9 +1677,27 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               const Icon(Icons.audio_file_rounded, color: _gold, size: 26),
             ])),
           const SizedBox(height: 18),
-          Text(_busyLabel, style: const TextStyle(color: _gold, fontSize: 18, fontWeight: FontWeight.w800)),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(_busyLabel, textAlign: TextAlign.center,
+                maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _gold, fontSize: 18, fontWeight: FontWeight.w800))),
           const SizedBox(height: 5),
-          const Text("Please wait — don't close the screen", style: TextStyle(color: _textB, fontSize: 12)),
+          // S250 — the current DSP stage, straight from the engine's tqdm
+          // sidecar. Previously a long export showed one static label and an
+          // indeterminate bar, with no way to tell progress from a hang.
+          if (_stageLabel.isNotEmpty)
+            Padding(padding: const EdgeInsets.only(bottom: 4),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.memory_rounded, color: _teal, size: 12),
+                const SizedBox(width: 5),
+                Text(_stageLabel, style: const TextStyle(color: _teal, fontSize: 12,
+                    fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+              ])),
+          Text(
+              LangProvider.strings(context).ar
+                  ? 'انتظر قليلًا — لا تُغلق الشاشة'
+                  : "Please wait — don't close the screen",
+              style: const TextStyle(color: _textB, fontSize: 12)),
           const SizedBox(height: 18),
           SizedBox(width: 220, child: ClipRRect(borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(value: _pct > 0.05 ? _pct : null,
@@ -980,6 +1759,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               '• تقسيم عند السكتات: يفصل التلاوة تلقائيًا إلى مقاطع (آيات) عند السكتات.\n'
               '• أدوات صوت القارئ: إزالة طنين الكهرباء (50/60 هرتز) وعزل صوت القارئ عن الخلفية.\n'
               '• تحسين صوتي سريع: سلاسل جاهزة بضغطة واحدة (تلاوة نقية، رسالة صوتية، إصلاح تسجيل قديم).\n'
+              '• تنظيف: إزالة صدى القاعة (WPE)، إزالة ضوضاء (noisereduce)، تنقية العابرات، '
+              'قص بكشف الصوت (VAD)، وتقصير السكتات الطويلة داخل التسجيل.\n'
+              '• قراءة الملف: طبقة الصوت والسطوع والإيقاع ونسبة الكلام وعدد السكتات، '
+              'مع زر إصلاح لكل ملاحظة.\n'
+              '• تراجع/إعادة: كل تغيير قابل للتراجع من الشريط السفلي.\n'
+              '• مكتبات المحرك: تبويب استوديو يعرض أي حزم الصوت الـ١٤ متوفرة على جهازك.\n'
               '• موازن 10 أحزمة: موازن معلمي حقيقي (numpy/scipy) بدقة Q قابلة للضبط.\n'
               '• تأثيرات: تلاشي، طبقة صوت، سرعة، صدى، إرجاع، عكس، تقليص ضوضاء طيفي، ضغط.\n'
               '• FX+‏: ٢٦ تأثيرًا تعمل كلها داخل محرك numpy/scipy مباشرة.\n'
@@ -997,6 +1782,14 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               '• Split by Silence: auto-cuts a recitation into ayah-sized parts at the pauses.\n'
               '• Voice tools: mains-hum removal (50/60 Hz) and reciter-voice isolation.\n'
               '• Quick Voice Enhance: one-tap chains (Recitation Clean, Voice Note, Old Tape Repair).\n'
+              '• Cleanup: room dereverb (WPE), noise reduction (noisereduce), transient '
+              'cleanup, voice-activity trim (VAD), and squeezing of over-long pauses inside '
+              'the recording.\n'
+              '• What\'s in this file: voice pitch, brightness, pace, speech ratio and pause '
+              'count — each with a one-tap fix.\n'
+              '• Undo/redo: every change is reversible from the bottom bar.\n'
+              '• Engine Libraries: the Studio tab shows which of the 14 embedded audio '
+              'packages are live on your device.\n'
               '• 10-band EQ: real parametric EQ (numpy/scipy) with adjustable Q.\n'
               '• Effects: fade, pitch, speed, echo, reverb, reverse, spectral noise reduction, compressor.\n'
               '• FX+: all 26 effects run natively inside the numpy/scipy engine.\n'
@@ -1051,75 +1844,154 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Widget _editorView() => Column(children: [
     _fileBar(), _waveformSection(), _transport(), _tabBar(),
-    if (_tab == _Tab.eq || _tab == _Tab.effects || _tab == _Tab.fx2 || _tab == _Tab.studio) _previewBar(),
     Expanded(child: _tabBody()),
+    _actionBar(),
   ]);
 
-  // S228: quick-audition bar for the Studio Engine — shown on the tabs whose
-  // settings actually feed the DSP pipeline (EQ / Effects / Studio).
-  Widget _previewBar() {
+  // S250 — the audition controls used to live in a bar shown on only four of
+  // the ten tabs (`_tab == eq || effects || fx2 || studio`), so from Trim,
+  // Cleanup, Compliance, Quality, Merge or Export there was no way to hear
+  // your settings or start an export without first navigating elsewhere — even
+  // though Cleanup's controls feed the very same pipeline. It is now a
+  // persistent bottom bar, and carries undo/redo plus a live count of engaged
+  // processing so the state of the edit is always visible.
+  // Layout note (S250): this bar carries five controls plus a status readout —
+  // exactly the shape that overflowed twice in S244. Two guarantees, both
+  // verified by the render test in test/widget_test.dart (which caught an 81 px
+  // overflow in the first draft of this bar, and then a 29 px one in the
+  // second — a FittedBox placed in a Row's *inflexible* slot receives unbounded
+  // main-axis constraints and therefore never scales at all):
+  //   1. below ~340 dp of usable width the chips drop their text labels and
+  //      become icon-only, so the fixed cost shrinks with the screen;
+  //   2. everything except the undo/redo pair lives inside ONE
+  //      Expanded → FittedBox(scaleDown). Expanded bounds the width, which is
+  //      what lets FittedBox measure and scale, so no font metric, locale or
+  //      system text scale can push content off-screen.
+  // Exactly one flexible child, so there is no flex-vs-flex competition (the
+  // other mistake S244 documents).
+  Widget _actionBar() {
     final ar = LangProvider.strings(context).ar;
+    final on = _dspOnCount();
+    final canPreview = _filePath != null && !_dspBusy && !_busy;
+    final canExport = _filePath != null && !_busy;
     return Container(
-      color: _surface,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(children: [
-        const Icon(Icons.science_rounded, color: _teal, size: 15),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            ar ? 'محرك الاستوديو (numpy/scipy)' : 'Studio Engine (numpy/scipy)',
-            style: const TextStyle(color: _textB, fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-        ),
-        // S238 QoL — A/B: replay the raw original from the same spot
-        GestureDetector(
-          onTap: _dspBusy ? null : _playOriginalSlice,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-            decoration: BoxDecoration(
-              color: _goldDim.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _gold.withValues(alpha: 0.45)),
-            ),
+      decoration: BoxDecoration(
+        color: _surface,
+        border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.18))),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 12, offset: const Offset(0, -3))]),
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
+      child: LayoutBuilder(builder: (ctx, cons) {
+        final compact = cons.maxWidth < 340;
+        return Row(children: [
+          _barIconBtn(Icons.undo_rounded, _undo.isNotEmpty ? _undoOnce : null,
+              ar ? 'تراجع' : 'Undo'),
+          const SizedBox(width: 4),
+          _barIconBtn(Icons.redo_rounded, _redo.isNotEmpty ? _redoOnce : null,
+              ar ? 'إعادة' : 'Redo'),
+          const SizedBox(width: 8),
+          Expanded(child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerEnd,
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.compare_arrows_rounded, color: _gold, size: 14),
-              const SizedBox(width: 5),
-              Text(ar ? 'أصلي' : 'A/B',
-                  style: const TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w700)),
-            ]),
+              Column(crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min, children: [
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(on > 0 ? Icons.tune_rounded : Icons.horizontal_rule_rounded,
+                      color: on > 0 ? _teal : _textDim, size: 12),
+                  const SizedBox(width: 4),
+                  Text(
+                      on == 0
+                          ? (ar ? 'بدون معالجة' : 'No processing')
+                          : (ar ? '$on إعداد مفعّل' : '$on setting${on == 1 ? "" : "s"} on'),
+                      maxLines: 1,
+                      style: TextStyle(color: on > 0 ? _teal : _textDim,
+                          fontSize: 10.5, fontWeight: FontWeight.w700)),
+                ]),
+                if (!compact)
+                  Text(ar ? 'محرك الاستوديو (numpy/scipy)' : 'Studio Engine · numpy/scipy',
+                      maxLines: 1,
+                      style: const TextStyle(color: _textDim, fontSize: 9)),
+              ]),
+              const SizedBox(width: 12),
+              _barChip(
+                  icon: Icons.compare_arrows_rounded,
+                  label: compact ? null : (ar ? 'أصلي' : 'A/B'),
+                  color: _gold, bg: _goldDim.withValues(alpha: 0.35),
+                  tip: ar ? 'الأصلي' : 'A/B — hear the original',
+                  onTap: canPreview ? _playOriginalSlice : null),
+              const SizedBox(width: 6),
+              _barChip(
+                  icon: Icons.headphones_rounded,
+                  label: compact ? null : (ar ? 'معاينة' : 'Preview'),
+                  color: _teal, bg: _tealDk, busy: _dspBusy,
+                  tip: ar ? 'معاينة ٨ ثوان' : 'Preview 8s',
+                  onTap: canPreview ? _previewDsp : null),
+              const SizedBox(width: 6),
+              Tooltip(message: ar ? 'معالجة وتصدير' : 'Process & Export',
+                child: GestureDetector(
+                  onTap: canExport ? _export : null,
+                  child: Opacity(opacity: canExport ? 1 : 0.4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: [Color(0xFF6B4F10), _gold],
+                            begin: Alignment.centerRight, end: Alignment.centerLeft),
+                        borderRadius: BorderRadius.circular(20)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.ios_share_rounded, color: Color(0xFF0A0A00), size: 14),
+                        const SizedBox(width: 5),
+                        Text(ar ? 'تصدير' : 'Export',
+                            style: const TextStyle(color: Color(0xFF0A0A00), fontSize: 12,
+                                fontWeight: FontWeight.w800)),
+                      ]))),
+                )),
+            ])),
           ),
-        ),
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: _dspBusy ? null : _previewDsp,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            decoration: BoxDecoration(
-              color: _tealDk,
+        ]);
+      }));
+  }
+
+  Widget _barIconBtn(IconData icon, VoidCallback? onTap, String tip) => Tooltip(
+    message: tip,
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(width: 32, height: 32,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: _card,
+            border: Border.all(color: onTap == null ? _border : _teal.withValues(alpha: 0.4))),
+        child: Icon(icon, size: 16, color: onTap == null ? _textDim : _teal))));
+
+  Widget _barChip({required IconData icon, String? label,
+      required Color color, required Color bg, VoidCallback? onTap,
+      bool busy = false, String? tip}) {
+    final chip = GestureDetector(
+      onTap: onTap,
+      child: Opacity(opacity: onTap == null ? 0.4 : 1,
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: label == null ? 9 : 11, vertical: 9),
+          decoration: BoxDecoration(color: bg,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _teal.withValues(alpha: 0.5)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_dspBusy)
-                  const SizedBox(
-                    width: 12, height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: _teal),
-                  )
-                else
-                  const Icon(Icons.headphones_rounded, color: _teal, size: 14),
-                const SizedBox(width: 6),
-                Text(
-                  ar ? 'معاينة (٨ث)' : 'Preview (8s)',
-                  style: const TextStyle(color: _teal, fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ]),
-    );
+              border: Border.all(color: color.withValues(alpha: 0.5))),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (busy)
+              SizedBox(width: 14, height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: color))
+            else
+              Icon(icon, color: color, size: 15),
+            if (label != null) ...[
+              const SizedBox(width: 5),
+              Text(label, style: TextStyle(color: color, fontSize: 12,
+                  fontWeight: FontWeight.w700)),
+            ],
+          ]))));
+    return tip == null ? chip : Tooltip(message: tip, child: chip);
+  }
+
+  static String _fmtBytes(int b) {
+    if (b <= 0) return '';
+    if (b < 1024) return '$b B';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(0)} KB';
+    return '${(b / 1048576).toStringAsFixed(1)} MB';
   }
 
   Widget _fileBar() => Container(
@@ -1133,8 +2005,16 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             border: Border.all(color: _teal.withValues(alpha: 0.4))),
         child: const Icon(Icons.music_note_rounded, color: _teal, size: 14)),
       const SizedBox(width: 10),
-      Expanded(child: Text(_fileName, overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: _textA, fontSize: 13, fontWeight: FontWeight.w600))),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min, children: [
+        Text(_fileName, overflow: TextOverflow.ellipsis, maxLines: 1,
+            style: const TextStyle(color: _textA, fontSize: 13, fontWeight: FontWeight.w600)),
+        // S250 — size + format at a glance
+        if (_fileBytes > 0)
+          Text('${_fmtBytes(_fileBytes)}'
+              '${_fileName.contains('.') ? ' · ${_fileName.split('.').last.toUpperCase()}' : ''}',
+              style: const TextStyle(color: _textDim, fontSize: 9.5)),
+      ])),
       const SizedBox(width: 10),
       Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(8),
@@ -1142,6 +2022,48 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         child: Text(_fmtTime(_durationSec),
             style: const TextStyle(color: _textB, fontSize: 11.5, fontFamily: 'monospace'))),
     ]));
+
+  // S250 — which waveform element a drag grabbed
+  static const double _kHandleGrabPx = 26.0;
+  int _dragTarget = 0;   // 0 = none/seek, 1 = trim start, 2 = trim end
+
+  void _onWaveDown(double dx, double w) {
+    if (w <= 0) return;
+    final sx = _trimStart * w;
+    final ex = _trimEnd * w;
+    // grab whichever handle is nearest, if the touch is close enough to one
+    final dStart = (dx - sx).abs();
+    final dEnd = (dx - ex).abs();
+    if (dStart <= _kHandleGrabPx && dStart <= dEnd) {
+      _dragTarget = 1;
+      _pushUndo();
+    } else if (dEnd <= _kHandleGrabPx) {
+      _dragTarget = 2;
+      _pushUndo();
+    } else {
+      _dragTarget = 0;
+    }
+  }
+
+  void _onWaveDrag(double dx, double w) {
+    if (w <= 0 || _dragTarget == 0) return;
+    final frac = (dx / w).clamp(0.0, 1.0);
+    setState(() {
+      if (_dragTarget == 1) {
+        _trimStart = frac.clamp(0.0, (_trimEnd - 0.005).clamp(0.0, 1.0));
+      } else {
+        _trimEnd = frac.clamp((_trimStart + 0.005).clamp(0.0, 1.0), 1.0);
+      }
+    });
+  }
+
+  Future<void> _seekFrac(double frac) async {
+    if (_durationSec <= 0) return;
+    if (_previewMode) await _exitPreview(silent: true);
+    final target = frac.clamp(0.0, 1.0) * _durationSec;
+    await _player.seek(Duration(milliseconds: (target * 1000).round()));
+    if (mounted) setState(() => _positionSec = target);
+  }
 
   Widget _waveformSection() {
     final ar = LangProvider.strings(context).ar;
@@ -1154,6 +2076,29 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.22),
               blurRadius: 12, offset: const Offset(0, 5))]),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // S250 — preview banner. Without this, hearing a preview and then
+        // looking at the transport was simply confusing: different length,
+        // different playhead, no clue why.
+        if (_previewMode)
+          Padding(padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+            child: Row(children: [
+              const Icon(Icons.headphones_rounded, color: _teal, size: 13),
+              const SizedBox(width: 6),
+              Expanded(child: Text(
+                  ar ? 'تشغيل معاينة (${_previewLenSec.toStringAsFixed(1)} ث) — الملف لم يتغير'
+                     : 'Playing a preview (${_previewLenSec.toStringAsFixed(1)}s) — the file is unchanged',
+                  style: const TextStyle(color: _teal, fontSize: 10.5, fontWeight: FontWeight.w600))),
+              GestureDetector(
+                onTap: _exitPreview,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(color: _surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _teal.withValues(alpha: 0.5))),
+                  child: Text(ar ? 'خروج' : 'Exit',
+                      style: const TextStyle(color: _teal, fontSize: 10, fontWeight: FontWeight.w700))),
+              ),
+            ])),
         ClipRRect(borderRadius: BorderRadius.circular(10),
           // S243: seek used context.findRenderObject() — that's the WHOLE
           // screen's box, not the waveform's, so the tap fraction was scaled by
@@ -1161,21 +2106,53 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           // the waveform's own width via LayoutBuilder. The wave is drawn
           // left→right in raw canvas coords (not mirrored), so this stays
           // correct in RTL too.
+          // S250: the same gesture area now also drags the trim handles — the
+          // only way to set a range before this was two sliders on another tab,
+          // while looking at the waveform that shows you where to put them.
           child: LayoutBuilder(builder: (ctx, cons) => GestureDetector(
             onTapDown: (d) {
               final w = cons.maxWidth;
               if (w <= 0 || _durationSec <= 0) return;
-              final frac = (d.localPosition.dx / w).clamp(0.0, 1.0);
-              _player.seek(Duration(milliseconds: (frac * _durationSec * 1000).round()));
-              setState(() => _positionSec = frac * _durationSec);
+              _onWaveDown(d.localPosition.dx, w);
+              if (_dragTarget == 0) {
+                unawaited(_seekFrac(d.localPosition.dx / w));
+              }
             },
+            onHorizontalDragStart: (d) {
+              final w = cons.maxWidth;
+              if (w <= 0 || _durationSec <= 0) return;
+              _onWaveDown(d.localPosition.dx, w);
+              if (_dragTarget != 0) HapticFeedback.selectionClick();
+            },
+            onHorizontalDragUpdate: (d) => _onWaveDrag(d.localPosition.dx, cons.maxWidth),
+            onHorizontalDragEnd: (_) => _dragTarget = 0,
+            onHorizontalDragCancel: () => _dragTarget = 0,
             child: AnimatedBuilder(animation: _waveCtrl,
-              builder: (_, __) => SizedBox(height: 92,
+              builder: (_, __) => SizedBox(height: 118,
                 child: CustomPaint(
                   painter: _WavePainter(bars: _bars, rms: _rmsBars, playPos: pos,
                     trimStart: _trimStart, trimEnd: _trimEnd,
-                    animT: _waveCtrl.value, playing: _playing, analyzed: _analyzed),
-                  size: const Size(double.infinity, 92))))))),
+                    animT: _waveCtrl.value, playing: _playing && !_previewMode,
+                    analyzed: _analyzed, durationSec: _durationSec,
+                    dimmed: _previewMode),
+                  size: const Size(double.infinity, 118))))))),
+        // S250 — selection readout right under the wave, where you're looking
+        if (_durationSec > 0)
+          Padding(padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Row(children: [
+              const Icon(Icons.content_cut_rounded, color: _teal, size: 11),
+              const SizedBox(width: 5),
+              Text(
+                  '${_fmtTime(_trimStart * _durationSec)} → ${_fmtTime(_trimEnd * _durationSec)}',
+                  style: const TextStyle(color: _textB, fontSize: 10,
+                      fontFamily: 'monospace')),
+              const Spacer(),
+              Text(ar ? 'المحدد ' : 'selected ',
+                  style: const TextStyle(color: _textDim, fontSize: 9.5)),
+              Text(_fmtTime((_trimEnd - _trimStart) * _durationSec),
+                  style: const TextStyle(color: _gold, fontSize: 10.5,
+                      fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+            ])),
         // S236 — analysis status + real loudness stats under the waveform
         if (_analyzing || _analyzed)
           Padding(
@@ -1239,6 +2216,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           alignment: AlignmentDirectional.centerStart,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             _tBtn(Icons.skip_previous_rounded, () async {
+              if (_previewMode) { await _exitPreview(silent: true); }
               await _player.seek(Duration(milliseconds: (_trimStart * _durationSec * 1000).round()));
               if (mounted) setState(() => _positionSec = _trimStart * _durationSec);
             }),
@@ -1297,18 +2275,30 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         // S244: also FittedBox-guarded — a long duration ("12:34.5") plus a
         // long position at once is unlikely to overflow a typical remaining
         // width, but this makes it structurally impossible regardless.
+        // S250 — while a preview plays, the transport describes the PREVIEW
+        // (its own position and length), not the source file, and says so.
         FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerStart,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(_fmtTime(_positionSec), style: const TextStyle(color: _gold, fontSize: 11,
-                fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+            if (_previewMode) ...[
+              const Icon(Icons.headphones_rounded, color: _teal, size: 11),
+              const SizedBox(width: 3),
+            ],
+            Text(_fmtTime(_previewMode ? _previewPosSec : _positionSec),
+                style: TextStyle(color: _previewMode ? _teal : _gold, fontSize: 11,
+                    fontWeight: FontWeight.w600, fontFamily: 'monospace')),
             const Text(' / ', style: TextStyle(color: _textDim, fontSize: 11)),
-            Text(_fmtTime(_durationSec), style: const TextStyle(color: _textB, fontSize: 11, fontFamily: 'monospace')),
+            Text(_fmtTime(_previewMode ? _previewLenSec : _durationSec),
+                style: const TextStyle(color: _textB, fontSize: 11, fontFamily: 'monospace')),
           ])),
         const SizedBox(height: 4),
         ClipRRect(borderRadius: BorderRadius.circular(3),
           child: LinearProgressIndicator(
-            value: _durationSec > 0 ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0,
-            backgroundColor: _border, valueColor: const AlwaysStoppedAnimation(_gold), minHeight: 3)),
+            value: _previewMode
+                ? (_previewLenSec > 0 ? (_previewPosSec / _previewLenSec).clamp(0.0, 1.0) : 0)
+                : (_durationSec > 0 ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0),
+            backgroundColor: _border,
+            valueColor: AlwaysStoppedAnimation(_previewMode ? _teal : _gold),
+            minHeight: 3)),
       ])),
     ]));
 
@@ -1319,49 +2309,145 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             border: Border.all(color: _border)),
         child: Icon(icon, color: color ?? _textB, size: 17)));
 
+  // S250 REBUILD — the tab strip scrolls.
+  // It used to be `Row(children: 10 × Expanded(...))`, which on a 412 dp phone
+  // gave each tab ~41 dp: "Compliance" at fontSize 10 needs roughly 55 dp, so
+  // the longer labels were clipped mid-word with no way to see the full name
+  // and no indication that they even were tabs. A fixed Row also meant adding
+  // an eleventh section would squeeze every existing one further.
+  // Now each tab sizes to its own content, the strip scrolls horizontally, the
+  // selected tab is scrolled into view (so tapping through them never leaves
+  // the active one off-screen), and the indicator is drawn inside each tab —
+  // no Stack alignment maths that can drift out of sync with the Row, and it
+  // follows the Row in RTL for free.
+  int _dspOnCount() => [
+    _noiseReduc > 0, _compress, _reverse, _pitch != 0, _tempo != 1.0,
+    _echo > 0, _reverb > 0, _vol != 1.0, _stereoW != 1.0,
+    _fadeIn > 0, _fadeOut > 0, _eq.any((v) => v.abs() > 0.5),
+    _bassBoost != 0, _trebleBoost != 0, _subBass > 0, _presence > 0,
+    _hpFreq > 0, _lpFreq < 20000, _tremolo > 0, _vibrato > 0,
+    _chorus, _flanger, _phaser, _crusher > 0,
+    _haasWiden, _stereoFx != 0, _channelMode != 'Stereo', _swapLR,
+    _noiseGate, _deEsser > 0, _declip, _autoNormalize, _limiter,
+    _autoTrimSilence, _padStart > 0, _padEnd > 0,
+    _dehumOn, _vocalIso > 0, _declick,
+    _aiDenoiseOn, _vadTrimOn, _dereverb > 0, _squeezeOn, _harmonicFocus > 0,
+    _loudnessTarget != 'Off',
+  ].where((b) => b).length;
+
+  /// Per-tab count of engaged settings, shown as a small badge so you can see
+  /// at a glance which sections are doing something.
+  int _tabBadge(_Tab t) {
+    switch (t) {
+      case _Tab.trim:
+        return (_trimStart > 0 || _trimEnd < 1) ? 1 : 0;
+      case _Tab.eq:
+        return _eq.where((v) => v.abs() > 0.5).length;
+      case _Tab.effects:
+        return [_vol != 1.0, _pitch != 0, _tempo != 1.0, _stereoW != 1.0,
+                _fadeIn > 0, _fadeOut > 0, _echo > 0, _reverb > 0,
+                _noiseReduc > 0, _compress, _reverse].where((b) => b).length;
+      case _Tab.fx2:
+        return [_bassBoost != 0, _trebleBoost != 0, _subBass > 0, _presence > 0,
+                _hpFreq > 0, _lpFreq < 20000, _tremolo > 0, _vibrato > 0,
+                _chorus, _flanger, _phaser, _crusher > 0, _haasWiden,
+                _stereoFx != 0, _channelMode != 'Stereo', _swapLR, _noiseGate,
+                _deEsser > 0, _declip, _autoNormalize, _limiter,
+                _autoTrimSilence, _padStart > 0, _padEnd > 0, _dehumOn,
+                _vocalIso > 0, _harmonicFocus > 0].where((b) => b).length;
+      case _Tab.cleanup:
+        return [_aiDenoiseOn, _vadTrimOn, _dereverb > 0, _squeezeOn]
+            .where((b) => b).length;
+      case _Tab.studio:
+        return [_declick, _loudnessTarget != 'Off', _eqQ != 1.4,
+                _reverbType != 'Room', _fadeCurve != 'Equal Power']
+            .where((b) => b).length;
+      case _Tab.loudness:
+      case _Tab.quality:
+      case _Tab.merge:
+        return _tab == _Tab.merge && _mergePath != null ? 1 : 0;
+      case _Tab.export_:
+        return _asRingtone ? 1 : 0;
+    }
+  }
+
+  void _selectTab(_Tab t) {
+    HapticFeedback.selectionClick();
+    setState(() => _tab = t);
+    // keep the chosen tab visible (approximate width per tab is fine — the
+    // clamp keeps it inside the scroll extent either way)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_tabScroll.hasClients) return;
+      final max = _tabScroll.position.maxScrollExtent;
+      if (max <= 0) return;
+      final frac = _kTabs.length > 1 ? t.index / (_kTabs.length - 1) : 0.0;
+      _tabScroll.animateTo((frac * max).clamp(0.0, max),
+          duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic);
+    });
+  }
+
   Widget _tabBar() {
     final ar = LangProvider.strings(context).ar;
-    final labels = ar ? ['قص','EQ','تأثيرات','FX+','تنظيف','استوديو','التوافق','الجودة','دمج','تصدير']
-                      : ['Trim','EQ','Effects','FX+','Cleanup','Studio','Compliance','Quality','Merge','Export'];
-    final icons = [Icons.content_cut_rounded, Icons.equalizer_rounded,
-                   Icons.auto_fix_high_rounded, Icons.graphic_eq_rounded, Icons.blur_on_rounded,
-                   Icons.science_rounded, Icons.rule_rounded, Icons.fact_check_rounded,
-                   Icons.merge_type_rounded, Icons.ios_share_rounded];
-    final n = _Tab.values.length;
     return Container(
-      decoration: BoxDecoration(color: _surface, border: Border(bottom: BorderSide(color: _border)),
+      decoration: BoxDecoration(color: _surface,
+          border: const Border(bottom: BorderSide(color: _border)),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 6, offset: const Offset(0, 3))]),
-      child: Stack(children: [
-        AnimatedAlign(
-          duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic,
-          // S243 RTL FIX: was plain Alignment (never flips), so in Arabic the
-          // tab Row reversed but the underline stayed LTR — it sat under the
-          // wrong tab. AlignmentDirectional is start-relative, matching the Row.
-          alignment: AlignmentDirectional(-1 + 2 * _tab.index / (n - 1), 1),
-          child: FractionallySizedBox(widthFactor: 1 / n,
-            child: Container(height: 2.4, margin: const EdgeInsets.symmetric(horizontal: 2),
+      child: SingleChildScrollView(
+        controller: _tabScroll,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(children: _kTabs.map((spec) {
+          final active = spec.tab == _tab;
+          final badge = _tabBadge(spec.tab);
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _selectTab(spec.tab),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+              margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [_teal, _gold]),
-                borderRadius: BorderRadius.circular(2)))),
-        ),
-        Row(children: _Tab.values.map((t) {
-          final active = t == _tab;
-          return Expanded(child: GestureDetector(
-            onTap: () { HapticFeedback.selectionClick(); setState(() => _tab = t); },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
+                color: active ? _goldDim.withValues(alpha: 0.30) : Colors.transparent,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(
+                    color: active ? _gold.withValues(alpha: 0.55) : Colors.transparent),
+              ),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                AnimatedScale(duration: const Duration(milliseconds: 180),
-                  scale: active ? 1.12 : 1.0,
-                  child: Icon(icons[t.index], color: active ? _gold : _textDim, size: 19)),
-                const SizedBox(height: 3),
-                Text(labels[t.index], style: TextStyle(
-                    color: active ? _gold : _textDim,
-                    fontSize: 10, fontWeight: active ? FontWeight.w800 : FontWeight.w600)),
-              ]))));
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(spec.icon, color: active ? _gold : _textDim, size: 17),
+                  const SizedBox(width: 6),
+                  Text(ar ? spec.ar : spec.en, style: TextStyle(
+                      color: active ? _gold : _textB,
+                      fontSize: 11.5,
+                      fontWeight: active ? FontWeight.w800 : FontWeight.w600)),
+                  if (badge > 0) ...[
+                    const SizedBox(width: 5),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                          color: _tealDk, borderRadius: BorderRadius.circular(7),
+                          border: Border.all(color: _teal.withValues(alpha: 0.5))),
+                      child: Text('$badge', style: const TextStyle(
+                          color: _teal, fontSize: 9, fontWeight: FontWeight.w800,
+                          fontFamily: 'monospace')),
+                    ),
+                  ],
+                ]),
+                const SizedBox(height: 5),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  height: 2.4,
+                  width: active ? 26 : 0,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [_teal, _gold]),
+                    borderRadius: BorderRadius.circular(2)),
+                ),
+              ]),
+            ));
         }).toList()),
-      ]));
+      ));
   }
 
   Widget _tabBody() {
@@ -1389,25 +2475,106 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   }
 
   // ── TRIM TAB ──────────────────────────────────────────────────────────────
+  /// S250 — nudge a trim edge by whole seconds. Dragging alone can't hit an
+  /// exact boundary on a long file: one pixel is several seconds of a
+  /// 40-minute recitation.
+  void _nudgeTrim({required bool start, required double deltaSec}) {
+    if (_durationSec <= 0) return;
+    HapticFeedback.selectionClick();
+    final d = deltaSec / _durationSec;
+    _edit(() {
+      if (start) {
+        _trimStart = (_trimStart + d).clamp(0.0, (_trimEnd - 0.005).clamp(0.0, 1.0));
+      } else {
+        _trimEnd = (_trimEnd + d).clamp((_trimStart + 0.005).clamp(0.0, 1.0), 1.0);
+      }
+    });
+  }
+
+  Widget _nudgeRow(String label, Color color, bool isStart, double valueSec) =>
+    Row(children: [
+      SizedBox(width: 44, child: Text(label,
+          style: const TextStyle(color: _textDim, fontSize: 10.5))),
+      _miniBtn(Icons.remove_rounded, () => _nudgeTrim(start: isStart, deltaSec: -1)),
+      const SizedBox(width: 5),
+      Expanded(child: Center(child: Text(_fmtTime(valueSec),
+          style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w800,
+              fontFamily: 'monospace')))),
+      _miniBtn(Icons.add_rounded, () => _nudgeTrim(start: isStart, deltaSec: 1)),
+      const SizedBox(width: 8),
+      // set this edge to wherever the playhead is
+      GestureDetector(
+        onTap: _durationSec <= 0 ? null : () {
+          HapticFeedback.selectionClick();
+          final f = (_positionSec / _durationSec).clamp(0.0, 1.0);
+          _edit(() {
+            if (isStart) {
+              _trimStart = f.clamp(0.0, (_trimEnd - 0.005).clamp(0.0, 1.0));
+            } else {
+              _trimEnd = f.clamp((_trimStart + 0.005).clamp(0.0, 1.0), 1.0);
+            }
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(color: _surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: color.withValues(alpha: 0.45))),
+          child: Icon(Icons.my_location_rounded, color: color, size: 13)),
+      ),
+    ]);
+
+  /// S250 — set the trim range to the audible span, read straight off the
+  /// waveform buckets the analysis already produced. No processing run, no
+  /// export needed: instant, and reversible with Undo.
+  void _trimToAudio() {
+    final bars = _barsTo.isNotEmpty ? _barsTo : _bars;
+    if (bars.isEmpty || _durationSec <= 0) return;
+    const thr = 0.08;                       // ~-22 dB of the file's own peak
+    int first = -1, last = -1;
+    for (int i = 0; i < bars.length; i++) {
+      if (bars[i] > thr) {
+        if (first < 0) first = i;
+        last = i;
+      }
+    }
+    final ar = LangProvider.strings(context).ar;
+    if (first < 0 || last <= first) {
+      _snack(ar ? 'لم يُعثَر على مقطع مسموع واضح' : 'No clearly audible span found',
+          color: _gold);
+      return;
+    }
+    final pad = 1 / bars.length;            // one bucket of breathing room
+    _edit(() {
+      _trimStart = (first / bars.length - pad).clamp(0.0, 1.0);
+      _trimEnd = ((last + 1) / bars.length + pad).clamp(0.0, 1.0);
+    });
+    _snack(ar ? '✓ تم التحديد حول الصوت' : '✓ Selected around the audio', color: _teal);
+  }
+
+  Widget _miniBtn(IconData icon, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(width: 26, height: 26,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: _surface,
+          border: Border.all(color: _border)),
+      child: Icon(icon, color: _textB, size: 14)));
+
   Widget _trimTab() {
     final ar = LangProvider.strings(context).ar;
-    return ListView(padding: const EdgeInsets.all(14), children: [
+    return ListView(padding: const EdgeInsets.fromLTRB(14, 14, 14, 24), children: [
+      // S250 — what the analysis found, with one-tap fixes
+      _insightsCard(),
+      if (_insF0 != null || _insSpeechPct != null) const SizedBox(height: 10),
       _card_(ar ? 'نطاق القص' : 'Trim Range', Icons.content_cut_rounded, [
-        Row(children: [
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(ar ? 'البداية' : 'Start', style: const TextStyle(color: _textDim, fontSize: 10.5)),
-            const SizedBox(height: 2),
-            Text(_fmtTime(_trimStart * _durationSec),
-                style: const TextStyle(color: _teal, fontSize: 17, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
-          ]),
-          const Spacer(),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(ar ? 'النهاية' : 'End', style: const TextStyle(color: _textDim, fontSize: 10.5)),
-            const SizedBox(height: 2),
-            Text(_fmtTime(_trimEnd * _durationSec),
-                style: const TextStyle(color: _gold, fontSize: 17, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
-          ]),
-        ]),
+        Text(ar ? 'اسحب المقبضين على الموجة أعلاه، أو اضبط بدقة هنا'
+                : 'Drag the two handles on the waveform above, or fine-tune here',
+            style: const TextStyle(color: _textDim, fontSize: 10.5)),
+        const SizedBox(height: 10),
+        // S250 — ±1 s nudges and "set to playhead", because dragging can't be
+        // frame-accurate on a long file.
+        _nudgeRow(ar ? 'البداية' : 'Start', _teal, true, _trimStart * _durationSec),
+        const SizedBox(height: 6),
+        _nudgeRow(ar ? 'النهاية' : 'End', _gold, false, _trimEnd * _durationSec),
         const SizedBox(height: 6),
         // Single RangeSlider replaces the old two separate full-width Sliders —
         // both handles visible on one track instead of two stacked bars.
@@ -1421,19 +2588,15 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               thumbColor: _teal,
               overlayColor: _teal.withValues(alpha: 0.15)),
             child: RangeSlider(
-              values: RangeValues(_trimStart, _trimEnd),
+              values: RangeValues(_trimStart.clamp(0.0, 1.0), _trimEnd.clamp(0.0, 1.0)),
               onChanged: (r) => setState(() {
                 _trimStart = r.start.clamp(0.0, _trimEnd - 0.005);
                 _trimEnd = r.end.clamp(_trimStart + 0.005, 1.0);
               }),
-              onChangeStart: (_) => HapticFeedback.selectionClick(),
+              // S250 — one undo step per drag
+              onChangeStart: (_) { HapticFeedback.selectionClick(); _pushUndo(); },
             ))),
-        Row(children: [
-          _chip_(ar ? 'بداية' : 'Start', () => setState(() => _trimStart = 0)),
-          const Spacer(),
-          _chip_(ar ? 'نهاية' : 'End', () => setState(() => _trimEnd = 1)),
-        ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
         Divider(height: 1, color: _border.withValues(alpha: 0.6)),
         const SizedBox(height: 12),
         Center(child: Column(children: [
@@ -1444,10 +2607,14 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           Text(ar ? 'مدة التحديد' : 'Selection Duration', style: const TextStyle(color: _textDim, fontSize: 10.5)),
         ])),
         const SizedBox(height: 12),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+        Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
           _chip_(ar ? 'الكل' : 'All', () => setState(() { _trimStart = 0; _trimEnd = 1; })),
           _chip_(ar ? 'النصف الأول' : 'First Half', () => setState(() { _trimStart = 0; _trimEnd = 0.5; })),
           _chip_(ar ? 'النصف الثاني' : 'Second Half', () => setState(() { _trimStart = 0.5; _trimEnd = 1; })),
+          // S250 — trim to the audible part using the analysed waveform, with
+          // no processing run at all
+          if (_analyzed)
+            _chip_(ar ? 'حول الصوت' : 'Around Audio', _trimToAudio),
         ]),
       ]),
       const SizedBox(height: 10),
@@ -1500,7 +2667,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               painter: _SpectrumPainter(bands: _spectrum),
               size: const Size(double.infinity, 64))),
           const SizedBox(height: 6),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [
+          const Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('60Hz', style: TextStyle(color: _textDim, fontSize: 9, fontFamily: 'monospace')),
             Text('1kHz', style: TextStyle(color: _textDim, fontSize: 9, fontFamily: 'monospace')),
             Text('10kHz', style: TextStyle(color: _textDim, fontSize: 9, fontFamily: 'monospace')),
@@ -1642,7 +2809,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       GestureDetector(
         onTap: () {
           HapticFeedback.mediumImpact();
-          setState(() {
+          _edit(() {
             _vol=1.0; _pitch=0; _tempo=1.0; _stereoW=1.0;
             _fadeIn=0; _fadeOut=0; _echo=0; _reverb=0;
             _noiseReduc=0; _compress=false; _compThresh=-18; _compRatio=4.0;
@@ -1652,6 +2819,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             _compAttack=20; _compRelease=200; _compMakeup=0;
             _loudnessTarget='Off'; _truePeakLimiter=true; _fadeCurve='Equal Power';
             _aiDenoiseOn=false; _aiDenoiseStrength=60; _vadTrimOn=false; _vadAggr=2;  // S248
+            // S250 — the new Cleanup-tab processing was missing from this reset,
+            // so "Reset All Effects" left dereverb/squeeze/harmonic focus on.
+            _aiDenoiseNonStat=false; _dereverb=0; _squeezeOn=false;
+            _squeezeMax=1.2; _squeezeKeep=0.35; _harmonicFocus=0;
           });
         },
         child: Container(
@@ -1667,10 +2838,14 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     ]);
   }
 
-  // ── CLEANUP TAB — S248: real noisereduce + webrtcvad (bundled via S247) ──
+  // ── CLEANUP TAB — S248 noisereduce + webrtcvad, S250 nara_wpe + HPSS ─────
   Widget _cleanupTab() {
     final ar = LangProvider.strings(context).ar;
-    return ListView(padding: const EdgeInsets.all(14), children: [
+    return ListView(padding: const EdgeInsets.fromLTRB(14, 14, 14, 24), children: [
+      if (_insSpeechPct != null || _insLongPauses != null) ...[
+        _insightsCard(),
+        const SizedBox(height: 10),
+      ],
       _card_(ar ? 'إزالة الضوضاء (AI)' : 'AI Noise Reduction', Icons.blur_on_rounded, [
         Text(ar
             ? 'إزالة ضوضاء طيفية (noisereduce) — أدق من المُقلّص اليدوي في تبويب التأثيرات، ويمكن تشغيلها معه.'
@@ -1683,7 +2858,54 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         if (_aiDenoiseOn) ...[const SizedBox(height: 10),
           _knob(ar ? 'قوة الإزالة' : 'Strength', '${_aiDenoiseStrength.round()}%',
               _aiDenoiseStrength, 0, 100, (v) => setState(() => _aiDenoiseStrength = v)),
+          // S250 — noisereduce's non-stationary mode
+          _toggle(ar ? 'ضوضاء متغيّرة' : 'Changing noise', Icons.waves_rounded,
+              _aiDenoiseNonStat, (v) => setState(() => _aiDenoiseNonStat = v)),
+          Text(ar
+              ? 'فعّلها إذا كانت الضوضاء تتغير أثناء التسجيل (مرور سيارات، مروحة، ضجيج قاعة) — '
+                'يتابع المحرك تقديرًا متحركًا للضوضاء بدل تقدير ثابت واحد.'
+              : 'Turn on when the noise changes during the recording (passing traffic, a fan, '
+                'hall murmur) — the engine tracks a moving noise estimate instead of one fixed profile.',
+              style: const TextStyle(color: _textDim, fontSize: 10.5, height: 1.4)),
         ],
+      ]),
+      const SizedBox(height: 10),
+      // ── S250: nara_wpe dereverberation ──
+      _card_(ar ? 'إزالة صدى القاعة (Dereverb)' : 'Room Dereverb (WPE)',
+          Icons.surround_sound_rounded, [
+        Text(ar
+            ? 'يقصّر ذيل صدى الغرفة/المسجد فعليًا (خوارزمية WPE من nara_wpe) بدل تغطيته — '
+              'يقدّر الصدى المتأخر من إشارة التسجيل نفسها ويطرحه لكل ترددٍ على حدة. '
+              'الأفضل للتلاوات المسجّلة في مكان مُصلِت.'
+            : 'Actually shortens a room/mosque reverb tail (nara_wpe\'s WPE algorithm) instead '
+              'of masking it — it estimates the late reverberation from the signal\'s own past '
+              'and subtracts it per frequency band. Best on recitations recorded in a live room.',
+            style: const TextStyle(color: _textDim, fontSize: 11, height: 1.4)),
+        const SizedBox(height: 10),
+        _knob(ar ? 'قوة الإزالة' : 'Strength',
+            _dereverb == 0 ? (ar ? 'معطل' : 'Off') : '${_dereverb.round()}%',
+            _dereverb, 0, 100, (v) => setState(() => _dereverb = v)),
+        Text(ar ? 'ابدأ من ٤٠٪ — القيم العالية تجعل الصوت جافًا وقريبًا جدًا'
+                : 'Start around 40% — high values make the voice dry and very close',
+            style: const TextStyle(color: _textDim, fontSize: 10.5)),
+      ]),
+      const SizedBox(height: 10),
+      // ── S250: HPSS transient removal ──
+      _card_(ar ? 'تنقية العابرات (تركيز نغمي)' : 'Transient Cleanup (Harmonic Focus)',
+          Icons.auto_awesome_motion_rounded, [
+        Text(ar
+            ? 'يفصل الصوت الممتد (صوت القارئ) عن الأصوات اللحظية — قلب الصفحات، طرق الميكروفون، '
+              'صرير الكرسي، نقرات الفم — ويخفض هذه الأخيرة. تلتقط ما تعجز عنه بوابة الضوضاء '
+              '(لأنه أعلى من العتبة) وما يُشوّهه تقليل الضوضاء الطيفي (لأنه عريض النطاق).'
+            : 'Separates sustained sound (the reciter\'s voice) from momentary ones — page turns, '
+              'mic bumps, chair creaks, mouth clicks — and pulls the latter down. Catches what a '
+              'noise gate can\'t (it\'s above the threshold) and what spectral denoise only smears '
+              '(it\'s broadband).',
+            style: const TextStyle(color: _textDim, fontSize: 11, height: 1.4)),
+        const SizedBox(height: 10),
+        _knob(ar ? 'قوة التنقية' : 'Amount',
+            _harmonicFocus == 0 ? (ar ? 'معطل' : 'Off') : '${_harmonicFocus.round()}%',
+            _harmonicFocus, 0, 100, (v) => setState(() => _harmonicFocus = v)),
       ]),
       const SizedBox(height: 10),
       _card_(ar ? 'قص السكوت بكشف الصوت (VAD)' : 'Voice-Activity Trim', Icons.record_voice_over_rounded, [
@@ -1707,13 +2929,292 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
               style: const TextStyle(color: _textDim, fontSize: 10.5)),
         ],
       ]),
+      const SizedBox(height: 10),
+      // ── S250: internal pause squeezing ──
+      _card_(ar ? 'تقصير السكتات الطويلة' : 'Squeeze Long Pauses',
+          Icons.compress_rounded, [
+        Text(ar
+            ? 'يقصّر السكتات *داخل* التسجيل لا في طرفيه فقط: كل سكتة أطول من الحد يتم تقصيرها '
+              'مع تلاشٍ متقاطع قصير حتى لا تُسمع نقرة. يحافظ على أنفاس القارئ (يعدّها webrtcvad '
+              'صوتًا) بخلاف مرشحات إزالة الصمت العامة.'
+            : 'Shortens the pauses *inside* the recording, not just at its ends: any pause longer '
+              'than the limit is cut down, with a short crossfade so no click appears. Unlike a '
+              'generic silence-removal filter it keeps the reciter\'s breath (webrtcvad still '
+              'hears voice there).',
+            style: const TextStyle(color: _textDim, fontSize: 11, height: 1.4)),
+        const SizedBox(height: 10),
+        _toggle(ar ? 'تفعيل' : 'Enable', Icons.compress_rounded,
+            _squeezeOn, (v) => setState(() => _squeezeOn = v)),
+        if (_squeezeOn) ...[const SizedBox(height: 10),
+          _knob(ar ? 'أطول سكتة مسموحة' : 'Longer than',
+              '${_squeezeMax.toStringAsFixed(1)}s', _squeezeMax, 0.4, 5.0,
+              (v) => setState(() {
+                _squeezeMax = v;
+                if (_squeezeKeep > _squeezeMax) _squeezeKeep = _squeezeMax;
+              })),
+          _knob(ar ? 'تُقصّر إلى' : 'Shorten to',
+              '${_squeezeKeep.toStringAsFixed(2)}s', _squeezeKeep, 0.1,
+              _squeezeMax.clamp(0.2, 5.0),
+              (v) => setState(() => _squeezeKeep = v)),
+          if (_insLongPauses != null)
+            Text(ar
+                ? 'التحليل وجد ${_insLongPauses!} سكتة طويلة في هذا الملف'
+                : 'Analysis found ${_insLongPauses!} long pause${_insLongPauses == 1 ? "" : "s"} in this file',
+                style: const TextStyle(color: _teal, fontSize: 10.5)),
+        ],
+      ]),
+    ]);
+  }
+
+  // ── S250: CONTENT INSIGHTS — measurements with one-tap fixes ──────────────
+  // The analyse pass already reads pitch, brightness, pace, speech ratio and
+  // pause structure; before S250 none of it reached the UI. Each row that
+  // indicates a problem offers the setting that addresses it, so the numbers
+  // are actionable instead of trivia.
+  Widget _insightsCard() {
+    final ar = LangProvider.strings(context).ar;
+    final rows = <Widget>[];
+
+    void row(IconData icon, String label, String value, {String? hint,
+        String? fixLabel, VoidCallback? onFix, Color color = _textB}) {
+      rows.add(Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(children: [
+          Icon(icon, color: color, size: 15),
+          const SizedBox(width: 9),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(child: Text(label,
+                  style: const TextStyle(color: _textA, fontSize: 12))),
+              Text(value, style: TextStyle(color: color, fontSize: 12,
+                  fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+            ]),
+            if (hint != null)
+              Text(hint, style: const TextStyle(color: _textDim, fontSize: 10, height: 1.3)),
+          ])),
+          if (onFix != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () { _edit(onFix); HapticFeedback.selectionClick(); },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(color: _goldDim.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _gold.withValues(alpha: 0.5))),
+                child: Text(fixLabel ?? (ar ? 'إصلاح' : 'Fix'),
+                    style: const TextStyle(color: _gold, fontSize: 10,
+                        fontWeight: FontWeight.w700))),
+            ),
+          ],
+        ])));
+    }
+
+    if (_insF0 != null) {
+      row(Icons.music_note_rounded, ar ? 'طبقة الصوت' : 'Voice pitch',
+          '${_insF0!.toStringAsFixed(0)} Hz${_insNote != null ? " · $_insNote" : ""}',
+          color: _teal);
+    }
+    if (_insBrightness != null) {
+      final dull = _insBrightness! < 900;
+      row(Icons.light_mode_rounded, ar ? 'السطوع' : 'Brightness',
+          '${_insBrightness!.toStringAsFixed(0)} Hz',
+          color: dull ? _gold : _teal,
+          hint: dull
+              ? (ar ? 'الصوت مكتوم نسبيًا' : 'Sounds fairly dull')
+              : null,
+          fixLabel: ar ? 'وضوح' : 'Brighten',
+          onFix: dull ? () { _presence = 30; _trebleBoost = 2; } : null);
+    }
+    if (_insOnsets != null) {
+      row(Icons.speed_rounded, ar ? 'الإيقاع' : 'Pace',
+          '${_insOnsets!.toStringAsFixed(0)}/min');
+    }
+    if (_insSpeechPct != null) {
+      final sparse = _insSpeechPct! < 65;
+      row(Icons.record_voice_over_rounded, ar ? 'نسبة الكلام' : 'Speech',
+          '${_insSpeechPct!.toStringAsFixed(0)}%',
+          color: sparse ? _gold : _teal,
+          hint: sparse
+              ? (ar ? 'جزء كبير من الملف ليس كلامًا' : 'A lot of this file isn\'t speech')
+              : null,
+          fixLabel: ar ? 'قص' : 'Trim',
+          onFix: sparse ? () { _vadTrimOn = true; } : null);
+    }
+    if ((_insLongPauses ?? 0) > 0) {
+      row(Icons.pause_circle_outline_rounded, ar ? 'سكتات طويلة' : 'Long pauses',
+          '$_insLongPauses',
+          color: _gold,
+          hint: ar ? 'يمكن تقصيرها تلقائيًا' : 'These can be shortened automatically',
+          fixLabel: ar ? 'تقصير' : 'Squeeze',
+          onFix: () { _squeezeOn = true; });
+    }
+    if (_insStereoCorr != null) {
+      final fakeStereo = _insStereoCorr! > 0.98;
+      row(Icons.hearing_rounded, ar ? 'ترابط القناتين' : 'L/R correlation',
+          _insStereoCorr!.toStringAsFixed(2),
+          color: fakeStereo ? _gold : _textB,
+          hint: fakeStereo
+              ? (ar ? 'القناتان متطابقتان — التصدير أحاديًا يوفّر نصف الحجم'
+                    : 'Both channels are identical — exporting mono halves the size')
+              : null,
+          fixLabel: ar ? 'أحادي' : 'Mono',
+          onFix: fakeStereo ? () { _channels = 'Mono'; } : null);
+    }
+    if (_insDc != null && _insDc!.abs() > 0.002) {
+      row(Icons.trending_flat_rounded, 'DC offset', _insDc!.toStringAsFixed(4),
+          color: _red,
+          hint: ar ? 'إزاحة تيار مستمر تُهدر مجال الذروة' : 'A DC offset wastes headroom',
+          fixLabel: ar ? 'مرشح' : 'Filter',
+          onFix: () { if (_hpFreq < 20) _hpFreq = 30; });
+    }
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return _card_(ar ? 'قراءة الملف' : 'What\'s in this file',
+        Icons.insights_rounded, rows);
+  }
+
+  // ── S250: ENGINE LIBRARIES PANEL ─────────────────────────────────────────
+  // Shows which of the 14 embedded audio packages are actually present in the
+  // on-device python environment, and what each one powers. This exists
+  // because the answer used to be "none of them" without any way to find out:
+  // the CI step that was supposed to install them failed silently on every
+  // build (see build_assets.sh), so the features that depend on them were
+  // quietly inert. Now it's one tap to verify.
+  Widget _libsCard() {
+    final ar = LangProvider.strings(context).ar;
+    final libs = _libs;
+    final all = libs != null && _libsTotal > 0 && _libsOk == _libsTotal;
+    return _card_(ar ? 'مكتبات المحرك' : 'Engine Libraries', Icons.extension_rounded, [
+      Text(ar
+          ? 'حزم الصوت المُضمّنة في بيئة بايثون على جهازك. كل واحدة منها تُشغّل ميزة '
+            'محددة في المحرر — والميزات التي تعتمد عليها تعمل فقط إذا كانت موجودة.'
+          : 'The audio packages embedded in the on-device Python environment. Each one powers a '
+            'specific editor feature — and the features that depend on it only work if it\'s there.',
+          style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+      const SizedBox(height: 12),
+      if (libs == null)
+        GestureDetector(
+          onTap: _libsLoading ? null : _loadLibs,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _teal.withValues(alpha: 0.4))),
+            child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (_libsLoading)
+                const SizedBox(width: 14, height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+              else
+                const Icon(Icons.fact_check_outlined, color: _teal, size: 17),
+              const SizedBox(width: 8),
+              Text(_libsLoading
+                      ? (ar ? 'جارٍ الفحص…' : 'Checking…')
+                      : (ar ? 'فحص المكتبات' : 'Check Libraries'),
+                  style: const TextStyle(color: _teal, fontSize: 13, fontWeight: FontWeight.w700)),
+            ])))),
+      if (libs != null) ...[
+        Row(children: [
+          Icon(all ? Icons.verified_rounded : Icons.warning_amber_rounded,
+              color: all ? _teal : _gold, size: 17),
+          const SizedBox(width: 8),
+          Expanded(child: Text(
+              ar ? '$_libsOk من $_libsTotal حزمة متوفرة'
+                 : '$_libsOk of $_libsTotal packages available',
+              style: TextStyle(color: all ? _teal : _gold, fontSize: 12.5,
+                  fontWeight: FontWeight.w700))),
+          GestureDetector(
+            onTap: _libsLoading ? null : _loadLibs,
+            child: const Icon(Icons.refresh_rounded, color: _textB, size: 17)),
+        ]),
+        const SizedBox(height: 4),
+        Text(ar
+            ? all ? 'كل الميزات المعتمدة على هذه الحزم تعمل.'
+                  : 'الميزات المعتمدة على الحزم الناقصة ترجع تلقائيًا إلى بديل numpy/scipy.'
+            : all ? 'Every feature that depends on these is live.'
+                  : 'Features needing a missing package fall back to numpy/scipy automatically.',
+            style: const TextStyle(color: _textDim, fontSize: 10.5, height: 1.4)),
+        const SizedBox(height: 10),
+        ...libs.map((p) {
+          final ok = p['ok'] == true;
+          final ver = (p['version'] as String?) ?? '';
+          return Padding(padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              _rackLamp(ok),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Text('${p['name']}', style: TextStyle(
+                      color: ok ? _textA : _textDim, fontSize: 11.5,
+                      fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+                  if (ver.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(ver, style: const TextStyle(color: _textDim, fontSize: 9.5,
+                        fontFamily: 'monospace')),
+                  ],
+                ]),
+                Text('${p['role']}',
+                    style: TextStyle(color: ok ? _textB : _textDim, fontSize: 10, height: 1.3)),
+              ])),
+              Icon(ok ? Icons.check_rounded : Icons.close_rounded,
+                  color: ok ? _teal : _red, size: 14),
+            ]));
+        }),
+      ],
+      if (_libsError != null) ...[
+        const SizedBox(height: 10),
+        Text(_libsError!, style: const TextStyle(color: _red, fontSize: 11, height: 1.4)),
+      ],
+    ]);
+  }
+
+  // ── S250: last run's per-stage timings, straight from the engine report ────
+  Widget _stageTimingCard() {
+    final ar = LangProvider.strings(context).ar;
+    final total = _lastRunMs;
+    return _card_(ar ? 'زمن آخر معالجة' : 'Last Run Timing', Icons.timer_outlined, [
+      if (total != null)
+        Row(children: [
+          Text(ar ? 'الإجمالي' : 'Total',
+              style: const TextStyle(color: _textB, fontSize: 12)),
+          const Spacer(),
+          Text('${(total / 1000).toStringAsFixed(2)} s',
+              style: const TextStyle(color: _gold, fontSize: 13,
+                  fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+        ]),
+      const SizedBox(height: 6),
+      ..._lastStages.map((s) {
+        final ms = (s['ms'] as num?)?.toDouble() ?? 0;
+        final frac = (total != null && total > 0) ? (ms / total).clamp(0.0, 1.0) : 0.0;
+        return Padding(padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(children: [
+            SizedBox(width: 96, child: Text('${s['name']}',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _textB, fontSize: 10.5))),
+            Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(value: frac, minHeight: 4,
+                  backgroundColor: _border,
+                  valueColor: const AlwaysStoppedAnimation(_teal)))),
+            const SizedBox(width: 8),
+            SizedBox(width: 58, child: Text('${ms.toStringAsFixed(0)} ms',
+                textAlign: TextAlign.end,
+                style: const TextStyle(color: _textDim, fontSize: 10,
+                    fontFamily: 'monospace'))),
+          ]));
+      }),
+      const SizedBox(height: 4),
+      Text(ar ? 'يقيس المحرك كل مرحلة على حدة — يوضح أي إعداد يستهلك الوقت'
+              : 'The engine times each stage — shows which setting costs the time',
+          style: const TextStyle(color: _textDim, fontSize: 10.5)),
     ]);
   }
 
   // ── STUDIO TAB — S228 advanced Studio Engine settings ───────────────────
   Widget _studioTab() {
     final ar = LangProvider.strings(context).ar;
-    return ListView(padding: const EdgeInsets.all(14), children: [
+    return ListView(padding: const EdgeInsets.fromLTRB(14, 14, 14, 24), children: [
+      _libsCard(),                                        // S250
+      const SizedBox(height: 10),
+      if (_lastStages.isNotEmpty) ...[
+        _stageTimingCard(),                               // S250
+        const SizedBox(height: 10),
+      ],
       _card_(ar ? 'محرك الاستوديو' : 'Studio Engine', Icons.science_rounded, [
         Text(ar
             ? 'معالجة حقيقية بواسطة numpy/scipy تعمل بالكامل على الجهاز: موازن معلمي حقيقي، تقليل ضوضاء طيفي، إزالة الطقطقة، صدى تلافيفي، وتطبيع صوت (LUFS) مع محدد ذروة حقيقية. عند فشل المحرك يتم الرجوع تلقائيًا لسلسلة مرشحات ffmpeg.'
@@ -1861,7 +3362,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _card_(ar ? 'قياسات الجهارة الحقيقية' : 'Real Loudness Measurements', Icons.analytics_rounded, [
         Row(children: [
           Expanded(child: _loudnessStatBlock(ar ? 'الجهارة المتكاملة' : 'Integrated',
-              lufs != null ? '${lufs.toStringAsFixed(1)}' : '—', 'LUFS')),
+              lufs != null ? lufs.toStringAsFixed(1) : '—', 'LUFS')),
           Expanded(child: _loudnessStatBlock(ar ? 'نطاق الجهارة' : 'Loudness Range',
               lra != null ? lra.toStringAsFixed(1) : '—', 'LU')),
           Expanded(child: _loudnessStatBlock(ar ? 'الذروة الحقيقية' : 'True Peak',
@@ -2001,6 +3502,17 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             Text(ar ? '٪ وضوح' : '% intelligibility', style: const TextStyle(color: _textDim, fontSize: 11)),
           ])),
           const SizedBox(height: 10),
+          // S250 — ESTOI reacts to the modulation-domain damage that aggressive
+          // denoising leaves behind, which plain STOI can miss entirely.
+          if (_statEstoi != null)
+            _row('ESTOI', '${(_statEstoi! * 100).toStringAsFixed(1)}%'),
+          if (_statLufsDelta != null)
+            _row(ar ? 'فرق الجهارة' : 'Loudness change',
+                '${_statLufsDelta! >= 0 ? "+" : ""}${_statLufsDelta!.toStringAsFixed(1)} LU'),
+          if (_statDriftSec != null)
+            _row(ar ? 'فرق الطول' : 'Length difference',
+                '${_statDriftSec!.toStringAsFixed(2)}s'),
+          const SizedBox(height: 8),
           Text(
               stoi >= 0.85
                   ? (ar ? 'ممتاز — لا يوجد فقدان وضوح ملحوظ.' : 'Excellent — no noticeable intelligibility loss.')
@@ -2010,7 +3522,28 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                       : (ar ? 'تحذير — فقدان وضوح واضح، جرّب تخفيف الإعدادات الحالية.'
                             : 'Warning — noticeable intelligibility loss, try easing back current settings.'),
               style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
-        ])],
+        ]),
+        // S250 — STOI aligns the two signals sample-for-sample, so anything
+        // that changes duration (pitch, speed, VAD trim, pause squeezing)
+        // makes a low score meaningless rather than bad. Say so instead of
+        // letting the user "fix" a problem that isn't there.
+        if ((_statDriftSec ?? 0) > 0.25 || _pitch != 0 || _tempo != 1.0) ...[
+          const SizedBox(height: 10),
+          _card_(ar ? 'اقرأ النتيجة بحذر' : 'Read this score with care',
+              Icons.info_outline_rounded, [
+            Text(ar
+                ? 'هذا القياس يقارن الإشارتين عيّنةً بعيّنة، لذا أي إعداد يغيّر الطول أو الطبقة '
+                  '(السرعة، الطبقة، قص السكوت بالـVAD، تقصير السكتات) يجعل النتيجة منخفضة '
+                  'بلا معنى — وليست دليلًا على سوء الجودة. أوقف تلك الإعدادات مؤقتًا لقياس '
+                  'أثر تقليل الضوضاء والموازن وحدهما.'
+                : 'This metric compares the two signals sample-for-sample, so any setting that '
+                  'changes length or pitch (speed, pitch, VAD trim, pause squeezing) makes a low '
+                  'score meaningless rather than bad. Turn those off temporarily to measure the '
+                  'effect of noise reduction and EQ on their own.',
+                style: const TextStyle(color: _gold, fontSize: 11.5, height: 1.5)),
+          ]),
+        ],
+      ],
     ]);
   }
 
@@ -2165,19 +3698,36 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
           }).toList())],
       ]),
       const SizedBox(height: 10),
+      // S250 — controller-backed so the tags survive a rebuild, persist across
+      // sessions, and participate in undo/redo (S237 had to skip all three).
       _card_(ar ? 'بيانات وصفية' : 'Metadata Tags', Icons.label_rounded, [
-        TextField(style: const TextStyle(color: _textA, fontSize: 13),
+        TextField(controller: _metaTitleCtrl,
+          style: const TextStyle(color: _textA, fontSize: 13),
           decoration: InputDecoration(labelText: ar ? 'العنوان' : 'Title',
               labelStyle: const TextStyle(color: _textDim, fontSize: 12)),
           onChanged: (v) => _metaTitle = v),
-        TextField(style: const TextStyle(color: _textA, fontSize: 13),
+        TextField(controller: _metaArtistCtrl,
+          style: const TextStyle(color: _textA, fontSize: 13),
           decoration: InputDecoration(labelText: ar ? 'الفنان' : 'Artist',
               labelStyle: const TextStyle(color: _textDim, fontSize: 12)),
           onChanged: (v) => _metaArtist = v),
-        TextField(style: const TextStyle(color: _textA, fontSize: 13),
+        TextField(controller: _metaAlbumCtrl,
+          style: const TextStyle(color: _textA, fontSize: 13),
           decoration: InputDecoration(labelText: ar ? 'الألبوم' : 'Album',
               labelStyle: const TextStyle(color: _textDim, fontSize: 12)),
           onChanged: (v) => _metaAlbum = v),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: _fileName.isEmpty ? null : () {
+            _edit(() => _metaTitle = _fileName.replaceAll(RegExp(r'\.[^.]+$'), ''));
+            _syncMetaControllers();
+          },
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.auto_awesome_rounded, color: _teal, size: 13),
+            const SizedBox(width: 5),
+            Text(ar ? 'استخدم اسم الملف كعنوان' : 'Use the file name as the title',
+                style: const TextStyle(color: _teal, fontSize: 11, fontWeight: FontWeight.w600)),
+          ])),
       ]),
       const SizedBox(height: 10),
       _card_(ar ? 'إعدادات مسبقة سريعة' : 'Quick Presets', Icons.flash_on_rounded, [
@@ -2219,11 +3769,29 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             '${_fmtTime(_trimStart * _durationSec)} → ${_fmtTime(_trimEnd * _durationSec)}'),
         _row(ar ? 'المدة' : 'Duration', _fmtTime((_trimEnd - _trimStart) * _durationSec)),
         _row(ar ? 'الصيغة' : 'Format', '$_fmt${_fmt == "WAV" ? "" : " @ $_kbps kbps"}'),
+        _row(ar ? 'الإخراج' : 'Output',
+            '$_sampleRate Hz · ${_channels == "Mono" ? (ar ? "أحادي" : "Mono") : (ar ? "ستيريو" : "Stereo")}'
+            '${_fmt == "WAV" ? " · $_wavBitDepth-bit" : ""}'),
         if (_noiseReduc > 0) _row('Noise Reduction', '${_noiseReduc.round()}%'),
         if (_compress) _row('Compressor', '${_compThresh.round()}dB / ${_compRatio.round()}:1'),
         if (_loudnessTarget != 'Off') _row('Loudness', _loudnessTarget),
         if (_declick)   _row('Declick', '${_declickSens.round()}%'),
         if (_reverse)   _row('Reverse', '✓'),
+        // S250 — the Cleanup-tab processing was invisible here, so an export
+        // could quietly include dereverb/squeeze/denoise with no mention.
+        if (_aiDenoiseOn) _row('AI Denoise',
+            '${_aiDenoiseStrength.round()}%${_aiDenoiseNonStat ? " · non-stationary" : ""}'),
+        if (_dereverb > 0) _row('Dereverb (WPE)', '${_dereverb.round()}%'),
+        if (_harmonicFocus > 0) _row('Transient Cleanup', '${_harmonicFocus.round()}%'),
+        if (_vadTrimOn) _row('VAD Trim', 'aggr ${_vadAggr.round()}'),
+        if (_squeezeOn) _row('Pause Squeeze',
+            '>${_squeezeMax.toStringAsFixed(1)}s → ${_squeezeKeep.toStringAsFixed(2)}s'),
+        if (_pitch != 0) _row('Pitch', '${_pitch >= 0 ? "+" : ""}${_pitch.toStringAsFixed(1)} st'),
+        if (_tempo != 1.0) _row('Speed', '${_tempo.toStringAsFixed(2)}×'),
+        const SizedBox(height: 4),
+        Divider(height: 1, color: _border.withValues(alpha: 0.6)),
+        const SizedBox(height: 6),
+        _row(ar ? 'إعدادات مفعّلة' : 'Settings engaged', '${_dspOnCount()}'),
       ]),
       if (_outPath != null) ...[const SizedBox(height: 10),
         // S237 QoL — tap to copy the saved path to the clipboard
@@ -2290,6 +3858,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         ...body,
       ]));
 
+  // S250 — every slider snapshots ONCE per drag (onChangeStart) so undo steps
+  // are gestures, not individual pixel movements.
   Widget _slider(double val, double min, double max, Color color, ValueChanged<double> onChanged) =>
     Directionality(textDirection: TextDirection.ltr,
       child: SliderTheme(data: SliderThemeData(trackHeight: 5,
@@ -2297,8 +3867,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         thumbColor: color, activeTrackColor: color.withValues(alpha: 0.9),
         inactiveTrackColor: _border, overlayColor: color.withValues(alpha: 0.15),
         overlayShape: const RoundSliderOverlayShape(overlayRadius: 18)),
-        child: Slider(value: val, min: min, max: max, onChanged: onChanged,
-            onChangeStart: (_) => HapticFeedback.selectionClick())));
+        child: Slider(value: val.clamp(min, max), min: min, max: max,
+            onChanged: onChanged,
+            onChangeStart: (_) { HapticFeedback.selectionClick(); _pushUndo(); })));
 
   Widget _knob(String label, String valueStr, double val, double min, double max,
       ValueChanged<double> onChanged) =>
@@ -2320,7 +3891,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ]));
 
   Widget _chip_(String label, VoidCallback onTap) =>
-    GestureDetector(onTap: () { HapticFeedback.selectionClick(); onTap(); },
+    GestureDetector(onTap: () { HapticFeedback.selectionClick(); _pushUndo(); onTap(); },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(color: _tealDk, borderRadius: BorderRadius.circular(20),
@@ -2333,7 +3904,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     final active = List.generate(10, (i) => (_eq[i] - vals[i]).abs() < 0.01).every((x) => x);
     return GestureDetector(
       onTap: () { HapticFeedback.selectionClick();
-        setState(() { for (int i = 0; i < 10; i++) _eq[i] = vals[i]; }); },
+        _edit(() { for (int i = 0; i < 10; i++) { _eq[i] = vals[i]; } }); },
       child: AnimatedContainer(duration: const Duration(milliseconds: 200),
         margin: const EdgeInsetsDirectional.only(end: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -2354,9 +3925,10 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       child: Row(children: [
         Icon(icon, color: val ? _gold : _textDim, size: 17), const SizedBox(width: 8),
         Expanded(child: Text(label, style: TextStyle(color: val ? _textA : _textB, fontSize: 13))),
-        Switch(value: val, activeColor: _gold, inactiveThumbColor: _textDim,
+        // S250: activeColor is deprecated (→ activeThumbColor after 3.31)
+        Switch(value: val, activeThumbColor: _gold, inactiveThumbColor: _textDim,
           activeTrackColor: _goldDim, inactiveTrackColor: _border,
-          onChanged: (v) { HapticFeedback.selectionClick(); onChanged(v); }),
+          onChanged: (v) { HapticFeedback.selectionClick(); _pushUndo(); onChanged(v); }),
       ]));
 
   Widget _row(String label, String value) =>
@@ -2405,11 +3977,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   }
 
   Widget _rackSwitch(bool val, ValueChanged<bool> onChanged) =>
-    Switch(value: val, activeColor: _gold, inactiveThumbColor: _textDim,
-      activeTrackColor: _goldDim, inactiveTrackColor: _border, onChanged: onChanged);
+    Switch(value: val, activeThumbColor: _gold, inactiveThumbColor: _textDim,
+      activeTrackColor: _goldDim, inactiveTrackColor: _border,
+      onChanged: (v) { _pushUndo(); onChanged(v); });
 
   Widget _rackSection(String title, int onCount, List<Widget> rows) {
     if (rows.isEmpty) return const SizedBox.shrink();
+    final ar = LangProvider.strings(context).ar;
     final children = <Widget>[];
     for (int i = 0; i < rows.length; i++) {
       children.add(rows[i]);
@@ -2420,7 +3994,12 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         Row(children: [
           Expanded(child: Text(title, style: const TextStyle(color: _textA, fontSize: 15,
               fontWeight: FontWeight.w700, fontFamily: 'serif'))),
-          Text('$onCount ${onCount == 1 ? "on" : "on"}', style: const TextStyle(color: _teal, fontSize: 10, fontFamily: 'monospace')),
+          // S250: was `'$onCount ${onCount == 1 ? "on" : "on"}'` — a ternary
+          // with identical branches, and untranslated. Also hide the "0 on"
+          // noise on sections that aren't doing anything.
+          if (onCount > 0)
+            Text(ar ? '$onCount مفعّل' : '$onCount on',
+                style: const TextStyle(color: _teal, fontSize: 10, fontFamily: 'monospace')),
         ]),
         const SizedBox(height: 8),
         Container(padding: const EdgeInsets.symmetric(horizontal: 13),
@@ -2432,7 +4011,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   void _resetFx2() {
     HapticFeedback.mediumImpact();
-    setState(() {
+    _edit(() {
       _bassBoost=0; _trebleBoost=0; _subBass=0; _presence=0; _hpFreq=0; _lpFreq=20000;
       _tremolo=0; _vibrato=0; _chorus=false; _flanger=false; _phaser=false; _crusher=0;
       _haasWiden=false; _stereoFx=0; _channelMode='Stereo'; _swapLR=false;
@@ -2440,9 +4019,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _autoNormalize=false; _limiter=false; _limiterCeil=-1.0;
       _autoTrimSilence=false; _padStart=0; _padEnd=0;
       _dehumOn=false; _dehumBase=50; _dehumStrength=60; _vocalIso=0;  // S238
+      _harmonicFocus=0;                                               // S250
       _fx2OpenId=null;
     });
   }
+
+  /// S250 — total rows in the FX rack, kept next to the rack itself.
+  static const int _kFx2Count = 27;
 
   Widget _fx2Tab() {
     final ar = LangProvider.strings(context).ar;
@@ -2455,6 +4038,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     final onTrem = _tremolo != 0, onVib = _vibrato != 0, onCrush = _crusher != 0;
     final onStereoFx = _stereoFx != 0, onChanMode = _channelMode != 'Stereo';
     final onDeEsser = _deEsser != 0, onPadStart = _padStart != 0, onPadEnd = _padEnd != 0;
+    final onHarmFocus = _harmonicFocus != 0;  // S250
 
     // S238 — voice & recitation tools (voice-only processing, no music FX)
     final voiceRows = <Widget>[
@@ -2611,24 +4195,45 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         _rackRow(id: 'padend', label: ar ? 'حشو النهاية' : 'Pad End', on: onPadEnd,
           valueStr: _padEnd==0 ? (ar?'معطل':'Off') : '${_padEnd.toStringAsFixed(1)}s',
           body: _slider(_padEnd, 0, 5, _gold, (v) => setState(() => _padEnd = v))),
+      // S250 — HPSS transient cleanup, also reachable from the Cleanup tab
+      if (vis('Transient Cleanup', 'تنقية العابرات'))
+        _rackRow(id: 'harmfocus',
+          label: ar ? 'تنقية العابرات' : 'Transient Cleanup', on: onHarmFocus,
+          valueStr: _harmonicFocus==0 ? (ar?'معطل':'Off') : '${_harmonicFocus.round()}%',
+          body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _slider(_harmonicFocus, 0, 100, _gold, (v) => setState(() => _harmonicFocus = v)),
+            Text(ar ? 'يخفض قلب الصفحات وطرق الميكروفون ونقرات الفم'
+                    : 'Pulls down page turns, mic bumps and mouth clicks',
+                style: const TextStyle(color: _textDim, fontSize: 10)),
+          ])),
     ];
 
     final totalOn = [_dehumOn,onVocalIso,  // S238
         onBass,onTreble,onSub,onPresence,onHp,onLp,
         onTrem,onVib,_chorus,_flanger,_phaser,onCrush,
         _haasWiden,onStereoFx,onChanMode,_swapLR,
-        _noiseGate,onDeEsser,_declip,_autoNormalize,_limiter,_autoTrimSilence,onPadStart,onPadEnd]
+        _noiseGate,onDeEsser,_declip,_autoNormalize,_limiter,_autoTrimSilence,
+        onPadStart,onPadEnd,onHarmFocus]
         .where((b) => b).length;
 
     return Column(children: [
       Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
         child: TextField(
+          controller: _fx2SearchCtrl,
           onChanged: (v) => setState(() => _fx2Search = v),
           style: const TextStyle(color: _textA, fontSize: 13),
           decoration: InputDecoration(
-            hintText: ar ? 'ابحث في 26 تأثيرًا…' : 'Search 26 effects…',
+            // S250 — the count is derived, not a hardcoded "26" that goes stale
+            // every time a row is added (it already had).
+            hintText: ar ? 'ابحث في $_kFx2Count تأثيرًا…' : 'Search $_kFx2Count effects…',
             hintStyle: const TextStyle(color: _textDim, fontSize: 12),
             prefixIcon: const Icon(Icons.search_rounded, color: _textDim, size: 19),
+            suffixIcon: _fx2Search.isEmpty ? null : IconButton(
+                icon: const Icon(Icons.close_rounded, color: _textDim, size: 17),
+                onPressed: () {
+                  _fx2SearchCtrl.clear();
+                  setState(() => _fx2Search = '');
+                }),
             filled: true, fillColor: _card, isDense: true,
             contentPadding: const EdgeInsets.symmetric(vertical: 12),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11),
@@ -2636,6 +4241,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11),
                 borderSide: const BorderSide(color: _gold)),
           ))),
+      // S250 — searching used to silently show nothing on no match
+      if (_fx2Search.trim().isNotEmpty && voiceRows.isEmpty && toneRows.isEmpty &&
+          charRows.isEmpty && spaceRows.isEmpty && dynRows.isEmpty)
+        Padding(padding: const EdgeInsets.fromLTRB(14, 18, 14, 0),
+          child: Row(children: [
+            const Icon(Icons.search_off_rounded, color: _textDim, size: 16),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+                ar ? 'لا تأثير يطابق "${_fx2Search.trim()}"'
+                   : 'No effect matches "${_fx2Search.trim()}"',
+                style: const TextStyle(color: _textDim, fontSize: 12))),
+          ])),
       Padding(padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
         child: Row(children: [
           Expanded(child: Text(
@@ -2659,7 +4276,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         _rackSection(ar ? 'الستيريو والفضاء' : 'Stereo & Space',
             [_haasWiden,onStereoFx,onChanMode,_swapLR].where((b) => b).length, spaceRows),
         _rackSection(ar ? 'تنظيف وديناميكية' : 'Cleanup & Dynamics',
-            [_noiseGate,onDeEsser,_declip,_autoNormalize,_limiter,_autoTrimSilence,onPadStart,onPadEnd]
+            [_noiseGate,onDeEsser,_declip,_autoNormalize,_limiter,_autoTrimSilence,
+             onPadStart,onPadEnd,onHarmFocus]
                 .where((b) => b).length, dynRows),
         _card_(ar ? 'الإعدادات المسبقة' : 'Presets', Icons.bookmark_rounded, [
           Row(children: [
@@ -2793,41 +4411,74 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   // ── S229: BATCH EXPORT — apply current FX/format settings to N more files ─
   Future<void> _batchExport() async {
     final ar = LangProvider.strings(context).ar;
+    if (_busy) { _warnBusy(); return; }
     if (!await _checkSetup()) return;
-    final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: true);
-    if (r == null || r.files.isEmpty) return;
-    final paths = r.files.where((f) => f.path != null).map((f) => f.path!).toList();
+    final picked = await FilePicker.platform.pickFiles(
+        type: FileType.audio, allowMultiple: true);
+    if (picked == null || picked.files.isEmpty) return;
+    final paths = picked.files.where((f) => f.path != null).map((f) => f.path!).toList();
     if (paths.isEmpty) return;
-    setState(() { _busy = true; _busyStart = DateTime.now(); _busyLabel = ar ? 'تصدير دفعي…' : 'Batch exporting…'; _pct = 0; });
+    if (!mounted) return;
+    setState(() { _busy = true; _busyStart = DateTime.now();
+      _busyLabel = ar ? 'تصدير دفعي…' : 'Batch exporting…'; _pct = 0; });
     int done = 0, failed = 0;
-    for (final p in paths) {
-      try {
-        final inp = await _safeInput(p);
-        final ext = _fmt.toLowerCase();
-        final base = p.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
-        final dir = await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
-        final out = '${dir.path}/tilawa_${base}_batch.$ext';
-        // S236: batch now runs the full Studio Engine (numpy/scipy) per file —
-        // same quality as single export — with the ffmpeg chain as fallback.
-        final params = _buildDspParams(fullFile: true);
-        final r = await _runDspEngine(inp, out, params);
-        var okFile = ((r['rc'] as int?) ?? -1) == 0 && File(out).existsSync();
-        if (!okFile) {
-          final af = _buildAf();
-          final cmd = 'ffmpeg -y -i "$inp" '
-              '-af ${af.isEmpty ? "anull" : af.join(",")} ${_metaArgs()} '
-              '-ar $_sampleRate -ac ${_channels == "Mono" ? 1 : 2} '
-              '-acodec ${_codec()} ${_br()} "$out"';
-          final res = await _proot(cmd, inp, out, timeout: 15);
-          okFile = (res?['rc'] as int? ?? 1) == 0;
+    final errors = <String>[];
+    try {
+      for (int i = 0; i < paths.length; i++) {
+        final p = paths[i];
+        final name = p.split('/').last;
+        if (!mounted) return;
+        // S250 — say which file, and how far along, instead of a bare spinner
+        setState(() => _busyLabel = ar
+            ? 'تصدير ${i + 1}/${paths.length}: $name'
+            : 'Exporting ${i + 1}/${paths.length}: $name');
+        String? inp;
+        try {
+          inp = await _safeInput(p);
+          final ext = _fmt.toLowerCase();
+          final base = name.replaceAll(RegExp(r'\.[^.]+$'), '');
+          final dir = await getExternalStorageDirectory()
+              ?? await getApplicationDocumentsDirectory();
+          final out = '${dir.path}/tilawa_${base}_batch.$ext';
+          // S236: batch runs the full Studio Engine (numpy/scipy) per file —
+          // same quality as single export — with the ffmpeg chain as fallback.
+          final params = _buildDspParams(fullFile: true);
+          final res = await _runDspEngine(inp, out, params);
+          var okFile = ((res['rc'] as int?) ?? -1) == 0 && File(out).existsSync();
+          if (!okFile) {
+            final af = _buildAf();
+            final cmd = 'ffmpeg -y -i "$inp" '
+                '-af ${af.isEmpty ? "anull" : af.join(",")} ${_metaArgs()} '
+                '-ar $_sampleRate -ac ${_channels == "Mono" ? 1 : 2} '
+                '-acodec ${_codec()} ${_br()} "$out"';
+            final res2 = await _proot(cmd, inp, out, timeout: 15);
+            okFile = (res2?['rc'] as int? ?? 1) == 0 && File(out).existsSync();
+            if (!okFile) errors.add('$name: ${res2?['out'] ?? res['out'] ?? 'failed'}');
+          }
+          try { File('$out.report.json').deleteSync(); } catch (_) {}
+          if (okFile) { done++; } else { failed++; }
+        } catch (e) {
+          failed++;
+          errors.add('$name: $e');
+        } finally {
+          _dropTemp(inp);
         }
-        if (okFile) { done++; } else { failed++; }
-      } catch (_) { failed++; }
-      setState(() => _pct = (done + failed) / paths.length);
+        if (!mounted) return;
+        setState(() => _pct = (done + failed) / paths.length);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    setState(() => _busy = false);
     unawaited(_saveEditorPrefs());  // S237 QoL
-    _snack('✓ ${ar ? "تم" : "Done"}: $done${failed > 0 ? "  ·  ${ar ? "فشل" : "failed"}: $failed" : ""}');
+    if (!mounted) return;
+    if (failed > 0) {
+      // S250: failures used to be a bare count with no way to find out why.
+      _snackError(Exception(
+          '${ar ? "تم" : "Done"}: $done · ${ar ? "فشل" : "failed"}: $failed\n'
+          '${errors.take(5).join("\n")}'));
+    } else {
+      _snack('✓ ${ar ? "تم" : "Done"}: $done');
+    }
   }
 }
 
@@ -2842,14 +4493,65 @@ class _WavePainter extends CustomPainter {
   final List<double>? rms;
   final double playPos, trimStart, trimEnd, animT;
   final bool playing, analyzed;
+  final double durationSec;   // S250 — for the time ruler
+  final bool dimmed;          // S250 — a preview is playing, this isn't it
   _WavePainter({required this.bars, this.rms, required this.playPos,
       required this.trimStart, required this.trimEnd,
-      required this.animT, required this.playing, this.analyzed = false});
+      required this.animT, required this.playing, this.analyzed = false,
+      this.durationSec = 0, this.dimmed = false});
+
+  // S250 — the strip along the bottom that carries the time ruler
+  static const double _rulerH = 16.0;
+
+  static String _tick(double s) {
+    final m = s ~/ 60;
+    final ss = (s % 60).floor().toString().padLeft(2, '0');
+    return '$m:$ss';
+  }
+
+  /// Time ruler with a sensible tick step for the file's length.
+  void _paintRuler(Canvas c, Size sz) {
+    final y = sz.height - _rulerH;
+    c.drawLine(Offset(0, y), Offset(sz.width, y),
+        Paint()..color = const Color(0xFF1A3A30)..strokeWidth = 0.8);
+    if (durationSec <= 0) return;
+    const steps = [1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0,
+                   600.0, 900.0, 1800.0, 3600.0];
+    double step = steps.last;
+    for (final s in steps) {
+      if (durationSec / s <= 8) { step = s; break; }
+    }
+    const label = TextStyle(color: Color(0xFF3D5A65), fontSize: 8.5,
+        fontFamily: 'monospace', fontWeight: FontWeight.w600);
+    for (double t = 0; t <= durationSec + 1e-6; t += step) {
+      final x = (t / durationSec) * sz.width;
+      if (x > sz.width - 1) break;
+      c.drawLine(Offset(x, y), Offset(x, y + 4),
+          Paint()..color = const Color(0xFF24463C)..strokeWidth = 0.8);
+      if (t == 0) continue;
+      final tp = TextPainter(
+          text: TextSpan(text: _tick(t), style: label),
+          textDirection: ui.TextDirection.ltr)
+        ..layout();
+      final tx = (x - tp.width / 2).clamp(0.0, sz.width - tp.width);
+      tp.paint(c, Offset(tx, y + 4.5));
+    }
+  }
 
   @override
-  void paint(Canvas c, Size sz) {
+  void paint(Canvas c, Size szFull) {
+    // S250 — reserve the bottom strip for the ruler; everything else draws
+    // into the remaining box exactly as before.
+    final sz = Size(szFull.width, (szFull.height - _rulerH).clamp(10.0, szFull.height));
     final n = bars.length; final bw = sz.width / n; final mid = sz.height / 2;
     final barW = (bw - 2).clamp(1.0, bw);
+
+    // faint dB reference lines at -6 and -12 dBFS of the drawn height
+    final gridPaint = Paint()..color = const Color(0xFF163229)..strokeWidth = 0.6;
+    for (final f in const [0.5, 0.25]) {
+      c.drawLine(Offset(0, mid - mid * 0.9 * f), Offset(sz.width, mid - mid * 0.9 * f), gridPaint);
+      c.drawLine(Offset(0, mid + mid * 0.9 * f), Offset(sz.width, mid + mid * 0.9 * f), gridPaint);
+    }
 
     // S242: SoundCloud-style progress waveform. Bars the playhead has already
     // passed light up GOLD; bars still ahead stay TEAL — so the sweep visibly
@@ -2859,13 +4561,13 @@ class _WavePainter extends CustomPainter {
     Paint vgrad(Color a, Color b) => Paint()
       ..shader = ui.Gradient.linear(const Offset(0, 0), Offset(0, sz.height), [a, b]);
     final playedCore   = vgrad(const Color(0xFFF3D170), const Color(0xFF8A6A12));
-    final playedGhost  = Paint()..color = const Color(0xFFD4AF37).withOpacity(0.30);
+    final playedGhost  = Paint()..color = const Color(0xFFD4AF37).withValues(alpha: 0.30);
     final aheadCore    = vgrad(const Color(0xFF37E0B8), const Color(0xFF0C5B3C));
-    final aheadGhost   = Paint()..color = const Color(0xFF1DB898).withOpacity(0.26);
-    final inactive     = Paint()..color = const Color(0xFF24463C).withOpacity(0.55);
-    final inactiveGhost= Paint()..color = const Color(0xFF1A3A30).withOpacity(0.22);
+    final aheadGhost   = Paint()..color = const Color(0xFF1DB898).withValues(alpha: 0.26);
+    final inactive     = Paint()..color = const Color(0xFF24463C).withValues(alpha: 0.55);
+    final inactiveGhost= Paint()..color = const Color(0xFF1A3A30).withValues(alpha: 0.22);
     final hotCore      = vgrad(const Color(0xFFFFF6D0), const Color(0xFFE7BE3F));
-    final rTrim        = Paint()..color = Colors.black.withOpacity(0.35);
+    final rTrim        = Paint()..color = Colors.black.withValues(alpha: 0.35);
 
     final x0 = trimStart * sz.width; final x1 = trimEnd * sz.width;
 
@@ -2918,33 +4620,85 @@ class _WavePainter extends CustomPainter {
     if (trimEnd   < 1) c.drawRect(Rect.fromLTWH(x1, 0, sz.width - x1, sz.height), rTrim);
 
     // ── playhead: soft scan glow + crisp line + cap dots ──
+    // S250 BUG FIX: this gradient passes three colors, and ui.Gradient.linear
+    // REQUIRES colorStops whenever colors.length != 2 — it threw
+    // ArgumentError('"colors" must have length 2 if "colorStops" is omitted')
+    // on every single paint since S242. Because the throw happened here,
+    // paint() aborted at this line, so everything after it never drew:
+    // the playhead line, its cap dots, the trim shading edges and BOTH TRIM
+    // HANDLES were invisible on the waveform in every build. Caught by the new
+    // render test in test/widget_test.dart.
     final px = playPos * sz.width;
     const glowW = 24.0;
     c.drawRect(Rect.fromLTWH(px - glowW / 2, 0, glowW, sz.height),
         Paint()..shader = ui.Gradient.linear(
             Offset(px - glowW / 2, 0), Offset(px + glowW / 2, 0), [
           Colors.transparent,
-          const Color(0xFFF3D170).withOpacity(playing ? 0.22 + 0.10 * sin(animT * 2 * pi * 2) : 0.14),
+          const Color(0xFFF3D170).withValues(
+              alpha: playing ? 0.22 + 0.10 * sin(animT * 2 * pi * 2) : 0.14),
           Colors.transparent,
-        ]));
+        ], const [0.0, 0.5, 1.0]));
     c.drawLine(Offset(px, 0), Offset(px, sz.height),
         Paint()..color = const Color(0xFFFFF1C4)..strokeWidth = 1.6);
     final capPaint = Paint()..color = const Color(0xFFFFF1C4);
     c.drawCircle(Offset(px, 3), 2.6, capPaint);
     c.drawCircle(Offset(px, sz.height - 3), 2.6, capPaint);
 
+    // S250 — handles now look grabbable: a full-height rail plus a wide grip
+    // pill with grip lines, matching the ±26 px drag hit-box in the widget.
     void handle(double x, Color col, bool start) {
-      c.drawLine(Offset(x,0), Offset(x,sz.height), Paint()..color=col..strokeWidth=1.8);
+      c.drawLine(Offset(x, 0), Offset(x, sz.height),
+          Paint()..color = col..strokeWidth = 2.0);
+      const gw = 13.0, gh = 30.0;
+      final gx = start ? x : x - gw;
+      final rect = RRect.fromRectAndCorners(
+          Rect.fromLTWH(gx, mid - gh / 2, gw, gh),
+          topLeft: Radius.circular(start ? 3 : 7),
+          bottomLeft: Radius.circular(start ? 3 : 7),
+          topRight: Radius.circular(start ? 7 : 3),
+          bottomRight: Radius.circular(start ? 7 : 3));
+      c.drawRRect(rect, Paint()..color = col.withValues(alpha: 0.92));
+      final grip = Paint()..color = const Color(0xFF02100C)..strokeWidth = 1.2;
+      for (final dy in const [-5.0, 0.0, 5.0]) {
+        c.drawLine(Offset(gx + 4, mid + dy), Offset(gx + gw - 4, mid + dy), grip);
+      }
+      // small flag at the top so the exact edge stays readable
       final p = Path();
-      if (start) { p.moveTo(x,0); p.lineTo(x+9,0); p.lineTo(x,10); p.close(); }
-      else        { p.moveTo(x,0); p.lineTo(x-9,0); p.lineTo(x,10); p.close(); }
-      c.drawPath(p, Paint()..color=col);
+      if (start) {
+        p.moveTo(x, 0); p.lineTo(x + 9, 0); p.lineTo(x, 10);
+      } else {
+        p.moveTo(x, 0); p.lineTo(x - 9, 0); p.lineTo(x, 10);
+      }
+      p.close();
+      c.drawPath(p, Paint()..color = col);
     }
     handle(x0, const Color(0xFF1DB898), true);
     handle(x1, const Color(0xFFD4AF37), false);
+
+    _paintRuler(c, szFull);
+
+    // S250 — a preview is playing something else; grey the source wave so the
+    // playhead position isn't read as "where the preview is".
+    if (dimmed) {
+      c.drawRect(Rect.fromLTWH(0, 0, szFull.width, szFull.height),
+          Paint()..color = const Color(0xFF020D17).withValues(alpha: 0.45));
+    }
   }
 
-  @override bool shouldRepaint(_WavePainter o) => true;
+  @override bool shouldRepaint(_WavePainter o) =>
+      o.playing != playing ||
+      o.playPos != playPos ||
+      o.trimStart != trimStart ||
+      o.trimEnd != trimEnd ||
+      o.dimmed != dimmed ||
+      o.analyzed != analyzed ||
+      o.durationSec != durationSec ||
+      o.bars.length != bars.length ||
+      // only the animated states need the per-frame repaint the old
+      // `=> true` forced on every rebuild
+      (playing && o.animT != animT) ||
+      !identical(o.bars, bars) ||
+      !identical(o.rms, rms);
 }
 
 // ── SPECTRUM PAINTER — S236: 30-band average spectrum from numpy analysis ────
@@ -2970,9 +4724,9 @@ class _SpectrumPainter extends CustomPainter {
       c.drawRRect(RRect.fromRectAndRadius(
           Rect.fromLTWH(x, sz.height - h, bw - 2, h), const Radius.circular(2)),
           Paint()..shader = ui.Gradient.linear(
-              Offset(0, sz.height), Offset(0, 0),
-              [const Color(0xFF0A5A3A), const Color(0xFF1DB898), const Color(0xFFD4AF37)],
-              [0.0, 0.55, 1.0]));
+              Offset(0, sz.height), const Offset(0, 0),
+              const [Color(0xFF0A5A3A), Color(0xFF1DB898), Color(0xFFD4AF37)],
+              const [0.0, 0.55, 1.0]));
     }
   }
 
@@ -3002,7 +4756,7 @@ class _EqPainter extends CustomPainter {
     final path = Path();
     for (int i = 0; i < n; i++) {
       final x = i * scX; final y = midY - values[i] * scY;
-      if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+      if (i == 0) { path.moveTo(x, y); } else { path.lineTo(x, y); }
     }
     c.drawPath(path, Paint()
       ..style = PaintingStyle.stroke..strokeWidth = 2
@@ -3014,8 +4768,8 @@ class _EqPainter extends CustomPainter {
     fill.lineTo((n-1)*scX, midY); fill.lineTo(0, midY); fill.close();
     c.drawPath(fill, Paint()..shader = ui.Gradient.linear(
         Offset(0, midY-14*scY), Offset(0, midY+14*scY), [
-      const Color(0xFF1DB898).withOpacity(0.18),
-      const Color(0xFF1DB898).withOpacity(0.0)]));
+      const Color(0xFF1DB898).withValues(alpha: 0.18),
+      const Color(0xFF1DB898).withValues(alpha: 0.0)]));
   }
 
   // S227 BUG FIX: this used to be `values != o.values`. _eq is a `final`

@@ -5,18 +5,10 @@ import 'state/lang_provider.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/home_screen.dart';
 
-// ── S31-F2: App-wide color helpers ─────────────────────────────────────────
-// Call these anywhere you have a BuildContext instead of hardcoding colours.
-// Dark palette  : #080A0E bg / #161B22 card / #21262D border
-// Light palette : #FAF7EE bg / #F3EED9 card / #D4C99A border
-bool   _isDark(BuildContext ctx) => ThemeProvider.isDark(ctx);
-Color  _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S40-MAIN-CBG
-Color  _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF161B22) : const Color(0xFFF3EED9);
-Color  _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF21262D) : const Color(0xFFD4C99A);
-Color  _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-Color  _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
-Color  _cDim(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
-Color  _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
+// S250: the seven per-colour helpers that used to live here were never called
+// from main.dart — every screen defines its own copies — so they were dead
+// code the analyzer flagged on every run. Removed; ThemeProvider.isDark() is
+// the shared entry point those screens actually use.
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

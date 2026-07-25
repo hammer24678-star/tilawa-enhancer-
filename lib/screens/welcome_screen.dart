@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../main.dart' show ThemeProvider; // S31-F2c
@@ -76,9 +75,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
   bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S46-WEL
   Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
   Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8AAABB) : const Color(0xFF6B5E40);
 
   @override

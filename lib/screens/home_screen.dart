@@ -973,6 +973,20 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ── S28-T2: Share via Android share sheet ────────────────────────────────
+  /// S250 — a real on-disk path for the restored output, or null if we only
+  /// have a content:// URI (which DeviceFileSource/ffmpeg can't open).
+  /// _abOutputFile is the cacheDir copy and stays valid after a Downloads save.
+  String? _editableOutputPath() {
+    for (final f in [_abOutputFile, _output]) {
+      final p = f?.path;
+      if (p == null || p.isEmpty || p.startsWith('content://')) continue;
+      try {
+        if (File(p).existsSync()) return p;
+      } catch (_) {}
+    }
+    return null;
+  }
+
   Future<void> _shareFile() async {
     if (_output == null) return;
     HapticFeedback.lightImpact();
@@ -3178,6 +3192,32 @@ class _HomeScreenState extends State<HomeScreen>
                 label: Text(s.shareBtn,
                   style: const TextStyle(fontSize: 12)))),
           ]),
+          // S250 — hand the restored file straight to the Audio Editor. Before
+          // this, "polish the result a bit" meant opening the editor and then
+          // hunting for the output again in the system file picker; a
+          // content:// URI (what _output becomes after a save to Downloads)
+          // can't even be opened that way, so the cacheDir copy is preferred.
+          if (_editableOutputPath() != null) ...[
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, PageRouteBuilder(
+                  pageBuilder: (_, __, ___) =>
+                      AudioEditorScreen(initialPath: _editableOutputPath()),
+                  transitionsBuilder: (_, anim, __, child) =>
+                      FadeTransition(opacity: anim, child: child),
+                  transitionDuration: const Duration(milliseconds: 220),
+                )),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal,
+                  side: BorderSide(color: _teal.withValues(alpha: 0.7), width: 0.8),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+                icon: const Icon(Icons.equalizer_rounded, size: 16),
+                label: Text(s.ar ? 'تحرير في محرر الصوت' : 'Open in Audio Editor',
+                  style: const TextStyle(fontSize: 12)))),
+          ],
         ],
         // Saved indicator
         if (_output != null) ...[

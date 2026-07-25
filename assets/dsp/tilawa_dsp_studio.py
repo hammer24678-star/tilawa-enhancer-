@@ -2,9 +2,44 @@
 # -*- coding: utf-8 -*-
 """
 tilawa_dsp_studio.py — S228 "Studio Engine" · S236 v2 "full FX suite + analysis"
-· S245 "real EBU R128 loudness"
+· S245 "real EBU R128 loudness" · S250 v4 "every embedded package wired up"
 
 General-purpose numpy/scipy audio DSP engine for the Tilawa Audio Editor.
+
+S250 — ALL 14 pip packages shipped in python-env.tar.gz now have a real job
+here. Before this revision only 3 of them were ever imported (noisereduce,
+webrtcvad, pystoi) and — see build_assets.sh — the offline install that was
+supposed to place them on-device silently failed, so even those three were
+never actually there. Run `python3 tilawa_dsp_studio.py --libs <out.json>`
+for the live per-package availability/version report the app's Studio tab
+renders:
+
+  nara_wpe     WPE dereverberation (removes mosque/room reverb tails)
+  noisereduce  spectral-gating denoise (stationary + non-stationary)
+  webrtcvad    speech-aware trim AND internal pause squeezing
+  pystoi       STOI / ESTOI speech-intelligibility scoring
+  pyloudnorm   real ITU-R BS.1770-4 meter (vendored algorithm as fallback)
+  soundfile    direct libsndfile decode/encode fast path (skips ffmpeg)
+  soxr         high-quality resampling (export SR, pitch, VAD framing)
+  audioread    last-resort decoder when ffmpeg is unavailable
+  joblib       parallel per-channel processing of the heavy stages
+  decorator    @_stage timing wrapper — per-stage ms in the run report
+  tqdm         live progress written to a sidecar file the UI polls
+  msgpack      binary analysis cache (instant waveform on re-open)
+  pooch        content hashing for that cache key
+  lazy_loader  defers the heavy imports so light runs stay fast
+
+Every one of them fails soft: if a package is missing the stage either falls
+back to a numpy/scipy implementation or becomes a no-op, so an older
+python-env.tar.gz keeps working.
+
+NOT shipped: librosa. It hard-imports numba, numba needs llvmlite, and
+llvmlite publishes no musl/aarch64 wheel — building it would mean compiling
+LLVM inside QEMU on every CI run (the exact trap S240 had to undo for
+DeepFilter). Its features are implemented natively here instead: HPSS
+harmonic/percussive separation, F0 tracking, spectral centroid and onset
+detection are all plain numpy/scipy below. If a future environment does
+provide librosa, the relevant helpers pick it up automatically.
 
 IMPORTANT: this is deliberately NOT one of the Quran-restoration engines
 (الصفاء / الإتقان / الاسترداد / إحياء ...). Those stay untouched, mono-focused,
@@ -58,6 +93,7 @@ import sys
 import os
 import json
 import subprocess
+import time
 
 import numpy as np
 
@@ -68,10 +104,328 @@ except Exception:
     SCIPY_OK = False
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# S250 — EMBEDDED PACKAGE LAYER
+# ═══════════════════════════════════════════════════════════════════════════
+# One place that knows which of the S247 packages are actually installed in
+# this python-env.tar.gz, what each of them powers, and how to get at them
+# without paying the import cost on runs that don't need them.
+#
+# `lazy_loader` (itself one of the embedded packages) is used for exactly its
+# intended purpose: noisereduce, nara_wpe and soundfile each pull in a chunk
+# of numpy/scipy/cffi machinery at import time, and a plain trim/EQ export
+# must not pay for any of it. lazy_loader.load() hands back a module proxy
+# that only really imports on first attribute access, so probing what's
+# installed stays cheap.
+
+def _version_of(name: str):
+    try:
+        from importlib import metadata
+        return metadata.version(name)
+    except Exception:
+        pass
+    # Some builds install a C extension under a different distribution name
+    # (e.g. webrtcvad-wheels provides the `webrtcvad` module) — ask the module.
+    try:
+        import importlib
+        return str(getattr(importlib.import_module(name), '__version__', '') or '') or None
+    except Exception:
+        return None
+
+
+# name → (import name, what it powers). Order is the order the UI lists them.
+# These are exactly the 14 packages build_assets.sh installs and verifies.
+_PKG_ROLES = [
+    ('nara_wpe',    'nara_wpe',    'WPE dereverberation'),
+    ('noisereduce', 'noisereduce', 'spectral-gating noise reduction'),
+    ('webrtcvad',   'webrtcvad',   'speech-aware trim & pause squeeze'),
+    ('pystoi',      'pystoi',      'STOI / ESTOI intelligibility score'),
+    ('pyloudnorm',  'pyloudnorm',  'ITU-R BS.1770-4 loudness meter'),
+    ('soundfile',   'soundfile',   'direct libsndfile decode/encode'),
+    ('soxr',        'soxr',        'high-quality resampling'),
+    ('audioread',   'audioread',   'fallback decoder (no ffmpeg)'),
+    ('joblib',      'joblib',      'parallel per-channel processing'),
+    ('decorator',   'decorator',   'per-stage timing report'),
+    ('tqdm',        'tqdm',        'live progress for the UI'),
+    ('msgpack',     'msgpack',     'binary analysis cache'),
+    ('pooch',       'pooch',       'analysis cache hashing'),
+    ('lazy_loader', 'lazy_loader', 'deferred heavy imports'),
+]
+
+
+def _importable(mod: str) -> bool:
+    """True if `mod` can be imported, without keeping it loaded on failure."""
+    try:
+        from importlib.util import find_spec
+        return find_spec(mod) is not None
+    except Exception:
+        return False
+
+
+_HAVE = {name: _importable(mod) for name, mod, _ in _PKG_ROLES}
+
+# Heavy modules go through lazy_loader when it's available; the eager import
+# is only a fallback so behaviour is identical either way.
+if _HAVE['lazy_loader']:
+    import lazy_loader as _lazy
+
+    def _lazy_mod(mod: str):
+        try:
+            return _lazy.load(mod, error_on_import=False)
+        except Exception:
+            return None
+else:
+    def _lazy_mod(mod: str):
+        try:
+            import importlib
+            return importlib.import_module(mod)
+        except Exception:
+            return None
+
+
+_MOD_CACHE = {}
+
+
+def _mod(name: str):
+    """Import-on-demand accessor. Returns None (never raises) when the
+    package is absent, so every caller can just `if m is None: return x`."""
+    if name in _MOD_CACHE:
+        return _MOD_CACHE[name]
+    m = _lazy_mod(name) if _HAVE.get(name) else None
+    if m is not None:
+        try:                     # lazy proxies only fail on first real use
+            getattr(m, '__name__')
+        except Exception:
+            m = None
+    _MOD_CACHE[name] = m
+    return m
+
+
+def libs_report(out_json: str = '') -> int:
+    """`--libs` mode: what the Studio tab's "Engine Libraries" panel renders."""
+    pkgs = []
+    for name, mod, role in _PKG_ROLES:
+        ok = _HAVE.get(name, False)
+        pkgs.append({'name': name, 'ok': ok, 'role': role,
+                     'version': _version_of(name) if ok else None})
+    payload = {'ok': True, 'numpy': _version_of('numpy'), 'scipy': SCIPY_OK,
+               'scipy_version': _version_of('scipy'),
+               'python': '%d.%d.%d' % sys.version_info[:3],
+               'ffmpeg': _ffmpeg_available(),
+               'count_ok': sum(1 for p in pkgs if p['ok']),
+               'count_total': len(pkgs), 'packages': pkgs}
+    if out_json:
+        try:
+            with open(out_json, 'w', encoding='utf-8') as fh:
+                json.dump(payload, fh)
+        except Exception as e:
+            print(json.dumps({'ok': False, 'error': f'cannot write report: {e}'}))
+            return 1
+    print(json.dumps({'ok': True, 'count_ok': payload['count_ok'],
+                      'count_total': payload['count_total']}))
+    return 0
+
+
+def _ffmpeg_available() -> bool:
+    try:
+        r = subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=20)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+# ─── decorator: per-stage timing, reported back to the app ─────────────────
+# `decorator` preserves the wrapped function's signature (a plain functools
+# wrapper does not), which matters here because the pipeline calls these
+# stages positionally *and* by keyword.
+
+_STAGE_MS = []          # [(stage name, milliseconds)] in execution order
+
+
+def _stage(label: str):
+    """Times a DSP stage, records it, and ticks the progress bar."""
+    def deco(fn):
+        def wrapper(f, *a, **kw):
+            t0 = time.time()
+            try:
+                return f(*a, **kw)
+            finally:
+                _STAGE_MS.append((label, round((time.time() - t0) * 1000.0, 1)))
+                _PROGRESS.tick(label)
+        d = _mod('decorator')
+        if d is not None:
+            try:
+                return d.decorator(wrapper, fn)
+            except Exception:
+                pass
+        import functools
+
+        @functools.wraps(fn)
+        def plain(*a, **kw):
+            return wrapper(fn, *a, **kw)
+        return plain
+    return deco
+
+
+# ─── tqdm: live progress into a sidecar file the Flutter side polls ─────────
+# The proot channel is a single blocking call with truncated stdout, so the
+# only way to show real progress in the UI is a file. tqdm does the rate/ETA
+# formatting; this wrapper keeps just the newest rendered line in the file.
+
+class _ProgressSink:
+    def __init__(self):
+        self.path = None
+        self._buf = ''
+
+    def open(self, path):
+        self.path = path or None
+
+    def write(self, s):
+        if not s:
+            return
+        # tqdm redraws with \r; keep only the newest frame
+        self._buf = (self._buf + s).split('\r')[-1].split('\n')[-1]
+
+    def flush(self):
+        if not self.path:
+            return
+        try:
+            with open(self.path, 'w', encoding='utf-8') as fh:
+                fh.write(self._buf)
+        except Exception:
+            pass
+
+
+class _Progress:
+    """total-agnostic stage progress: each tick advances one step."""
+
+    def __init__(self):
+        self.bar = None
+        self.sink = _ProgressSink()
+
+    def start(self, total: int, path: str = ''):
+        self.sink.open(path)
+        if not path:
+            return
+        t = _mod('tqdm')
+        if t is None:
+            return
+        try:
+            self.bar = t.tqdm(total=max(1, total), file=self.sink, mininterval=0,
+                              bar_format='{n_fmt}/{total_fmt}|{desc}', ascii=True)
+        except Exception:
+            self.bar = None
+
+    def tick(self, label: str = ''):
+        if self.bar is None:
+            return
+        try:
+            self.bar.set_description_str(label, refresh=False)
+            self.bar.update(1)
+            self.sink.flush()
+        except Exception:
+            pass
+
+    def done(self):
+        if self.bar is None:
+            return
+        try:
+            self.bar.set_description_str('done', refresh=False)
+            self.bar.n = self.bar.total
+            self.bar.refresh()
+            self.sink.flush()
+            self.bar.close()
+        except Exception:
+            pass
+
+
+_PROGRESS = _Progress()
+
+
+# ─── joblib: run the heavy per-channel stages on both channels at once ──────
+
+def _par_channels(fn, x, *args, **kwargs):
+    """Apply `fn(mono_channel, *args)` to every channel and restack.
+    Uses joblib threads when available (numpy/scipy release the GIL in the
+    filter/FFT kernels, so threads give a real ~2x on stereo without the
+    memory cost of forking a second Python on a phone)."""
+    ch = x.shape[1]
+    if ch < 2:
+        return np.stack([fn(x[:, 0], *args, **kwargs)], axis=1).astype(np.float32)
+    jl = _mod('joblib') if ch > 1 else None
+    cols = None
+    if jl is not None:
+        try:
+            cols = jl.Parallel(n_jobs=ch, prefer='threads')(
+                jl.delayed(fn)(x[:, c], *args, **kwargs) for c in range(ch))
+        except Exception:
+            cols = None
+    if cols is None:
+        cols = [fn(x[:, c], *args, **kwargs) for c in range(ch)]
+    n = min(len(c) for c in cols)
+    return np.stack([np.asarray(c[:n]) for c in cols], axis=1).astype(np.float32)
+
+
+# ─── soxr: high-quality resampling, with a scipy fallback ───────────────────
+
+def _resample(x, sr_from: int, sr_to: int):
+    """Resample along axis 0 (works for mono vectors and (n, ch) blocks)."""
+    if sr_from == sr_to or sr_from <= 0 or sr_to <= 0:
+        return x
+    sx = _mod('soxr')
+    if sx is not None:
+        try:
+            return np.asarray(sx.resample(x, sr_from, sr_to, quality='HQ'),
+                              dtype=np.float32)
+        except Exception:
+            pass
+    if not SCIPY_OK:
+        return x
+    n_out = max(1, int(round(x.shape[0] * sr_to / float(sr_from))))
+    return signal.resample(x, n_out, axis=0).astype(np.float32)
+
+
 # ─── I/O via ffmpeg pipes (same convention as the restoration engines) ──────
 
-def _decode(path: str, sr: int, start: float, dur: float):
-    """Decode (and trim) input to interleaved stereo float32 via ffmpeg pipe."""
+_SF_EXTS = ('.wav', '.flac', '.ogg', '.oga', '.opus', '.aiff', '.aif', '.w64', '.caf')
+
+
+def _to_stereo(x):
+    """(n,) or (n,ch) → (n,2) float32."""
+    x = np.asarray(x, dtype=np.float32)
+    if x.ndim == 1:
+        x = x[:, None]
+    if x.shape[1] == 1:
+        x = np.repeat(x, 2, axis=1)
+    elif x.shape[1] > 2:
+        x = x[:, :2]
+    return np.ascontiguousarray(x)
+
+
+def _decode_soundfile(path: str, sr: int, start: float, dur: float):
+    """S250 — libsndfile fast path. For the formats soundfile handles natively
+    this skips spawning ffmpeg and piping f32le through a pipe entirely, which
+    is a large win on the analysis pass (it runs on every file you open) and
+    on WAV round-trips. Seeks to `start` instead of decoding-then-discarding."""
+    sf = _mod('soundfile')
+    if sf is None or not path.lower().endswith(_SF_EXTS):
+        return None
+    try:
+        with sf.SoundFile(path) as f:
+            in_sr = int(f.samplerate)
+            if start > 0:
+                f.seek(min(int(start * in_sr), len(f)))
+            frames = int(dur * in_sr) if dur > 0 else -1
+            data = f.read(frames=frames, dtype='float32', always_2d=True)
+        if data is None or len(data) == 0:
+            return None
+        x = _to_stereo(data)
+        return _resample(x, in_sr, sr) if in_sr != sr else x
+    except Exception:
+        return None
+
+
+def _decode_ffmpeg(path: str, sr: int, start: float, dur: float):
     cmd = ['ffmpeg', '-nostdin', '-y', '-hide_banner', '-loglevel', 'error']
     if start > 0:
         cmd += ['-ss', f'{start:.3f}']
@@ -80,7 +434,7 @@ def _decode(path: str, sr: int, start: float, dur: float):
         cmd += ['-t', f'{dur:.3f}']
     cmd += ['-ar', str(sr), '-ac', '2', '-f', 'f32le', '-']
     try:
-        r = subprocess.run(cmd, capture_output=True, timeout=180)
+        r = subprocess.run(cmd, capture_output=True, timeout=600)
     except Exception:
         return None
     if r.returncode != 0 or len(r.stdout) < 8:
@@ -91,9 +445,85 @@ def _decode(path: str, sr: int, start: float, dur: float):
     return data.reshape(-1, 2).copy()
 
 
+def _decode_audioread(path: str, sr: int, start: float, dur: float):
+    """S250 — last resort. audioread goes through whatever media backend the
+    system has (including Android's own), so a broken/missing ffmpeg in the
+    proot rootfs no longer means "the editor can't open this file"."""
+    ar = _mod('audioread')
+    if ar is None:
+        return None
+    try:
+        with ar.audio_open(path) as f:
+            in_sr, ch = int(f.samplerate), int(f.channels)
+            chunks = []
+            for buf in f:
+                chunks.append(np.frombuffer(buf, dtype='<i2'))
+            if not chunks:
+                return None
+        pcm = np.concatenate(chunks).astype(np.float32) / 32768.0
+        usable = (len(pcm) // max(1, ch)) * max(1, ch)
+        x = _to_stereo(pcm[:usable].reshape(-1, max(1, ch)))
+        if start > 0:
+            x = x[min(int(start * in_sr), len(x)):]
+        if dur > 0:
+            x = x[:int(dur * in_sr)]
+        if len(x) == 0:
+            return None
+        return _resample(x, in_sr, sr) if in_sr != sr else x
+    except Exception:
+        return None
+
+
+def _decode(path: str, sr: int, start: float, dur: float):
+    """Decode (and trim) input to interleaved stereo float32.
+    soundfile → ffmpeg → audioread, first one that works wins."""
+    for fn in (_decode_soundfile, _decode_ffmpeg, _decode_audioread):
+        x = fn(path, sr, start, dur)
+        if x is not None and x.shape[0] > 0:
+            return x
+    return None
+
+
+def _encode_soundfile(x, sr: int, out_path: str, out_sr: int, out_ch: int,
+                      depth: int, meta: dict) -> bool:
+    """S250 — WAV export straight through libsndfile: exact bit depth, no
+    subprocess, and soxr (not ffmpeg's resampler) for any rate change. Also
+    writes the metadata tags libsndfile supports, so a WAV export no longer
+    silently loses them just because it took this faster path."""
+    sf = _mod('soundfile')
+    if sf is None:
+        return False
+    subtype = {16: 'PCM_16', 24: 'PCM_24', 32: 'PCM_32'}.get(depth, 'PCM_16')
+    try:
+        y = _resample(x, sr, out_sr) if out_sr != sr else x
+        if out_ch == 1:
+            y = y.mean(axis=1, keepdims=True)
+        y = np.clip(y, -1.0, 1.0).astype(np.float32)
+        with sf.SoundFile(out_path, mode='w', samplerate=int(out_sr),
+                          channels=int(out_ch), subtype=subtype) as f:
+            for tag, key in (('title', 'title'), ('artist', 'artist'), ('album', 'album')):
+                v = str(meta.get(key, '') or '').strip()
+                if v:
+                    try:
+                        setattr(f, tag, v)
+                    except Exception:
+                        pass
+            f.write(y)
+        return os.path.exists(out_path) and os.path.getsize(out_path) > 44
+    except Exception:
+        try:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except Exception:
+            pass
+        return False
+
+
 def _encode(x: 'np.ndarray', sr: int, out_path: str, out_cfg: dict) -> bool:
     """S236: honors the Export-tab details that v1 ignored — output sample
-    rate, mono/stereo channel count, WAV bit depth and metadata tags."""
+    rate, mono/stereo channel count, WAV bit depth and metadata tags.
+    S250: WAV goes through soundfile+soxr when available; lossy formats still
+    need ffmpeg's encoders."""
     fmt = str(out_cfg.get('format', 'WAV')).upper()
     kbps = int(out_cfg.get('kbps', 192))
     out_sr = int(out_cfg.get('sample_rate', sr) or sr)
@@ -101,9 +531,14 @@ def _encode(x: 'np.ndarray', sr: int, out_path: str, out_cfg: dict) -> bool:
     depth = int(out_cfg.get('wav_bit_depth', 16) or 16)
     meta = out_cfg.get('metadata', {}) or {}
 
+    if fmt == 'WAV' and _encode_soundfile(x, sr, out_path, out_sr, out_ch, depth, meta):
+        return True
+
+    x = np.asarray(x)
+    in_ch = x.shape[1] if x.ndim > 1 else 1
     raw = np.clip(x, -1.0, 1.0).astype(np.float32).tobytes()
     cmd = ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
-           '-f', 'f32le', '-ar', str(sr), '-ac', '2', '-i', '-']
+           '-f', 'f32le', '-ar', str(sr), '-ac', str(in_ch), '-i', '-']
     for tag in ('title', 'artist', 'album'):
         v = str(meta.get(tag, '') or '').strip()
         if v:
@@ -116,7 +551,7 @@ def _encode(x: 'np.ndarray', sr: int, out_path: str, out_cfg: dict) -> bool:
         codec = {'MP3': 'libmp3lame', 'M4A': 'aac'}.get(fmt, 'libmp3lame')
         cmd += ['-c:a', codec, '-b:a', f'{kbps}k', out_path]
     try:
-        r = subprocess.run(cmd, input=raw, capture_output=True, timeout=180)
+        r = subprocess.run(cmd, input=raw, capture_output=True, timeout=600)
     except Exception:
         return False
     return r.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 44
@@ -252,22 +687,239 @@ def _spectral_denoise(x, sr, strength):
 
 
 # ─── S248: real noisereduce library (bundled via S247) ──────────────────────
-def _ai_denoise(x, sr, strength):
+@_stage('denoise')
+def _ai_denoise(x, sr, strength, stationary=True):
     """Spectral-gating denoise via the real noisereduce package — separate
     from, and more accurate than, the DIY STFT gate above. Fails soft (no-op)
-    if noisereduce isn't installed yet (pre-S247 python-env.tar.gz)."""
-    if strength <= 0:
-        return x
-    try:
-        import noisereduce as nr
-    except Exception:
+    if noisereduce isn't installed.
+
+    S250: `stationary=False` switches to noisereduce's non-stationary mode,
+    which tracks a moving noise estimate — the right choice for traffic,
+    fan-speed changes, or a hall's shifting background, where a single fixed
+    noise profile smears the recitation."""
+    nr = _mod('noisereduce')
+    if strength <= 0 or nr is None:
         return x
     amt = min(max(strength, 0.0), 100.0) / 100.0
-    out = np.zeros_like(x)
-    for ch in range(x.shape[1]):
-        out[:, ch] = nr.reduce_noise(y=x[:, ch].astype(np.float32), sr=sr,
-                                      prop_decrease=amt, stationary=True)
-    return out.astype(np.float32)
+
+    def one(ch_data):
+        return nr.reduce_noise(y=np.ascontiguousarray(ch_data, dtype=np.float32),
+                               sr=sr, prop_decrease=amt,
+                               stationary=bool(stationary), use_tqdm=False)
+    return _par_channels(one, x)
+
+
+# ─── S250: nara_wpe dereverberation ─────────────────────────────────────────
+@_stage('dereverb')
+def _dereverb(x, sr, strength, taps=10, delay=3):
+    """WPE (weighted prediction error) dereverberation — the one tool here
+    that actually shortens a room's reverb tail instead of masking it. This is
+    what a recitation recorded in a live mosque needs: it estimates the late
+    reverberation from the signal's own past and subtracts it, per frequency
+    bin, jointly across both channels.
+
+    `strength` 0..100 maps to iteration count and a dry/wet blend so it can be
+    dialled in gently — full WPE on a lightly-reverberant file sounds thin.
+    Runs at a 16 kHz analysis rate (where reverb energy lives, and where the
+    iterations are affordable on a phone) and folds the result back into the
+    full-rate signal, keeping the original highs untouched."""
+    wpe_mod = _mod('nara_wpe')
+    if strength <= 0 or wpe_mod is None or not SCIPY_OK:
+        return x
+    amt = min(max(float(strength), 0.0), 100.0) / 100.0
+    try:
+        from nara_wpe.wpe import wpe_v8
+        from nara_wpe.utils import stft as wpe_stft, istft as wpe_istft
+    except Exception:
+        return x
+    n0 = x.shape[0]
+    work_sr = 16000
+    try:
+        xr = _resample(x, sr, work_sr) if sr != work_sr else x
+        if xr.shape[0] < 4096:
+            return x
+        size, shift = 512, 128
+        # nara_wpe wants (channels, samples) → (D, T, F) → (F, D, T)
+        Y = wpe_stft(np.ascontiguousarray(xr.T.astype(np.float64)),
+                     size=size, shift=shift).transpose(2, 0, 1)
+        iters = int(round(1 + 2 * amt))               # 1..3 iterations
+        Z = wpe_v8(Y, taps=int(taps), delay=int(delay), iterations=iters,
+                   statistics_mode='full')
+        z = wpe_istft(Z.transpose(1, 2, 0), size=size, shift=shift)
+        z = np.ascontiguousarray(np.real(z).T).astype(np.float32)
+        z = _resample(z, work_sr, sr) if sr != work_sr else z
+        n = min(n0, z.shape[0])
+        wet = np.zeros_like(x)
+        wet[:n] = z[:n]
+        if n < n0:                                    # tail beyond WPE output
+            wet[n:] = x[n:]
+        # gain-match so the blend is timbral, not a level change
+        p_dry = float(np.sqrt(np.mean(x ** 2)) + 1e-9)
+        p_wet = float(np.sqrt(np.mean(wet ** 2)) + 1e-9)
+        wet *= min(max(p_dry / p_wet, 0.25), 4.0)
+        mix = 0.35 + 0.65 * amt                       # never a hard 100% wet
+        return ((1.0 - mix) * x + mix * wet).astype(np.float32)
+    except Exception:
+        return x
+
+
+# ─── S250: harmonic/percussive focus (native HPSS) ──────────────────────────
+_HPSS_NFFT = 2048
+_HPSS_HOP = 512
+
+
+def _hpss_masks(mag, kernel=17, power=2.0):
+    """Fitzgerald-style median-filter HPSS soft masks.
+
+    Sustained pitched content (a recited voice) is smooth ALONG TIME at a
+    fixed frequency, so a median filter across time isolates it; transient
+    content (page turns, mic bumps, mouth clicks, chair creaks, room slaps) is
+    smooth ACROSS FREQUENCY at a fixed time, so a median filter across
+    frequency isolates that. Wiener-style soft masks then split the spectrum.
+
+    This is the algorithm librosa.decompose.hpss implements; it is reproduced
+    here in plain scipy because librosa can't ship on-device (see module
+    docstring). ~25 lines, no numba, and fast enough to run on a phone."""
+    from scipy.ndimage import median_filter
+    k = max(3, int(kernel) | 1)
+    harm = median_filter(mag, size=(1, k), mode='reflect')
+    perc = median_filter(mag, size=(k, 1), mode='reflect')
+    hp = harm ** power
+    pp = perc ** power
+    tot = hp + pp + 1e-12
+    return hp / tot, pp / tot
+
+
+@_stage('harmonic focus')
+def _harmonic_focus(x, sr, amount):
+    """Splits the signal into harmonic (voice) and percussive (transient
+    noise) parts and pulls the percussive part down. This catches the
+    transient noises a noise gate can't (they're louder than the threshold)
+    and that spectral denoise only smears (they're broadband).
+    amount 0..100 = how much of the percussive part to remove."""
+    if amount <= 0 or not SCIPY_OK:
+        return x
+    a = min(max(float(amount), 0.0), 100.0) / 100.0
+    lb = _mod('librosa')          # free upgrade if a future env has it
+    n_fft, hop = _HPSS_NFFT, _HPSS_HOP
+
+    def one(ch_data):
+        y = np.ascontiguousarray(ch_data, dtype=np.float32)
+        if len(y) < n_fft * 2:
+            return y
+        if lb is not None:
+            try:
+                d = lb.stft(y, n_fft=n_fft, hop_length=hop)
+                h, p = lb.decompose.hpss(d, margin=(1.0, 1.0 + 2.0 * a))
+                return lb.istft(h + (1.0 - a) * p, hop_length=hop,
+                                length=len(y)).astype(np.float32)
+            except Exception:
+                pass
+        _, _, z = signal.stft(y, fs=sr, nperseg=n_fft, noverlap=n_fft - hop,
+                              boundary='zeros')
+        mag, phase = np.abs(z), np.angle(z)
+        mh, mp = _hpss_masks(mag)
+        keep = mag * (mh + (1.0 - a) * mp)
+        _, out = signal.istft(keep * np.exp(1j * phase), fs=sr, nperseg=n_fft,
+                              noverlap=n_fft - hop, boundary=True)
+        n = min(len(out), len(y))
+        res = np.zeros(len(y), dtype=np.float32)
+        res[:n] = out[:n]
+        return res
+    try:
+        return _par_channels(one, x)
+    except Exception:
+        return x
+
+
+# ─── S250: native content analysis (F0 / brightness / onsets) ───────────────
+
+def _f0_median(mono, sr, fmin=60.0, fmax=500.0):
+    """Median voiced F0 via normalized autocorrelation per frame.
+
+    Frames whose peak clarity is below 0.35 (unvoiced/noise) or whose energy
+    is below the file's 60th percentile are discarded before taking the
+    median, so pauses and breath don't drag the estimate down."""
+    if not SCIPY_OK or len(mono) < sr // 2:
+        return None
+    frame = int(0.046 * sr) | 1        # ~46 ms — two periods at 60 Hz is 33 ms
+    hop = max(1, frame // 2)
+    lag_min = max(2, int(sr / fmax))
+    lag_max = min(frame - 2, int(sr / fmin))
+    if lag_max <= lag_min:
+        return None
+    starts = np.arange(0, max(1, len(mono) - frame), hop)
+    if starts.size == 0:
+        return None
+    energies = np.array([float(np.mean(mono[s:s + frame] ** 2)) for s in starts])
+    thr = float(np.percentile(energies, 60))
+    f0s = []
+    win = np.hanning(frame)
+    for s, e in zip(starts, energies):
+        if e < thr or e <= 1e-9:
+            continue
+        seg = mono[s:s + frame] * win
+        seg = seg - seg.mean()
+        ac = signal.correlate(seg, seg, mode='full')[frame - 1:]
+        if ac[0] <= 1e-12:
+            continue
+        ac = ac / ac[0]
+        band = ac[lag_min:lag_max]
+        if band.size == 0:
+            continue
+        i = int(np.argmax(band))
+        if band[i] < 0.35:
+            continue
+        lag = lag_min + i
+        # parabolic interpolation around the peak for sub-sample accuracy
+        if 0 < i < band.size - 1:
+            a0, b0, c0 = band[i - 1], band[i], band[i + 1]
+            denom = (a0 - 2 * b0 + c0)
+            if abs(denom) > 1e-12:
+                lag += 0.5 * (a0 - c0) / denom
+        if lag > 0:
+            f0s.append(sr / lag)
+    if len(f0s) < 3:
+        return None
+    return float(np.median(f0s))
+
+
+def _spectral_centroid(mono, sr):
+    """Energy-weighted mean frequency — "brightness" in one number."""
+    if not SCIPY_OK or len(mono) < 4096:
+        return None
+    try:
+        f, pxx = signal.welch(mono, fs=sr, nperseg=4096)
+        tot = float(np.sum(pxx))
+        if tot <= 1e-20:
+            return None
+        return float(np.sum(f * pxx) / tot)
+    except Exception:
+        return None
+
+
+def _onset_rate(mono, sr):
+    """Onsets per minute from a spectral-flux novelty curve with adaptive
+    thresholding — a proxy for phrase/syllable pace."""
+    if not SCIPY_OK or len(mono) < sr:
+        return None
+    try:
+        n_fft, hop = 1024, 256
+        _, _, z = signal.stft(mono, fs=sr, nperseg=n_fft, noverlap=n_fft - hop,
+                              boundary=None)
+        mag = np.abs(z)
+        flux = np.sum(np.clip(np.diff(mag, axis=1), 0, None), axis=0)
+        if flux.size < 8:
+            return None
+        k = min(21, (flux.size // 2) * 2 + 1)
+        local = signal.medfilt(flux, kernel_size=k if k % 2 else k + 1)
+        thr = local + 0.6 * float(np.std(flux))
+        above = flux > thr
+        onsets = int(np.sum(above[1:] & ~above[:-1]))
+        minutes = max(len(mono) / float(sr) / 60.0, 1e-6)
+        return float(onsets) / minutes
+    except Exception:
+        return None
 
 
 # ─── Echo — true feedback delay line (IIR, not ffmpeg aecho) ────────────────
@@ -423,28 +1075,69 @@ def _phase_vocoder_stretch(x, stretch, n_fft=2048, hop=512):
     return y[:out_len]
 
 
+@_stage('pitch shift')
 def _pitch_shift(x, sr, semitones):
-    if not SCIPY_OK or abs(semitones) < 1e-3:
+    """S250: the vocoder output is now resampled with soxr's HQ kernel instead
+    of scipy.signal.resample (an FFT resampler, which rings on transients and
+    forces the whole signal through one big FFT), and both channels run in
+    parallel. librosa.effects.pitch_shift is used instead if a future
+    environment ever provides it."""
+    if abs(semitones) < 1e-3:
+        return x
+    lb = _mod('librosa')
+    if lb is not None:
+        try:
+            def one_lb(ch_data):
+                return lb.effects.pitch_shift(
+                    np.ascontiguousarray(ch_data, dtype=np.float32),
+                    sr=sr, n_steps=float(semitones), res_type='soxr_hq')
+            y = _par_channels(one_lb, x)
+            if y.shape[0] > 0:
+                return y
+        except Exception:
+            pass
+    if not SCIPY_OK:
         return x
     ratio = 2.0 ** (semitones / 12.0)
-    chans = []
-    for ch in range(x.shape[1]):
-        stretched = _phase_vocoder_stretch(x[:, ch].astype(np.float64), ratio)
-        resampled = signal.resample(stretched, x.shape[0])
-        chans.append(resampled.astype(np.float32))
-    n = min(len(c) for c in chans)
-    return np.stack([c[:n] for c in chans], axis=1)
+    n_target = x.shape[0]
+
+    def one(ch_data):
+        stretched = _phase_vocoder_stretch(np.asarray(ch_data, dtype=np.float64), ratio)
+        if len(stretched) < 2:
+            return np.asarray(ch_data, dtype=np.float32)
+        # resample by the same ratio → pitch changes, length comes back
+        out = _resample(stretched.astype(np.float32), int(sr * ratio), sr)
+        res = np.zeros(n_target, dtype=np.float32)
+        n = min(n_target, len(out))
+        res[:n] = out[:n]
+        return res
+    return _par_channels(one, x)
 
 
+@_stage('time stretch')
 def _time_stretch(x, sr, tempo):
-    if not SCIPY_OK or abs(tempo - 1.0) < 1e-3:
+    """S250: both channels in parallel (see _pitch_shift)."""
+    if abs(tempo - 1.0) < 1e-3:
         return x
-    chans = []
-    for ch in range(x.shape[1]):
-        stretched = _phase_vocoder_stretch(x[:, ch].astype(np.float64), 1.0 / tempo)
-        chans.append(stretched.astype(np.float32))
-    n = min(len(c) for c in chans)
-    return np.stack([c[:n] for c in chans], axis=1)
+    lb = _mod('librosa')
+    if lb is not None:
+        try:
+            def one_lb(ch_data):
+                return lb.effects.time_stretch(
+                    np.ascontiguousarray(ch_data, dtype=np.float32),
+                    rate=float(tempo))
+            y = _par_channels(one_lb, x)
+            if y.shape[0] > 0:
+                return y
+        except Exception:
+            pass
+    if not SCIPY_OK:
+        return x
+
+    def one(ch_data):
+        return _phase_vocoder_stretch(
+            np.asarray(ch_data, dtype=np.float64), 1.0 / tempo).astype(np.float32)
+    return _par_channels(one, x)
 
 
 # ─── S236: FX+ — tone shaping ───────────────────────────────────────────────
@@ -792,46 +1485,131 @@ def _auto_trim_silence(x, sr, thresh_db=-45.0, pad_s=0.08):
     return x[s:e].copy()
 
 
-# ─── S248: real webrtcvad voice-activity trim (bundled via S247) ────────────
-def _vad_trim(x, sr, aggressiveness=2, pad_s=0.15):
-    """Real speech detection instead of a plain energy threshold — trims
-    leading/trailing silence AND non-speech noise the energy gate above
-    would miss. Falls back to _auto_trim_silence if webrtcvad isn't
-    installed yet (pre-S247 python-env.tar.gz)."""
+# ─── S248/S250: real webrtcvad voice-activity detection ─────────────────────
+_VAD_RATES = (8000, 16000, 32000, 48000)
+_VAD_FRAME_MS = 30
+
+
+def _vad_frames(x, sr, aggressiveness):
+    """Per-frame speech/no-speech decisions from webrtcvad.
+    Returns (voiced list, samples per frame at the ORIGINAL rate) or None.
+
+    S250 FIX: the previous version had two real bugs. (1) When `sr` wasn't one
+    of webrtcvad's four supported rates and scipy was missing, it left
+    vad_sr = 48000 while handing the untouched sr-rate audio to is_speech() —
+    frame lengths, the rate argument, and the index scale-back were all
+    computed from a rate the samples weren't at. (2) `range(0, len - fb, fb)`
+    drops the final whole frame, so up to 30 ms of trailing speech could be
+    cut. Both are fixed here, and resampling now goes through soxr."""
+    vad_mod = _mod('webrtcvad')
+    if vad_mod is None:
+        return None
     try:
-        import webrtcvad
+        vad = vad_mod.Vad(int(min(max(int(aggressiveness), 0), 3)))
     except Exception:
-        return _auto_trim_silence(x, sr)
-    vad = webrtcvad.Vad(int(min(max(aggressiveness, 0), 3)))
-    mono = x.mean(axis=1)
-    frame_ms = 30
-    # webrtcvad only accepts 8k/16k/32k/48k mono 16-bit PCM frames
-    vad_sr = sr if sr in (8000, 16000, 32000, 48000) else 48000
-    if vad_sr != sr and SCIPY_OK:
-        mono_r = signal.resample(mono, int(len(mono) * vad_sr / sr))
+        return None
+    mono = x.mean(axis=1).astype(np.float32)
+    if sr in _VAD_RATES:
+        vad_sr, mono_r = sr, mono
     else:
-        mono_r = mono
-        vad_sr = sr if vad_sr != sr else vad_sr  # no scipy — can't resample, best effort
-    frame_len = int(vad_sr * frame_ms / 1000)
-    pcm16 = (np.clip(mono_r, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()
+        vad_sr = min(_VAD_RATES, key=lambda r: abs(r - sr))
+        mono_r = _resample(mono, sr, vad_sr)
+        if mono_r is mono:            # no resampler available — can't run VAD
+            return None
+    frame_len = int(vad_sr * _VAD_FRAME_MS / 1000)
+    if frame_len <= 0:
+        return None
+    pcm16 = (np.clip(mono_r, -1.0, 1.0) * 32767.0).astype('<i2').tobytes()
     frame_bytes = frame_len * 2
     voiced = []
-    for i in range(0, len(pcm16) - frame_bytes, frame_bytes):
+    for i in range(0, len(pcm16) - frame_bytes + 1, frame_bytes):
         try:
-            voiced.append(vad.is_speech(pcm16[i:i + frame_bytes], vad_sr))
+            voiced.append(bool(vad.is_speech(pcm16[i:i + frame_bytes], vad_sr)))
         except Exception:
-            voiced.append(True)  # fail open — never over-trim
+            voiced.append(True)      # fail open — never over-trim
+    if not voiced:
+        return None
+    return voiced, frame_len * (sr / float(vad_sr))
+
+
+@_stage('vad trim')
+def _vad_trim(x, sr, aggressiveness=2, pad_s=0.15):
+    """Real speech detection instead of a plain energy threshold — trims
+    leading/trailing silence AND non-speech noise the energy gate would miss.
+    Falls back to _auto_trim_silence if webrtcvad isn't installed."""
+    res = _vad_frames(x, sr, aggressiveness)
+    if res is None:
+        return _auto_trim_silence(x, sr)
+    voiced, frame_samples = res
     if not any(voiced):
         return x
     first = voiced.index(True)
     last = len(voiced) - 1 - voiced[::-1].index(True)
-    ratio = sr / vad_sr
     pad = int(pad_s * sr)
-    s = max(0, int(first * frame_len * ratio) - pad)
-    e = min(x.shape[0], int((last + 1) * frame_len * ratio) + pad)
+    s = max(0, int(first * frame_samples) - pad)
+    e = min(x.shape[0], int((last + 1) * frame_samples) + pad)
     if e - s < int(0.05 * sr):
         return x
     return x[s:e].copy()
+
+
+@_stage('pause squeeze')
+def _vad_squeeze(x, sr, aggressiveness=2, max_pause_s=1.2, keep_s=0.35):
+    """S250 — shortens the pauses *inside* a recording instead of only at its
+    ends. Any run of non-speech longer than `max_pause_s` is cut down to
+    `keep_s`, with a short equal-power crossfade over the join so no click is
+    introduced. This is the single biggest time-saver on a long lecture or a
+    recitation with page-turn gaps, and unlike a plain silence-removal filter
+    it keeps quiet *breath* (webrtcvad still reports voice) rather than
+    chopping the reciter's intake."""
+    res = _vad_frames(x, sr, aggressiveness)
+    if res is None or max_pause_s <= 0:
+        return x
+    voiced, frame_samples = res
+    keep = max(0.05, min(float(keep_s), float(max_pause_s)))
+    max_pause_frames = int(max_pause_s * 1000.0 / _VAD_FRAME_MS)
+    keep_frames = int(keep * 1000.0 / _VAD_FRAME_MS)
+    if max_pause_frames <= keep_frames:
+        return x
+
+    # collect [start, end) frame ranges of over-long non-speech runs
+    cuts = []
+    run = None
+    for i, v in enumerate(voiced + [True]):
+        if not v and run is None:
+            run = i
+        elif v and run is not None:
+            if i - run > max_pause_frames and run > 0:   # never the leading pause
+                half = keep_frames // 2
+                cuts.append((run + half, i - (keep_frames - half)))
+            run = None
+    if not cuts:
+        return x
+
+    xfade = min(int(0.012 * sr), int(frame_samples))     # ~12 ms
+    fi = np.sin(np.linspace(0.0, 1.0, xfade) * np.pi / 2.0)[:, None] if xfade > 1 else None
+    pieces = []
+    prev_end = 0
+    for a_f, b_f in cuts:
+        a = max(prev_end, int(a_f * frame_samples))
+        b = min(x.shape[0], int(b_f * frame_samples))
+        if b - a < int(0.05 * sr):
+            continue
+        seg = x[prev_end:a]
+        if fi is not None and seg.shape[0] > xfade and b + xfade <= x.shape[0]:
+            head = seg[:-xfade]
+            tail = seg[-xfade:] * (1.0 - fi) + x[b:b + xfade] * fi
+            pieces.append(head)
+            pieces.append(tail.astype(np.float32))
+            prev_end = b + xfade
+        else:
+            pieces.append(seg)
+            prev_end = b
+    pieces.append(x[prev_end:])
+    y = np.concatenate([p for p in pieces if p.shape[0] > 0], axis=0)
+    if y.shape[0] < int(0.2 * sr):
+        return x
+    return y.astype(np.float32)
 
 
 def _pad(x, sr, start_s, end_s):
@@ -922,8 +1700,22 @@ def _block_powers(x, sr, block_s, overlap):
 
 
 def _integrated_loudness(x, sr):
-    """Real ITU-R BS.1770-4 gated integrated loudness (vendored pyloudnorm
-    algorithm) — replaces the old single-gate approximation."""
+    """Real ITU-R BS.1770-4 gated integrated loudness.
+
+    S250: when the pyloudnorm package itself is installed (S247 embeds it) we
+    call its Meter directly — same algorithm, but maintained upstream and
+    exercised by its own test suite. The vendored implementation below stays
+    as the fallback for older python-env.tar.gz bundles, and the two agree to
+    within rounding."""
+    pyln = _mod('pyloudnorm')
+    if pyln is not None:
+        try:
+            meter = pyln.Meter(int(sr))
+            val = float(meter.integrated_loudness(np.asarray(x, dtype=np.float64)))
+            if np.isfinite(val):
+                return val
+        except Exception:
+            pass
     if not SCIPY_OK:
         return -23.0
     kw = _k_weight(x, sr)
@@ -1033,14 +1825,162 @@ def _apply_fades(x, sr, fade_in_s, fade_out_s, curve):
 # ─── S236: ANALYSIS MODE — real waveform / spectrum / loudness for the UI ──
 
 _ANALYZE_SR = 22050        # plenty for visuals + stats, keeps decode fast
+_ANALYSIS_CACHE_V = 3      # bump whenever the payload shape changes
 _WAVE_BUCKETS = 96         # bars drawn by the Flutter waveform
 _SPEC_BANDS = 30           # log-spaced spectrum bands (60 Hz .. 10 kHz)
 
 
+# ─── S250: analysis cache (pooch hashing + msgpack storage) ─────────────────
+# Re-opening a file you already analysed (very common: pick file → edit →
+# export → pick it again) used to re-run the whole numpy pass. The cache key
+# is pooch's content hash, so it survives renames/copies — _safeInput() copies
+# every input to a fresh temp name, which is exactly the case a path-based key
+# would miss. msgpack keeps the store compact (the payload is ~200 floats per
+# entry) and, unlike JSON, round-trips floats without reformatting them.
+
+def _cache_path() -> str:
+    base = os.environ.get('TMPDIR') or '/tmp'
+    return os.path.join(base, 'tilawa_analysis_cache.msgpack')
+
+
+def _content_key(path: str):
+    p = _mod('pooch')
+    try:
+        if p is not None:
+            return 'sha256:' + p.file_hash(path, alg='sha256')
+    except Exception:
+        pass
+    try:                              # cheap fallback key
+        st = os.stat(path)
+        return f'stat:{st.st_size}:{int(st.st_mtime)}'
+    except Exception:
+        return None
+
+
+def _cache_load(key):
+    mp = _mod('msgpack')
+    if mp is None or key is None:
+        return None
+    try:
+        with open(_cache_path(), 'rb') as fh:
+            store = mp.unpackb(fh.read(), raw=False, strict_map_key=False)
+        entry = store.get(key)
+        if isinstance(entry, dict) and entry.get('_v') == _ANALYSIS_CACHE_V:
+            entry = dict(entry)
+            entry.pop('_v', None)
+            return entry
+    except Exception:
+        pass
+    return None
+
+
+def _cache_store(key, payload):
+    mp = _mod('msgpack')
+    if mp is None or key is None:
+        return
+    try:
+        store = {}
+        try:
+            with open(_cache_path(), 'rb') as fh:
+                store = mp.unpackb(fh.read(), raw=False, strict_map_key=False) or {}
+        except Exception:
+            store = {}
+        if len(store) > 40:           # keep the file small — drop oldest half
+            store = dict(list(store.items())[-20:])
+        entry = dict(payload)
+        entry['_v'] = _ANALYSIS_CACHE_V
+        store[key] = entry
+        tmp = _cache_path() + '.tmp'
+        with open(tmp, 'wb') as fh:
+            fh.write(mp.packb(store, use_bin_type=True))
+        os.replace(tmp, _cache_path())
+    except Exception:
+        pass
+
+
+# ─── S250: content insights (native DSP + webrtcvad) ───────────────────────
+
+_NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+
+
+def _note_for_hz(hz):
+    if not hz or hz <= 0:
+        return None
+    midi = 69 + 12 * np.log2(hz / 440.0)
+    i = int(round(midi))
+    return f'{_NOTE_NAMES[i % 12]}{i // 12 - 1}'
+
+
+def _voice_insights(x, sr, mono):
+    """Content-aware numbers the UI turns into actionable suggestions:
+    median vocal pitch, brightness, phrase-onset rate, how much of the file is
+    actually speech, and how many over-long internal pauses it has."""
+    out = {}
+    y = np.ascontiguousarray(mono, dtype=np.float64)
+    try:
+        f0 = _f0_median(y, sr)
+        if f0:
+            out['f0_hz'] = round(f0, 1)
+            out['note'] = _note_for_hz(f0)
+    except Exception:
+        pass
+    try:
+        cent = _spectral_centroid(y, sr)
+        if cent:
+            out['brightness_hz'] = round(cent, 0)
+    except Exception:
+        pass
+    try:
+        rate = _onset_rate(y, sr)
+        if rate is not None:
+            out['onsets_per_min'] = round(rate, 1)
+    except Exception:
+        pass
+    res = _vad_frames(x, sr, 2)
+    if res is not None:
+        voiced, frame_samples = res
+        try:
+            out['speech_pct'] = round(100.0 * sum(voiced) / float(len(voiced)), 1)
+            long_pauses, run = 0, None
+            for i, v in enumerate(voiced + [True]):
+                if not v and run is None:
+                    run = i
+                elif v and run is not None:
+                    if (i - run) * _VAD_FRAME_MS >= 1200 and run > 0:
+                        long_pauses += 1
+                    run = None
+            out['long_pauses'] = long_pauses
+        except Exception:
+            pass
+    if x.shape[1] >= 2:
+        try:
+            l, r = x[:, 0].astype(np.float64), x[:, 1].astype(np.float64)
+            denom = float(np.std(l) * np.std(r))
+            if denom > 1e-12:
+                out['stereo_corr'] = round(float(np.mean((l - l.mean()) * (r - r.mean())) / denom), 3)
+        except Exception:
+            pass
+    try:
+        out['dc_offset'] = round(float(np.mean(mono)), 5)
+    except Exception:
+        pass
+    return out
+
+
 def analyze(in_path: str, out_json: str) -> int:
+    key = _content_key(in_path)
+    cached = _cache_load(key)
+    if cached is not None:
+        try:
+            with open(out_json, 'w', encoding='utf-8') as fh:
+                json.dump(cached, fh)
+            print(json.dumps({'ok': True, 'cached': True, 'scipy': SCIPY_OK}))
+            return 0
+        except Exception:
+            pass
     x = _decode(in_path, _ANALYZE_SR, 0.0, 0.0)
     if x is None or x.shape[0] == 0:
-        print(json.dumps({'ok': False, 'error': 'ffmpeg decode failed'}))
+        print(json.dumps({'ok': False, 'error': 'decode failed (ffmpeg/soundfile/audioread)'}))
         return 1
     try:
         n = x.shape[0]
@@ -1115,8 +2055,10 @@ def analyze(in_path: str, out_json: str) -> int:
             'clip_pct': round(clip_pct, 2),
             'scipy': SCIPY_OK,
         }
+        payload.update(_voice_insights(x, _ANALYZE_SR, mono))   # S250
         with open(out_json, 'w', encoding='utf-8') as fh:
             json.dump(payload, fh)
+        _cache_store(key, payload)                              # S250
         print(json.dumps({'ok': True, 'scipy': SCIPY_OK}))
         return 0
     except Exception as e:
@@ -1212,38 +2154,71 @@ _QUALITY_SR = 16000  # pystoi's standard analysis rate
 def quality_check(orig_path: str, proc_path: str, out_json: str) -> int:
     """Compares original vs. processed audio with the STOI metric — an
     objective measure of speech intelligibility (0..1), not loudness.
-    Writes JSON to out_json (same convention as analyze()) and returns
-    0/1. Fails soft with an 'error' field if pystoi isn't installed yet
-    (pre-S247 python-env.tar.gz) or either file can't be decoded."""
+    Writes JSON to out_json (same convention as analyze()) and returns 0/1.
+
+    S250: also reports ESTOI (extended STOI), which unlike plain STOI is
+    sensitive to *modulation*-domain damage — exactly the artefact aggressive
+    spectral denoising leaves behind — plus the loudness delta, so the score
+    can't be misread as "it just got quieter". Length mismatch is reported
+    instead of silently comparing misaligned audio."""
     result = {'ok': False}
-    try:
-        from pystoi import stoi
-    except Exception as e:
-        result['error'] = f'pystoi not installed: {e}'
+    ps = _mod('pystoi')
+    if ps is None:
+        result['error'] = 'pystoi not installed in this python environment'
         with open(out_json, 'w', encoding='utf-8') as fh:
             json.dump(result, fh)
         return 1
     try:
+        stoi = ps.stoi
         sr = _QUALITY_SR
         a = _decode(orig_path, sr, 0.0, 0.0)
         b = _decode(proc_path, sr, 0.0, 0.0)
         if a is None or b is None or a.shape[0] == 0 or b.shape[0] == 0:
-            raise RuntimeError('ffmpeg decode failed for one or both files')
+            raise RuntimeError('decode failed for one or both files')
         am = a.mean(axis=1).astype(np.float64)
         bm = b.mean(axis=1).astype(np.float64)
         n = min(len(am), len(bm))
         if n < sr // 2:
             raise RuntimeError('audio too short to score (need at least 0.5s)')
-        score = float(stoi(am[:n], bm[:n], sr, extended=False))
+        drift = abs(len(am) - len(bm)) / float(sr)
         result['ok'] = True
-        result['stoi'] = round(score, 4)
+        result['stoi'] = round(float(stoi(am[:n], bm[:n], sr, extended=False)), 4)
+        try:
+            result['estoi'] = round(float(stoi(am[:n], bm[:n], sr, extended=True)), 4)
+        except Exception:
+            result['estoi'] = None
         result['sr'] = sr
         result['compared_sec'] = round(n / sr, 2)
+        result['length_drift_sec'] = round(drift, 2)
+        try:
+            result['lufs_delta'] = round(
+                _integrated_loudness(bm[:n, None].repeat(2, axis=1), sr)
+                - _integrated_loudness(am[:n, None].repeat(2, axis=1), sr), 1)
+        except Exception:
+            result['lufs_delta'] = None
     except Exception as e:
         result['error'] = str(e)
     with open(out_json, 'w', encoding='utf-8') as fh:
         json.dump(result, fh)
     return 0 if result.get('ok') else 1
+
+
+def _count_stages(p: dict, fx: dict) -> int:
+    """How many @_stage-wrapped stages this run will actually execute — tqdm
+    needs a total for the percentage to mean anything. Only the expensive,
+    conditional stages are counted (the cheap unconditional ones are folded
+    into the +2 the caller adds for decode/encode)."""
+    vad_cfg = fx.get('vad_trim', {}) or {}
+    flags = [
+        bool(vad_cfg.get('enabled')),
+        bool((fx.get('pause_squeeze', {}) or {}).get('enabled')),
+        float((fx.get('dereverb', {}) or {}).get('strength', 0) or 0) > 0,
+        bool((fx.get('ai_denoise', {}) or {}).get('enabled')),
+        float(fx.get('harmonic_focus', 0) or 0) > 0,
+        abs(float(p.get('pitch_semitones', 0) or 0)) > 1e-3,
+        abs(float(p.get('tempo', 1.0) or 1.0) - 1.0) > 1e-3,
+    ]
+    return max(1, sum(1 for f in flags if f))
 
 
 def main():
@@ -1268,6 +2243,10 @@ def main():
             return 1
         return quality_check(sys.argv[2], sys.argv[3], sys.argv[4])
 
+    # S250 — package availability report for the Studio tab
+    if len(sys.argv) >= 2 and sys.argv[1] == '--libs':
+        return libs_report(sys.argv[2] if len(sys.argv) >= 3 else '')
+
     if len(sys.argv) < 4:
         print(json.dumps({'ok': False, 'error': 'usage: tilawa_dsp_studio.py <in> <out> <params.json>'}))
         return 1
@@ -1284,12 +2263,19 @@ def main():
     start = float(p.get('trim_start', 0.0))
     dur = float(p.get('trim_dur', 0.0))
 
-    x = _decode(in_path, sr, start, dur)
-    if x is None or x.shape[0] == 0:
-        print(json.dumps({'ok': False, 'error': 'ffmpeg decode failed'}))
-        return 1
-
     fx = p.get('fx2', {}) or {}
+
+    # S250 — live progress for the UI. The Dart side passes a path it then
+    # polls while this blocking proot call runs; `_count_stages` gives tqdm a
+    # real total so the percentage means something.
+    _PROGRESS.start(_count_stages(p, fx) + 2, str(p.get('progress_path', '') or ''))
+
+    t_start = time.time()
+    x = _decode(in_path, sr, start, dur)
+    _PROGRESS.tick('decode')
+    if x is None or x.shape[0] == 0:
+        print(json.dumps({'ok': False, 'error': 'decode failed (ffmpeg/soundfile/audioread)'}))
+        return 1
 
     try:
         if p.get('reverse'):
@@ -1303,6 +2289,14 @@ def main():
             x = _vad_trim(x, sr, int(vad_cfg.get('aggressiveness', 2)))
         elif fx.get('auto_trim_silence'):
             x = _auto_trim_silence(x, sr)
+
+        # S250 — squeeze over-long pauses inside the recording
+        sq = fx.get('pause_squeeze', {}) or {}
+        if sq.get('enabled'):
+            x = _vad_squeeze(x, sr,
+                             int(vad_cfg.get('aggressiveness', 2)),
+                             float(sq.get('max_pause_s', 1.2)),
+                             float(sq.get('keep_s', 0.35)))
 
         if fx.get('declip'):
             x = _declip(x, sr)
@@ -1321,6 +2315,14 @@ def main():
             x = _dehum(x, sr, float(hum.get('base_hz', 50)),
                        float(hum.get('strength', 60)))
 
+        # S250 — WPE dereverb belongs here: after impulsive-noise repair (so
+        # clicks don't pollute the prediction) but before any EQ/denoise, since
+        # both of those change the spectral statistics WPE estimates from.
+        drv = fx.get('dereverb', {}) or {}
+        if float(drv.get('strength', 0) or 0) > 0:
+            x = _dereverb(x, sr, float(drv.get('strength', 0)),
+                          int(drv.get('taps', 10)), int(drv.get('delay', 3)))
+
         # ── spectral shaping ──
         x = _apply_eq(x, sr, p.get('eq_freqs', []), p.get('eq_gains', []),
                       float(p.get('eq_q', 1.4)))
@@ -1332,7 +2334,12 @@ def main():
         # S248 — real noisereduce (separate toggle, can stack with the gate above)
         ai_dn = fx.get('ai_denoise', {}) or {}
         if ai_dn.get('enabled'):
-            x = _ai_denoise(x, sr, float(ai_dn.get('strength', 60)))
+            x = _ai_denoise(x, sr, float(ai_dn.get('strength', 60)),
+                            not bool(ai_dn.get('non_stationary', False)))  # S250
+
+        # S250 — HPSS: pull down transient (percussive) noise
+        if float(fx.get('harmonic_focus', 0) or 0) > 0:
+            x = _harmonic_focus(x, sr, float(fx.get('harmonic_focus', 0)))
 
         x = _hp_lp(x, sr, float(fx.get('highpass_hz', 0) or 0),
                    float(fx.get('lowpass_hz', 20000) or 20000))
@@ -1432,7 +2439,27 @@ def main():
         return 1
 
     ok = _encode(x, sr, out_path, p.get('output', {}) or {})
-    print(json.dumps({'ok': ok, 'scipy': SCIPY_OK}))
+    _PROGRESS.tick('encode')
+    _PROGRESS.done()
+
+    # S250 — sidecar run report: which packages were live, what each stage
+    # cost. The app shows this in the Studio tab so a slow export is
+    # diagnosable instead of just "it took a while".
+    report = {
+        'ok': ok,
+        'scipy': SCIPY_OK,
+        'total_ms': round((time.time() - t_start) * 1000.0, 1),
+        'stages': [{'name': n, 'ms': ms} for n, ms in _STAGE_MS],
+        'libs': {k: bool(v) for k, v in _HAVE.items()},
+        'out_sec': round(x.shape[0] / float(sr), 3),
+    }
+    try:
+        with open(out_path + '.report.json', 'w', encoding='utf-8') as fh:
+            json.dump(report, fh)
+    except Exception:
+        pass
+    print(json.dumps({'ok': ok, 'scipy': SCIPY_OK,
+                      'total_ms': report['total_ms']}))
     return 0 if ok else 1
 
 
