@@ -137,11 +137,11 @@ class _SetupScreenState extends State<SetupScreen>
             const Icon(Icons.menu_book_rounded, color: _gold, size: 50))));
     });
 
-  Widget _title() => Column(children: [
-    const Text('محسِّن التلاوة',
+  Widget _title() => const Column(children: [
+    Text('محسِّن التلاوة',
       style: TextStyle(color: _gold, fontSize: 26, fontWeight: FontWeight.w900)),
-    const SizedBox(height: 6),
-    const Text('Local Engine Setup',
+    SizedBox(height: 6),
+    Text('Local Engine Setup',
       style: TextStyle(color: _textB, fontSize: 13, letterSpacing: 0.6)),
   ]);
 

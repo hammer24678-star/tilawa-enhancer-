@@ -24,8 +24,9 @@ class LocalEngineService {
       switch (call.method) {
         // Setup events
         case 'setupProgress':
-          if (_setupCtrl != null && !_setupCtrl!.isClosed)
+          if (_setupCtrl != null && !_setupCtrl!.isClosed) {
             _setupCtrl!.add(Map<String, dynamic>.from(call.arguments as Map));
+          }
           break;  // S176
         case 'setupDone':
           _setupCtrl?.close(); _setupCtrl = null;
@@ -39,9 +40,10 @@ class LocalEngineService {
           break;  // S176
         // Engine events
         case 'engineProgress':
-          if (_engineCtrl != null && !_engineCtrl!.isClosed)
+          if (_engineCtrl != null && !_engineCtrl!.isClosed) {
             _engineCtrl!.add({'pct': -1,
               ...Map<String, dynamic>.from(call.arguments as Map)});
+          }
           break;  // S176
         case 'engineDone':
           if (_engineCtrl != null && !_engineCtrl!.isClosed) {

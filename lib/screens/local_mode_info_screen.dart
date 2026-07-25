@@ -788,7 +788,11 @@ class _GeoPainter extends CustomPainter {
       final ia = oa + pi / 8;
       final ox = c.dx + r * cos(oa); final oy = c.dy + r * sin(oa);
       final ix = c.dx + r * 0.38 * cos(ia); final iy = c.dy + r * 0.38 * sin(ia);
-      if (i == 0) path.moveTo(ox, oy); else path.lineTo(ox, oy);
+      if (i == 0) {
+        path.moveTo(ox, oy);
+      } else {
+        path.lineTo(ox, oy);
+      }
       path.lineTo(ix, iy);
     }
     path.close();

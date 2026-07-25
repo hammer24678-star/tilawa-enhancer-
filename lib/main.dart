@@ -31,7 +31,6 @@ ThemeData _buildDarkTheme() => ThemeData(
     surface:    Color(0xFF0F2420), // S40-MAIN
     onSurface:  Color(0xFFE2CFA0),
     secondary:  Color(0xFF1DB898),
-    background: Color(0xFF020D0C),
   ),
   useMaterial3: true,
   fontFamily: 'Tajawal',  // S241: custom typeface (bundled, offline)
@@ -48,7 +47,6 @@ ThemeData _buildLightTheme() => ThemeData(
     primary: Color(0xFFB8941F),   // deeper gold for light bg
     surface: Color(0xFFF3EED9),   // warm parchment
     onSurface: Color(0xFF1A1400),
-    background: Color(0xFFFAF7EE),
   ),
   useMaterial3: true,
   fontFamily: 'Tajawal',  // S241: custom typeface (bundled, offline)
@@ -128,7 +126,7 @@ class _TilawaAppState extends State<TilawaApp> {
         notifier: _langNotifier,
         child: ValueListenableBuilder<bool>(
           valueListenable: _langNotifier,
-          builder: (context, _lang, __) {
+          builder: (context, lang, __) {
             return ValueListenableBuilder<bool>(
               valueListenable: _themeNotifier,
               builder: (context, isDark, __) {

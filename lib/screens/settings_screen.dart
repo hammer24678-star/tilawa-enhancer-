@@ -93,9 +93,6 @@ class SettingsScreen extends StatelessWidget {
     final isAr = s.ar;
 
     final cBg     = _cBg(context);
-    final cCard   = _cCard(context);
-    final cBorder = _cBorder(context);
-    final cText   = _cText(context);
     final cSub    = _cSub(context);
     final cDim    = _cDim(context);
     final cGold   = _cGold(context);
@@ -141,9 +138,9 @@ class SettingsScreen extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 18), // S61-LANG-PILL
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [const Color(0xFF0A1A10),
-                         const Color(0xFF061810)]),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0A1A10),
+                         Color(0xFF061810)]),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: const Color(0xFFD4AF37).withValues(alpha: 0.3))),
@@ -174,8 +171,8 @@ class SettingsScreen extends StatelessWidget {
                 colors: [Color(0xFF061810), Color(0xFF0A2015)]),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: Color(0xFF1DB898), width: 0.8),
-              boxShadow: [BoxShadow(
+                color: const Color(0xFF1DB898), width: 0.8),
+              boxShadow: const [BoxShadow(
                 color: Color(0xFF1DB898),
                 blurRadius: 12, spreadRadius: 0,
                 offset: Offset(0, 0))]),
@@ -286,7 +283,7 @@ class SettingsScreen extends StatelessWidget {
               : (s.ar ? 'الوضع الفاتح نشط' : 'Light mode active'),
             style: TextStyle(color: _cSub(ctx), fontSize: 11)),
           value: dark,
-          activeColor: const Color(0xFFD4AF37),
+          activeThumbColor: const Color(0xFFD4AF37),
           onChanged: (_) => ThemeProvider.toggle(ctx),
         ),
       ),
@@ -356,18 +353,18 @@ class SettingsScreen extends StatelessWidget {
     final isLatest = e.badge == 'LATEST';
     final desc = isAr ? e.ar : e.en;
 
-    final _ec = _cCard(ctx);
-    final _eb = _cBorder(ctx);
+    final ec = _cCard(ctx);
+    final eb = _cBorder(ctx);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isLatest ? const Color(0xFF1A1200) : _ec,
+        color: isLatest ? const Color(0xFF1A1200) : ec,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isLatest
             ? _cGold(ctx)
-            : _eb,
+            : eb,
           width: isLatest ? 1.2 : 0.8)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [

@@ -24,21 +24,15 @@ import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
 
 // ── Sacred Cosmos tokens ─────────────────────────────────────────────────────
-const _bgDeep    = Color(0xFF020D17);
 const _bgSurface = Color(0xFF0C1E28);
 const _bgCard    = Color(0xFF0F2420);
 const _gold      = Color(0xFFD4AF37);
 const _goldLight = Color(0xFFF0CF60);
 const _goldMuted = Color(0xFF3A2B08);
 const _teal      = Color(0xFF1DB898); // S40-TEAL
-const _tealLight = Color(0xFF2E8FA8);
-const _textA     = Color(0xFFE2CFA0);
 const _textB     = Color(0xFF8AACBA);
-const _textC     = Color(0xFF3D5A65);
 const _ok        = Color(0xFF2ABF6E);
-const _okDark    = Color(0xFF0D3D22);
 const _err       = Color(0xFFD94040);
-const _errDark   = Color(0xFF3D0808);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -107,7 +101,6 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _audioBarsCtrl;
   late final AnimationController _shimmerSweep;
   late final AnimationController _scoreCtrl;
-  late Animation<double> _scoreAnim;
   late final List<_StarParticle> _starList;
   late final AnimationController _resultCtrl; // S29: result card entrance
   final ScrollController _scrollCtrl = ScrollController(); // S92-SCROLL
@@ -118,7 +111,6 @@ class _HomeScreenState extends State<HomeScreen>
   bool   _engineTintEnabled = true;  // S188-B: engine-color background tint intensity toggle
   bool   _localReady = false;  // S65: setup confirmed complete
   bool   _aggressive = false;  // S173: safaa standard / aggressive mode
-  String _localMsg   = '';     // S65: last line from engine stdout
   // ── Engines (S21: full data from documentation) ─────────────────────────────
   // S25: synced with server ENGINE_SCRIPTS (v8.1 default, v7.5/v7.6 removed)
   static const _engines = [
@@ -225,17 +217,18 @@ class _HomeScreenState extends State<HomeScreen>
       ..repeat();
     _scoreCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1300));
-    _scoreAnim = const AlwaysStoppedAnimation(0);
     _resultCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
     _particleCtrl = AnimationController( // S58
         vsync: this, duration: const Duration(seconds: 6))
       ..repeat();
     _checkServer();
-    SharedPreferences.getInstance().then((p){if(mounted)setState((){
+    SharedPreferences.getInstance().then((p){if(mounted) {
+      setState((){
       _localMode=p.getBool("local_mode")??false;
       _engineTintEnabled=p.getBool("engine_tint_enabled")??true; // S188-B
-    });});
+    });
+    }});
     SharedPreferences.getInstance().then((p){if(mounted)setState(()=>_aggressive=p.getBool("aggressive_mode")??false);});  // S174-B4
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
@@ -388,34 +381,42 @@ class _HomeScreenState extends State<HomeScreen>
         _localReady = await LocalEngineService.isSetupComplete();
       }
       if (!_localReady) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Local engine not set up — tap the setup link first'),
           backgroundColor: Color(0xFF200D0D),
           duration: Duration(seconds: 5)));
+        }
         return;
       }
       if (_file == null) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Pick an audio file first'),
           backgroundColor: Color(0xFF200D0D),
           duration: Duration(seconds: 4)));
+        }
         return;
       }
       if (_busy) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Engine already running…'),
           backgroundColor: Color(0xFF1A1200),
           duration: Duration(seconds: 3)));
+        }
         return;
       }
       // S162-B18: non-local engines silently fell back to v11.0 in Kotlin —
       // redirect explicitly and notify user so the swap is visible.
       if (!_selectedEngine.localOnly) {
         setState(() => _engine = 'v11.0');
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('☁ SERVER engine redirected to 🏠 v11.0 (local mode)'),
           backgroundColor: Color(0xFF0F2420),
           duration: Duration(seconds: 3)));
+        }
       }
       await _processLocal(); return;
     }
@@ -488,7 +489,7 @@ class _HomeScreenState extends State<HomeScreen>
           }
           setState(() {
             _busy = false; _isMerging = false;
-            _status = 'فشل: ' + errMsg;
+            _status = 'فشل: $errMsg';
           });
           return;
         }
@@ -583,8 +584,8 @@ class _HomeScreenState extends State<HomeScreen>
     // S63: fallback auto-retry — only retry if score == 75.0 exactly
     // (ffmpeg fallback always returns hardcoded score=75).
     // Real engines can score anywhere from 55-100; never discard them.
-    final _el148=_processStart!=null?DateTime.now().difference(_processStart!).inSeconds:999;
-    if (score == 75.0 && file != null && _fallbackRetries < 2 && _el148 < 8) {
+    final el148=_processStart!=null?DateTime.now().difference(_processStart!).inSeconds:999;
+    if (score == 75.0 && file != null && _fallbackRetries < 2 && el148 < 8) {
       _fallbackRetries++;
       final retryNum = _fallbackRetries;
       if (mounted) {
@@ -636,8 +637,8 @@ class _HomeScreenState extends State<HomeScreen>
       );
     }
 
+    if (!mounted) return; // S185-B5 / S250: guard BOTH branches below
     if (file != null) {
-      if (!mounted) return; // S185-B5
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           s.ar
@@ -719,11 +720,11 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _abCard(S s) {
     if (_file == null || _output == null) return const SizedBox.shrink();
     final progress = (_abPos / _abDur).clamp(0.0, 1.0);
-    final teal   = const Color(0xFF1DB898);
-    final gold   = const Color(0xFFD4AF37);
+    const teal   = Color(0xFF1DB898);
+    const gold   = Color(0xFFD4AF37);
     final active = _abIsB ? gold : teal;
 
-    String _fmt(double ms) {
+    String fmt(double ms) {
       final t = Duration(milliseconds: ms.toInt());
       return '${t.inMinutes}:${(t.inSeconds % 60).toString().padLeft(2,'0')}';
     }
@@ -732,9 +733,9 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [const Color(0xFF061812), const Color(0xFF030E0A)]),
+          colors: [Color(0xFF061812), Color(0xFF030E0A)]),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: active.withValues(alpha: 0.3)),
         boxShadow: [BoxShadow(
@@ -766,8 +767,11 @@ class _HomeScreenState extends State<HomeScreen>
           // A — Original
           Expanded(child: GestureDetector(
             onTap: () async {
-              if (_abIsB) await _abToggleTrack();
-              else await _abTogglePlay();
+              if (_abIsB) {
+                await _abToggleTrack();
+              } else {
+                await _abTogglePlay();
+              }
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
@@ -801,8 +805,11 @@ class _HomeScreenState extends State<HomeScreen>
           // B — Enhanced
           Expanded(child: GestureDetector(
             onTap: () async {
-              if (!_abIsB) await _abToggleTrack();
-              else await _abTogglePlay();
+              if (!_abIsB) {
+                await _abToggleTrack();
+              } else {
+                await _abTogglePlay();
+              }
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
@@ -846,11 +853,11 @@ class _HomeScreenState extends State<HomeScreen>
               valueColor: AlwaysStoppedAnimation<Color>(active)))),
         const SizedBox(height: 6),
         Row(children: [
-          Text(_fmt(_abPos),
+          Text(fmt(_abPos),
             style: TextStyle(color: active.withValues(alpha: 0.7),
               fontSize: 9, fontWeight: FontWeight.w500)),
           const Spacer(),
-          Text(_fmt(_abDur),
+          Text(fmt(_abDur),
             style: const TextStyle(color: Color(0xFF3A5048),
               fontSize: 9)),
         ]),
@@ -1330,7 +1337,6 @@ class _HomeScreenState extends State<HomeScreen>
       _busy      = true;
       _progress  = 0.02;
       _status    = 'Starting local engine…';
-      _localMsg  = '';
     });
 
     await for (final ev in LocalEngineService.runEngine(
@@ -1373,13 +1379,13 @@ class _HomeScreenState extends State<HomeScreen>
         _wakeCh.invokeMethod('release').catchError((_) {});
         if (mounted) setState(() => _progress = 1.0);  // S157: hit 100% before reset
         await Future.delayed(const Duration(milliseconds: 300));
-        final _outPath = ev['path'] as String? ?? ''; // S140: null-safe
-        _abOutputFile = _outPath.isNotEmpty ? File(_outPath) : null; // S144: preserve cacheDir path for A/B
+        final outPath = ev['path'] as String? ?? ''; // S140: null-safe
+        _abOutputFile = outPath.isNotEmpty ? File(outPath) : null; // S144: preserve cacheDir path for A/B
         if (!mounted) return; // S184-B4
         setState(() { // S92: ALL result state inside setState
           _busy = false; _progress = 0;
           _status = 'Local engine complete';
-          _output = _outPath.isNotEmpty ? File(_outPath) : null;
+          _output = outPath.isNotEmpty ? File(outPath) : null;
           _result = resultData;
         });
         _scoreCtrl.forward(from: 0);
@@ -1406,7 +1412,7 @@ class _HomeScreenState extends State<HomeScreen>
       final msg = ev['msg'] as String? ?? '';
       setState(() {
         if (pct > 0) _progress = (pct / 100.0).clamp(_progress, 0.98);
-        if (msg.isNotEmpty) { _localMsg = msg; _status = msg; }
+        if (msg.isNotEmpty) { _status = msg; }
       });
     }
   }
@@ -1680,7 +1686,7 @@ class _HomeScreenState extends State<HomeScreen>
                 });
               }
             },
-            activeColor: gold,
+            activeThumbColor: gold,
             inactiveThumbColor: textB.withValues(alpha: 0.5),
             inactiveTrackColor: const Color(0xFF1A2733)),
         ]),
@@ -1724,7 +1730,7 @@ class _HomeScreenState extends State<HomeScreen>
               SharedPreferences.getInstance()
                 .then((p) => p.setBool("engine_tint_enabled", v)); // S188-B
             },
-            activeColor: gold,
+            activeThumbColor: gold,
             inactiveThumbColor: textB.withValues(alpha: 0.5),
             inactiveTrackColor: const Color(0xFF1A2733)),
         ]),
@@ -1781,7 +1787,7 @@ class _HomeScreenState extends State<HomeScreen>
               SharedPreferences.getInstance().then(
                 (p) => p.setBool('aggressive_mode', v));  // S174-B4
             },
-            activeColor: amber,
+            activeThumbColor: amber,
             inactiveThumbColor: textB.withValues(alpha: 0.5),
             inactiveTrackColor: const Color(0xFF1A2733)),
         ]),
@@ -1992,7 +1998,6 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _engineCard(_EngineData e, S s) {
     final sel = _engine == e.id;
     final col = _badgeColor(e.bc);
-    final bg  = _badgeBg(e.bc);
     return GestureDetector(  // S87: removed Opacity/AbsorbPointer wrapper
       onTap: () {
         HapticFeedback.selectionClick(); // S30-P1
@@ -2277,7 +2282,7 @@ class _HomeScreenState extends State<HomeScreen>
       Expanded(child: Container(height: 1,
         decoration: BoxDecoration(gradient: LinearGradient(
           colors: [Colors.transparent, _engineColor],
-          stops: [0.0, 1.0])))),
+          stops: const [0.0, 1.0])))),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -2292,7 +2297,7 @@ class _HomeScreenState extends State<HomeScreen>
       Expanded(child: Container(height: 1,
         decoration: BoxDecoration(gradient: LinearGradient(
           colors: [_engineColor, Colors.transparent],
-          stops: [0.0, 1.0])))),
+          stops: const [0.0, 1.0])))),
     ]));
 
   Widget _geoDiamond() => Transform.rotate(
@@ -2448,9 +2453,9 @@ class _HomeScreenState extends State<HomeScreen>
               ],
             ],
             const SizedBox(height: 3),
-            if (!hasFile) Text('mp3  ·  wav  ·  m4a', // S46-FMT
+            if (!hasFile) const Text('mp3  ·  wav  ·  m4a', // S46-FMT
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Color(0xFF1DB898),
                 fontSize: 9, letterSpacing: 1.4)),
             const SizedBox(height: 3),
@@ -3067,7 +3072,7 @@ class _HomeScreenState extends State<HomeScreen>
                       Transform.scale(
                         scale: pulse,
                         child: Text(
-                          '${(score * t).toStringAsFixed(1)}',
+                          (score * t).toStringAsFixed(1),
                           style: TextStyle(
                             color: scoreColor,
                             fontWeight: FontWeight.w900,
@@ -3274,13 +3279,13 @@ class _HomeScreenState extends State<HomeScreen>
           Expanded(child: _metricTile(
             'LRA',   _result?['lra']?.toString()   ?? '—', 4.19)),
         ])),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 5),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.copy_rounded, size: 10,
+            Icon(Icons.copy_rounded, size: 10,
               color: Color(0xFF484F58)),
-            const SizedBox(width: 4),
-            const Text('tap to copy',
+            SizedBox(width: 4),
+            Text('tap to copy',
               style: TextStyle(color: Color(0xFF484F58), fontSize: 9)),
           ])),
       ]),
@@ -3711,31 +3716,6 @@ class _EngineData {
 
 // ── Sacred Cosmos painters ────────────────────────────────────────────────────
 
-class _RadialPulsePainter extends CustomPainter {
-  final double t;
-  _RadialPulsePainter(this.t);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width * 0.5;
-    final cy = size.height * 0.38;
-    final p = Paint()..style = PaintingStyle.fill;
-    for (int i = 0; i < 3; i++) {
-      final phase = (t + i * 0.33) % 1.0;
-      final r = 60.0 + phase * 220.0;
-      final op = (1.0 - phase) * (i == 0 ? 0.10 : 0.06);
-      p.color = const Color(0xFFC8A048).withValues(alpha: op);
-      p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-      canvas.drawCircle(Offset(cx, cy), r, p);
-    }
-    p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
-    p.color = const Color(0xFFC8A048).withValues(alpha: 0.06 + 0.06 * t);
-    canvas.drawCircle(Offset(cx, cy), 80, p);
-    p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 24);
-    p.color = const Color(0xFF1DB898).withValues(alpha: 0.04 + 0.04 * (1 - t));
-    canvas.drawCircle(Offset(cx, cy), 120 + 40 * t, p);
-  }
-  @override bool shouldRepaint(_RadialPulsePainter o) => o.t != t;
-}
 class _StarParticle {
   final double x, y, size, phase, speed, twinkle;
   _StarParticle(Random r)
@@ -3809,7 +3789,11 @@ class _MandalaPainter extends CustomPainter {
       final a = (i / 6) * pi * 2 - angle * 0.5;
       final x = cx + r * 0.50 * cos(a);
       final y = cy + r * 0.50 * sin(a);
-      if (i == 0) hex.moveTo(x, y); else hex.lineTo(x, y);
+      if (i == 0) {
+        hex.moveTo(x, y);
+      } else {
+        hex.lineTo(x, y);
+      }
     }
     hex.close();
     canvas.drawPath(hex, p);
@@ -3821,7 +3805,11 @@ class _MandalaPainter extends CustomPainter {
       final a = (i / 16) * pi * 2 + angle * 0.25;
       final rr = i.isEven ? r * 0.28 : r * 0.14;
       final x = cx + rr * cos(a), y = cy + rr * sin(a);
-      if (i == 0) star.moveTo(x, y); else star.lineTo(x, y);
+      if (i == 0) {
+        star.moveTo(x, y);
+      } else {
+        star.lineTo(x, y);
+      }
     }
     star.close();
     canvas.drawPath(star, p);
@@ -3848,8 +3836,11 @@ class _KhatamPainter extends CustomPainter {
     final sq1 = Path();
     for (int i = 0; i < 4; i++) {
       final a = (i / 4) * pi * 2 - pi / 4;
-      if (i == 0) sq1.moveTo(cx + r * cos(a), cy + r * sin(a));
-      else sq1.lineTo(cx + r * cos(a), cy + r * sin(a));
+      if (i == 0) {
+        sq1.moveTo(cx + r * cos(a), cy + r * sin(a));
+      } else {
+        sq1.lineTo(cx + r * cos(a), cy + r * sin(a));
+      }
     }
     sq1.close();
     canvas.drawPath(sq1, p);
@@ -3857,8 +3848,11 @@ class _KhatamPainter extends CustomPainter {
     final sq2 = Path();
     for (int i = 0; i < 4; i++) {
       final a = (i / 4) * pi * 2 + pi / 4;
-      if (i == 0) sq2.moveTo(cx + r * cos(a), cy + r * sin(a));
-      else sq2.lineTo(cx + r * cos(a), cy + r * sin(a));
+      if (i == 0) {
+        sq2.moveTo(cx + r * cos(a), cy + r * sin(a));
+      } else {
+        sq2.lineTo(cx + r * cos(a), cy + r * sin(a));
+      }
     }
     sq2.close();
     canvas.drawPath(sq2, p);
@@ -3940,55 +3934,16 @@ class _GeoPainter extends CustomPainter {
       final ia = oa + pi / 8;
       final ox = c.dx + r * cos(oa); final oy = c.dy + r * sin(oa);
       final ix = c.dx + r * 0.38 * cos(ia); final iy = c.dy + r * 0.38 * sin(ia);
-      if (i == 0) path.moveTo(ox, oy); else path.lineTo(ox, oy);
+      if (i == 0) {
+        path.moveTo(ox, oy);
+      } else {
+        path.lineTo(ox, oy);
+      }
       path.lineTo(ix, iy);
     }
     path.close();
     canvas.drawPath(path, p);
   }
-}
-
-class _WaveProgressPainter extends CustomPainter {
-  final double progress, shimmer;
-  final Color color, bg;
-  const _WaveProgressPainter(
-      {required this.progress, required this.shimmer,
-       required this.color, required this.bg});
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(0,0,size.width,size.height),
-        const Radius.circular(5)),
-      Paint()..color = bg);
-    if (progress <= 0) return;
-    final fillW = (size.width * progress).clamp(0.0, size.width);
-    final path = Path();
-    path.moveTo(0, size.height);
-    path.lineTo(0, size.height * 0.5);
-    final waveAmp = size.height * 0.30;
-    for (double x = 0; x <= fillW; x++) {
-      final y = size.height * 0.5 +
-        sin((x / (size.width * 0.55) - shimmer) * 6.2832) * waveAmp;
-      path.lineTo(x, y.clamp(0.0, size.height));
-    }
-    path.lineTo(fillW, size.height);
-    path.close();
-    canvas.save();
-    canvas.clipRect(Rect.fromLTWH(0, 0, fillW, size.height));
-    canvas.drawPath(path, Paint()..color = color);
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, fillW, size.height),
-      Paint()..shader = LinearGradient(
-        colors: [Colors.transparent, Colors.white.withValues(alpha: 0.14), Colors.transparent],
-        stops: const [0.0, 0.5, 1.0],
-        begin: Alignment(shimmer * 2 - 1, 0),
-        end: Alignment(shimmer * 2 + 0.4, 0),
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height)));
-    canvas.restore();
-  }
-  @override
-  bool shouldRepaint(_WaveProgressPainter o) =>
-    o.progress != progress || o.shimmer != shimmer;
 }
 
 // ── Score burst painter ───────────────────────────────────────────────────────

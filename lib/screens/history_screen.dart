@@ -111,8 +111,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
   Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
   Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
-  Color _cDim(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
   Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
   // S32-COLORS-APPLIED
 
@@ -128,7 +126,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         backgroundColor: const Color(0xFF0C1E28),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: const Color(0xFF1B6B80).withOpacity(0.3))),
+          side: BorderSide(color: const Color(0xFF1B6B80).withValues(alpha: 0.3))),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false),
             child: Text(s.ar ? 'إلغاء' : 'Cancel',
@@ -263,7 +261,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           color: isExpired ? const Color(0xFF1A0808) : _tCard,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isExpired ? const Color(0xFFF85149).withOpacity(0.3) : _tBorder)),
+            color: isExpired ? const Color(0xFFF85149).withValues(alpha: 0.3) : _tBorder)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             // Score circle
@@ -306,7 +304,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     color: const Color(0xFF1A1500),
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                      color: _tGold.withOpacity(0.4))),
+                      color: _tGold.withValues(alpha: 0.4))),
                   child: Text(engine, style: const TextStyle(
                     color: Color(0xFFD4AF37), fontSize: 9,
                     fontWeight: FontWeight.bold))),
@@ -353,7 +351,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFF85149).withOpacity(0.5)),
+                      border: Border.all(color: const Color(0xFFF85149).withValues(alpha: 0.5)),
                       borderRadius: BorderRadius.circular(6)),
                     child: Text(s.ar ? 'حذف' : 'Remove',
                       style: const TextStyle(

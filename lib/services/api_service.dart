@@ -44,7 +44,10 @@ class ApiService {
   static final Map<String, Map<String, dynamic>> _health = {};
 
   // Adaptive chunk size — updated based on upload speed
-  static int _chunkSize = 4 * 1024 * 1024; // S65: adaptive, starts at 4MB
+  // S250: was `static int` commented "adaptive, starts at 4MB", but nothing
+  // ever reassigned it — the only adaptivity is the server's own chunk_size,
+  // which overrides this at the one call site. It is a plain fallback constant.
+  static const int _chunkSize = 4 * 1024 * 1024;
   static String _activeServer = '';  // S120: track which server owns current job
 
   // Pick best server: lowest score = latency * (1 + queue_depth)
@@ -100,7 +103,6 @@ class ApiService {
     return queue * 120 + processSec; // 2min per queued job + own job
   }
 
-  static const int _chunkSizeConst = 4 * 1024 * 1024;
   static const _mediaChannel = MethodChannel('com.tilawa.tilawa_enhancer/media');
 
   // SharedPreferences key for locally persisted job records
@@ -523,7 +525,7 @@ class ApiService {
       final noExt = orig.contains('.')
           ? orig.substring(0, orig.lastIndexOf('.'))
           : orig;
-      return '${noExt}__${suffix}';
+      return '${noExt}__$suffix';
     }
     return suffix;
   }

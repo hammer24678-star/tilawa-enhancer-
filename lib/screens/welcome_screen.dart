@@ -176,18 +176,18 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           margin: const EdgeInsets.symmetric(horizontal: 4),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.28),
+            color: Colors.black.withValues(alpha: 0.28),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFF1DB898).withOpacity(0.30))),
+            border: Border.all(color: const Color(0xFF1DB898).withValues(alpha: 0.30))),
           child: Column(children: [
             // Local mode
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1DB898).withOpacity(0.15),
+                  color: const Color(0xFF1DB898).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF1DB898).withOpacity(0.5))),
+                  border: Border.all(color: const Color(0xFF1DB898).withValues(alpha: 0.5))),
                 child: const Text('🏠 LOCAL',
                   style: TextStyle(color: Color(0xFF1DB898),
                     fontSize: 10, fontWeight: FontWeight.bold))),
@@ -203,14 +203,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               ])),
             ]),
             const SizedBox(height: 14),
-            Divider(color: Colors.white10, height: 1),
+            const Divider(color: Colors.white10, height: 1),
             const SizedBox(height: 14),
             // Server mode
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.06),
+                  color: Colors.white.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.white24)),
                 child: const Text('☁ SERVER',
