@@ -79,6 +79,17 @@ docker run --rm \
         # musl/aarch64 cmake+ninja wheels itself — so never fail on these.
         apk add --no-progress cmake samurai 2>&1 | tail -2 || \
             echo '    (cmake/samurai unavailable — pip will supply them)'
+        # S250e: belt-and-braces for the exact runtime libs the committed
+        # python-env.tar.gz turned out to be missing (verified under
+        # qemu-aarch64): openblas backs numpy's _multiarray_umath, and
+        # libdrm/libxcb back ffmpeg's libavdevice. They SHOULD already arrive
+        # as dependencies of py3-numpy and ffmpeg — naming them explicitly also
+        # marks them world-installed so no later 'apk del' can reclaim them.
+        # Kept in the non-fatal group: if a name is wrong on some future Alpine
+        # this must not fail the build, and the tarball gate below is the real
+        # check either way.
+        apk add --no-progress openblas libdrm libxcb 2>&1 | tail -2 || \
+            echo '    (openblas/libdrm/libxcb not added explicitly — relying on deps)'
 
         echo '==> Installing the 14 embedded audio-editor packages (S250)'
         # --no-deps + explicit closure: nothing here may pull in a second numpy.
