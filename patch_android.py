@@ -521,6 +521,11 @@ class LocalEngineRunner(
                 // S250: which engines can actually run offline. The UI used to
                 // offer all nine and let five of them fail inside proot.
                 "availableLocalEngines" -> result.success(availableLocalEngines())
+                // S250h: real probes, so a dead environment explains itself
+                "diagnose" -> scope.launch {
+                    val d = diagnose()
+                    ui { result.success(d) }
+                }
                 "runProotCmd" -> {  // S202: was missing entirely — every audio-editor
                     // export (and any LocalEngineService.runProotCmd caller) fell through
                     // to notImplemented() below and threw a MissingPluginException in Dart.
@@ -548,6 +553,88 @@ class LocalEngineRunner(
         }
     }
 
+    // ── S250h: RUN IT, DON'T STAT IT ────────────────────────────────────────
+    // Every check in this class asked whether a FILE EXISTS. None asked whether
+    // it WORKS, and the difference is the whole bug behind "the audio editor
+    // isn't working":
+    //   * /usr/lib/libopenblas.so.3 in the shipped python-env.tar.gz is a
+    //     dangling symlink, so the numpy DIRECTORY is present (every exists()
+    //     check passes) while `import numpy` dies with "Error loading shared
+    //     library libopenblas.so.3";
+    //   * ffmpeg's libavdevice needs libdrm/libxcb, which were not archived
+    //     either, so ffmpeg cannot start — meaning the Studio Engine AND the
+    //     plain-ffmpeg fallback it degrades to are both dead;
+    //   * setup() gated re-extraction on hasPySysPackage("numpy"), a bare
+    //     File.exists(), so it saw "numpy present", skipped re-extraction and
+    //     reported "Local engine ready!" over a non-functional rootfs;
+    //   * isBasicSetupComplete() — the gate the audio editor calls before
+    //     every trim/preview/export — returned true for that same rootfs.
+    // All three were confirmed by extracting the committed tarballs and running
+    // them under qemu-aarch64 (see build_assets.sh S250e).
+    //
+    // The probes are cached in marker files because isBasicSetupComplete() is
+    // called on nearly every editor action and a proot round-trip costs ~1 s.
+    // A marker is invalidated whenever the environment is re-extracted.
+    private val basicVerifiedMarker get() = File(alpineDir, ".basic_verified")
+    private val envStampFile        get() = File(alpineDir, ".env_stamp")
+
+    /// Bumped whenever a rebuilt python-env.tar.gz must replace an already
+    /// extracted one. Without this, an existing install keeps its broken
+    /// environment forever: setup skips extraction whenever the files are
+    /// present, so shipping a FIXED tarball would not have reached anyone who
+    /// had already run setup.
+    private val envStamp = "s250h-1"
+
+    fun envStampMatches(): Boolean =
+        envStampFile.exists() && envStampFile.readText().trim() == envStamp
+
+    fun writeEnvStamp() {
+        try { envStampFile.writeText(envStamp) } catch (_: Exception) {}
+    }
+
+    /// Real probe: can ffmpeg actually start and decode? Cheap synthetic input,
+    /// no file I/O beyond /dev/null.
+    fun ffmpegWorks(): Boolean {
+        val p = runProot(listOf("/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono", "-t", "0.1",
+            "-f", "wav", "-y", "/dev/null"), timeoutMin = 2)
+        lastFfmpegProbe = p.second
+        return p.first == 0
+    }
+
+    /// Real probe: can numpy import? (Same check the nested one in setup() runs,
+    /// hoisted so the gates below can use it too.)
+    fun numpyImports(): Boolean {
+        val p = runProot(listOf("/usr/bin/python3", "-c",
+            "import numpy; print('ok')"), timeoutMin = 2)
+        lastNumpyImportProbe = p.second
+        return p.first == 0 && p.second.contains("ok")
+    }
+
+    var lastFfmpegProbe = ""
+        private set
+    var lastNumpyImportProbe = ""
+        private set
+
+    /// What the audio editor's Studio tab reports, so a broken environment
+    /// explains itself on the device instead of surfacing as a generic failure.
+    fun diagnose(): Map<String, Any> {
+        val filesOk = prootBin.exists() &&
+            File(alpineDir, "usr/bin/python3").exists() &&
+            File(alpineDir, "usr/bin/ffmpeg").exists()
+        val ff = if (filesOk) ffmpegWorks() else false
+        val np = if (filesOk) numpyImports() else false
+        return mapOf(
+            "proot" to prootBin.exists(),
+            "python_file" to File(alpineDir, "usr/bin/python3").exists(),
+            "ffmpeg_file" to File(alpineDir, "usr/bin/ffmpeg").exists(),
+            "ffmpeg_runs" to ff,
+            "numpy_imports" to np,
+            "env_stamp_ok" to envStampMatches(),
+            "ffmpeg_error" to lastFfmpegProbe.takeLast(400),
+            "numpy_error" to lastNumpyImportProbe.takeLast(400))
+    }
+
     // S193: lightweight check for callers that only need proot + ffmpeg
     // (e.g. the audio editor's plain ffmpeg trim/EQ/export) — unlike
     // isSetupComplete() below, this does NOT require numpy, deep-filter,
@@ -560,6 +647,11 @@ class LocalEngineRunner(
             ?.any { it.name.startsWith("libpython") && it.name.contains(".so") } ?: false
         if (!hasLibPython) return false
         if (!File(alpineDir, "usr/bin/ffmpeg").exists()) return false
+        // S250h: the files being present is NOT the same as them working. Probe
+        // ffmpeg once and remember the answer; every editor action depends on it.
+        if (basicVerifiedMarker.exists()) return true
+        if (!ffmpegWorks()) return false
+        try { basicVerifiedMarker.writeText("ok") } catch (_: Exception) {}
         return true
     }
 
@@ -692,8 +784,16 @@ class LocalEngineRunner(
         progress(35, "Alpine ready")
 
         // 3. Python + ffmpeg — try bundled asset, else download from release  // S89-PYENV
-        val numpyOk = hasPySysPackage("numpy") ||  // S212: was hardcoded 3.11/3.12
+        // S250h: hasPySysPackage() is a File.exists() on the numpy directory. A
+        // numpy that cannot import (dangling libopenblas.so.3 in the shipped
+        // tarball) satisfied it, so this skipped re-extraction and setup
+        // reported success over a dead environment. Decide on the real probe,
+        // and re-extract whenever the bundled env has been rebuilt (env stamp).
+        val numpyFilesPresent = hasPySysPackage("numpy") ||
             File(alpineDir, "tilawa_numpy/numpy").exists()  // S142: match isSetupComplete()
+        val numpyOk = numpyFilesPresent && envStampMatches() &&
+            File(alpineDir, "usr/bin/python3").exists() && numpyImports()
+        if (!numpyOk) { basicVerifiedMarker.delete() }
         if (!File(alpineDir, "usr/bin/python3").exists() || !numpyOk) {  // S115: re-extract if numpy missing
             val tmp2 = File(dataDir, "python-env.tar.gz")
             var pyOk = false
@@ -873,6 +973,7 @@ class LocalEngineRunner(
                 }
             }
         }
+        writeEnvStamp()          // S250h — so a future rebuild re-extracts
         File(dataDir, ".tilawa_setup_done").writeText("ok")
         context.getSharedPreferences("tilawa_local", 0)
             .edit().putBoolean("setup_complete", true).apply()  // S106

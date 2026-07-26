@@ -215,6 +215,9 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   double? _statDriftSec;             // S250 — length mismatch (invalidates STOI)
   String? _qualityError;
 
+  // S250h — real environment diagnosis (probes, not file checks)
+  Map<String, dynamic>? _diag;
+
   // S250 — Studio tab: which embedded packages are live on this device
   List<Map<String, dynamic>>? _libs;
   int     _libsOk = 0, _libsTotal = 0;
@@ -643,8 +646,25 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     setState(() { _libsLoading = true; _libsError = null; });
     String? outJson;
     try {
+      // S250h — ask what actually WORKS first. This is the difference between
+      // "not set up" and "set up but the environment is broken", which is the
+      // state that made the editor silently fail every operation.
+      try {
+        final d = await _ch.invokeMethod<Map>('diagnose');
+        if (d != null && mounted) {
+          setState(() => _diag = Map<String, dynamic>.from(d));
+        }
+      } catch (_) {}
       final ok = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
-      if (!ok) throw Exception('local engine not set up yet');
+      if (!ok) {
+        final d = _diag;
+        if (d != null && d['ffmpeg_file'] == true && d['ffmpeg_runs'] != true) {
+          throw Exception('ffmpeg is installed but cannot start — the local '
+              'environment needs re-installing (Settings → local mode). '
+              '${d['ffmpeg_error'] ?? ''}');
+        }
+        throw Exception('local engine not set up yet');
+      }
       final tmp = await getTemporaryDirectory();
       outJson = '${tmp.path}/tl_libs_${DateTime.now().millisecondsSinceEpoch}.json';
       final script = await _ensureDspScript();
@@ -2103,9 +2123,38 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     if (mounted) setState(() => _positionSec = target);
   }
 
+  /// S250i — the real audio level at the playhead, 0..1.
+  ///
+  /// This is what makes the waveform animation actually respond to the audio:
+  /// the numpy `--analyze` pass already produced per-bucket peak and RMS for
+  /// the whole file, so the level under the playhead is a lookup rather than
+  /// anything that needs live PCM taps (audioplayers exposes no PCM or FFT
+  /// stream, so a visualiser would otherwise need a second native plugin).
+  /// RMS is weighted higher than peak because it tracks perceived loudness;
+  /// the value is smoothed toward its target so the motion doesn't strobe on
+  /// bucket boundaries.
+  double _levelAtPlayhead() {
+    if (!_analyzed || _durationSec <= 0) return 0.0;
+    final bars = _barsTo.isNotEmpty ? _barsTo : _bars;
+    if (bars.isEmpty) return 0.0;
+    final frac = (_positionSec / _durationSec).clamp(0.0, 1.0);
+    final i = (frac * bars.length).floor().clamp(0, bars.length - 1);
+    final peak = bars[i];
+    final rms = (_rmsBars != null && i < _rmsBars!.length) ? _rmsBars![i] : peak * 0.6;
+    return (0.35 * peak + 0.65 * rms).clamp(0.0, 1.0);
+  }
+
+  double _levelSmoothed = 0;
+
   Widget _waveformSection() {
     final ar = LangProvider.strings(context).ar;
     final pos = _durationSec > 0 ? (_positionSec / _durationSec).clamp(0.0, 1.0) : 0.0;
+    // one-pole smoothing: fast attack so a transient still reads, slower
+    // release so it decays instead of flickering off
+    final target = _playing && !_previewMode ? _levelAtPlayhead() : 0.0;
+    _levelSmoothed = target > _levelSmoothed
+        ? _levelSmoothed + (target - _levelSmoothed) * 0.55
+        : _levelSmoothed + (target - _levelSmoothed) * 0.18;
     return Container(
       margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -2174,7 +2223,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                     trimStart: _trimStart, trimEnd: _trimEnd,
                     animT: _waveCtrl.value, playing: _playing && !_previewMode,
                     analyzed: _analyzed, durationSec: _durationSec,
-                    dimmed: _previewMode, grab: _grabAnim.value),
+                    dimmed: _previewMode, grab: _grabAnim.value,
+                    level: _levelSmoothed),
                   size: const Size(double.infinity, 118))))))),
         // S250 — selection readout right under the wave, where you're looking
         if (_durationSec > 0)
@@ -2211,6 +2261,19 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
                     style: const TextStyle(color: _teal, fontSize: 9.5, fontWeight: FontWeight.w700)),
               ],
               const Spacer(),
+              // S250i — live level bar while playing, from the analysed buckets
+              if (_playing && !_previewMode && _analyzed) ...[
+                Container(width: 34, height: 4,
+                  decoration: BoxDecoration(
+                      color: _border, borderRadius: BorderRadius.circular(2)),
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FractionallySizedBox(
+                    widthFactor: _levelSmoothed.clamp(0.02, 1.0),
+                    child: Container(decoration: BoxDecoration(
+                        color: Color.lerp(_teal, _gold, _levelSmoothed),
+                        borderRadius: BorderRadius.circular(2))))),
+                const SizedBox(width: 8),
+              ],
               if (_statPeakDb != null)
                 _waveStat('Peak', '${_statPeakDb!.toStringAsFixed(1)}dB'),
               if (_statRmsDb != null)
@@ -3145,7 +3208,36 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     final ar = LangProvider.strings(context).ar;
     final libs = _libs;
     final all = libs != null && _libsTotal > 0 && _libsOk == _libsTotal;
+    final d = _diag;
     return _card_(ar ? 'مكتبات المحرك' : 'Engine Libraries', Icons.extension_rounded, [
+      // S250h — the environment's real state, probed by running things. A
+      // broken rootfs used to present as "everything fine" here while every
+      // operation failed, because every check was a File.exists().
+      if (d != null) ...[
+        _diagRow(ar ? 'ffmpeg يعمل' : 'ffmpeg runs', d['ffmpeg_runs'] == true,
+            d['ffmpeg_file'] == true
+                ? (ar ? 'الملف موجود' : 'file present')
+                : (ar ? 'الملف مفقود' : 'file missing')),
+        _diagRow(ar ? 'numpy يُحمَّل' : 'numpy imports', d['numpy_imports'] == true,
+            d['numpy_imports'] == true ? '' : '${d['numpy_error'] ?? ''}'),
+        _diagRow(ar ? 'إصدار البيئة' : 'environment version',
+            d['env_stamp_ok'] == true,
+            d['env_stamp_ok'] == true
+                ? (ar ? 'محدَّث' : 'current')
+                : (ar ? 'قديم — أعد التثبيت' : 'stale — re-install local mode')),
+        if (d['ffmpeg_runs'] != true || d['numpy_imports'] != true) ...[
+          const SizedBox(height: 8),
+          Text(ar
+              ? 'المعالجة لن تعمل حتى يعمل ffmpeg و numpy. أعد تثبيت الوضع المحلي '
+                'من الشاشة الرئيسية — سيُستبدل الإصدار المعطوب.'
+              : 'Processing cannot work until ffmpeg and numpy both run. Re-install '
+                'local mode from the home screen — that replaces the broken copy.',
+              style: const TextStyle(color: _red, fontSize: 11.5, height: 1.45)),
+        ],
+        const SizedBox(height: 10),
+        Divider(height: 1, color: _border.withValues(alpha: 0.6)),
+        const SizedBox(height: 10),
+      ],
       Text(ar
           ? 'حزم الصوت المُضمّنة في بيئة بايثون على جهازك. كل واحدة منها تُشغّل ميزة '
             'محددة في المحرر — والميزات التي تعتمد عليها تعمل فقط إذا كانت موجودة.'
@@ -3225,6 +3317,22 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       ],
     ]);
   }
+
+  Widget _diagRow(String label, bool ok, String detail) =>
+    Padding(padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(ok ? Icons.check_circle_rounded : Icons.cancel_rounded,
+            color: ok ? _teal : _red, size: 15),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(
+              color: ok ? _textA : _red, fontSize: 12,
+              fontWeight: ok ? FontWeight.w500 : FontWeight.w700)),
+          if (detail.trim().isNotEmpty)
+            Text(detail.trim(), maxLines: 3, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _textDim, fontSize: 9.5, height: 1.3)),
+        ])),
+      ]));
 
   // ── S250: last run's per-stage timings, straight from the engine report ────
   Widget _stageTimingCard() {
@@ -4608,10 +4716,12 @@ class _WavePainter extends CustomPainter {
   final double durationSec;   // S250 — for the time ruler
   final bool dimmed;          // S250 — a preview is playing, this isn't it
   final double grab;          // S250d — 0..1 trim-handle grab emphasis
+  final double level;         // S250i — real audio level at the playhead, 0..1
   _WavePainter({required this.bars, this.rms, required this.playPos,
       required this.trimStart, required this.trimEnd,
       required this.animT, required this.playing, this.analyzed = false,
-      this.durationSec = 0, this.dimmed = false, this.grab = 0});
+      this.durationSec = 0, this.dimmed = false, this.grab = 0,
+      this.level = 0});
 
   // S250 — the strip along the bottom that carries the time ruler
   static const double _rulerH = 16.0;
@@ -4709,12 +4819,21 @@ class _WavePainter extends CustomPainter {
 
       double amp = bars[i];
       double rmsAmp = hasRms ? rms![i] : 0;
-      // tight reactive bump on the ~2 bars at the play point (localized, not global)
+      // S250i — AUDIO-REACTIVE. The bump used to be a fixed 0.16 regardless of
+      // what was playing, so a whisper and a peak looked identical. It is now
+      // scaled by `level`: the real analysed amplitude at the playhead (peak
+      // and RMS of that bucket, from the numpy --analyze pass). Quiet passages
+      // barely ripple, loud ones visibly kick, and the reaction spreads a
+      // little wider when the audio is louder.
       if (playing) {
         final dist = (i - headF).abs();
-        if (dist < 2.4) {
-          final bump = 0.16 * (1 - dist / 2.4) * (0.72 + 0.28 * sin(animT * 2 * pi * 4));
-          amp += bump; rmsAmp += bump * 0.8;
+        final reach = 2.0 + 2.5 * level;                 // louder = wider
+        if (dist < reach) {
+          final falloff = 1 - dist / reach;
+          final wob = 0.68 + 0.32 * sin(animT * 2 * pi * 4 + i * 0.5);
+          final bump = (0.05 + 0.28 * level) * falloff * wob;
+          amp += bump;
+          rmsAmp += bump * 0.8;
         } else if (!analyzed) {
           amp += 0.06 * sin(animT * 2 * pi + i * 0.28);  // placeholder liveliness
         }
@@ -4742,13 +4861,17 @@ class _WavePainter extends CustomPainter {
     // HANDLES were invisible on the waveform in every build. Caught by the new
     // render test in test/widget_test.dart.
     final px = playPos * sz.width;
-    const glowW = 24.0;
+    // S250i — the scan glow widens and brightens with the actual level, so the
+    // playhead reads as a meter rather than a fixed marker.
+    final glowW = 20.0 + 34.0 * level;
     c.drawRect(Rect.fromLTWH(px - glowW / 2, 0, glowW, sz.height),
         Paint()..shader = ui.Gradient.linear(
             Offset(px - glowW / 2, 0), Offset(px + glowW / 2, 0), [
           Colors.transparent,
           const Color(0xFFF3D170).withValues(
-              alpha: playing ? 0.22 + 0.10 * sin(animT * 2 * pi * 2) : 0.14),
+              alpha: playing
+                  ? (0.14 + 0.26 * level) + 0.08 * sin(animT * 2 * pi * 2)
+                  : 0.14),
           Colors.transparent,
         ], const [0.0, 0.5, 1.0]));
     c.drawLine(Offset(px, 0), Offset(px, sz.height),
@@ -4843,6 +4966,7 @@ class _WavePainter extends CustomPainter {
       o.analyzed != analyzed ||
       o.durationSec != durationSec ||
       o.grab != grab ||
+      o.level != level ||
       o.bars.length != bars.length ||
       // S250d: animT now matters whether or not playback is running — the
       // idle shimmer needs it. (The earlier `playing && ...` guard is exactly
@@ -4852,6 +4976,22 @@ class _WavePainter extends CustomPainter {
       o.animT != animT ||
       !identical(o.bars, bars) ||
       !identical(o.rms, rms);
+}
+
+/// S250i — test hook. `_WavePainter` is private (correctly: nothing outside
+/// this file should build one), but the audio-reactivity gate in
+/// test/screenshot_test.dart has to construct one with a chosen `level` to
+/// prove the value reaches the drawing. This is the smallest possible seam.
+class WavePainterProbe {
+  const WavePainterProbe._();
+  static CustomPainter make({
+    required List<double> bars,
+    required List<double> rms,
+    required double playPos,
+    required double level,
+  }) => _WavePainter(bars: bars, rms: rms, playPos: playPos,
+      trimStart: 0, trimEnd: 1, animT: 0.5, playing: true,
+      analyzed: true, durationSec: 12, level: level);
 }
 
 // ── S250d: PROCESSING SWEEP ─────────────────────────────────────────────────

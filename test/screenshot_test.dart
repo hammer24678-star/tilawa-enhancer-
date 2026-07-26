@@ -402,6 +402,42 @@ void main() {
     _expectNoRenderErrors(tester);
   });
 
+  // S250i — the waveform reaction must depend on the AUDIO, not just on time.
+  // The painter is driven by `level`, taken from the analysed peak/RMS bucket
+  // under the playhead, so identical settings at two different playhead
+  // positions over different content must not paint identically. This asserts
+  // the level actually reaches the painter and changes what it draws.
+  testWidgets('wave reaction is driven by level, not only by time', (tester) async {
+    _stubChannels(tester);
+    final wav = _makeWav('${_tmpDir.path}/reactive.wav');
+    await _pump(tester, wav.path);
+
+    // Two different level values must produce two different paints. Drive the
+    // painter directly: in the harness no audio actually plays, so this is the
+    // honest way to prove `level` is wired through to the drawing.
+    final bars = List<double>.generate(96, (i) => 0.2 + 0.6 * ((i % 7) / 7));
+    final rms = List<double>.generate(96, (i) => 0.1 + 0.4 * ((i % 5) / 5));
+    Future<Uint8List> paint(double level) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF020D17),
+          body: Center(child: RepaintBoundary(child: SizedBox(
+            width: 380, height: 118,
+            child: CustomPaint(painter: WavePainterProbe.make(
+                bars: bars, rms: rms, playPos: 0.5, level: level))))))));
+      await tester.pump(const Duration(milliseconds: 16));
+      return _capture(tester, raw: true);
+    }
+    final quiet = await paint(0.05);
+    final loud = await paint(0.95);
+    final d = _diff(quiet, loud);
+    // ignore: avoid_print
+    print('level 0.05 vs 0.95 paint diff: ${(d * 100).toStringAsFixed(2)}%');
+    expect(d > 0, isTrue,
+        reason: 'the audio level does not affect what the waveform paints');
+    _expectNoRenderErrors(tester);
+  });
+
   testWidgets('waveform repaints while playing', (tester) async {
     _stubChannels(tester);
     final wav = _makeWav('${_tmpDir.path}/wave.wav');
