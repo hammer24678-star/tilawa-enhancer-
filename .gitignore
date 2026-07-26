@@ -12,3 +12,4 @@ ios/
 assets/dsp/__pycache__/
 pubspec.lock
 test/.screenshots/
+.kotlin_check/

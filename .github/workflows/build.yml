@@ -21,6 +21,26 @@ jobs:
           platforms: arm64
 
 
+      # S250j: type-check the Kotlin BEFORE the asset stage. patch_android.py
+      # emits ~960 lines of Kotlin as a string literal, and nothing ever
+      # compiled it — so a typo there used to surface as a failed build about
+      # forty minutes in, after Alpine/Python/DeepFilter had all been rebuilt.
+      # This takes seconds. It also checks the channel methods the Dart side
+      # calls still have the return types Dart expects, which no analyzer on
+      # either side can see.
+      - name: Set up Kotlin compiler
+        run: |
+          curl -sSL -o /tmp/kc.zip \
+            https://github.com/JetBrains/kotlin/releases/download/v2.0.21/kotlin-compiler-2.0.21.zip
+          unzip -q -o /tmp/kc.zip -d /opt
+          echo "KOTLINC=/opt/kotlinc/bin/kotlinc" >> "$GITHUB_ENV"
+
+      - name: Kotlin compile + channel contract check
+        run: bash test/kotlin_compile_check.sh
+
+      - name: Local engine wiring check
+        run: python3 test/local_engines_test.py
+
       - name: Build asset bundles (Alpine + Python + DeepFilter)
         run: if [ -f build_assets.sh ]; then bash build_assets.sh; else echo "build_assets.sh not found — skipping"; fi  # S151
 
