@@ -43,6 +43,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';  // S237: persist editor prefs
 import '../state/lang_provider.dart';
+import '../widgets/anim.dart';   // S250g: shared PressScale / EntranceFade / ChangePulse
 import 'setup_screen.dart';  // S206: lets the setup-required snackbar launch setup directly
 
 // ── Sacred Cosmos palette (unchanged) ────────────────────────────────────────
@@ -1827,12 +1828,24 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Widget _pickerView() {
     final ar = LangProvider.strings(context).ar;
     return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      AnimatedBuilder(animation: _glowCtrl,
-        builder: (_, __) => Container(width: 130, height: 130,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: _card,
-            border: Border.all(color: _gold.withValues(alpha: 0.18 + 0.28 * _glowCtrl.value), width: 1.5),
-            boxShadow: [BoxShadow(color: _gold.withValues(alpha: 0.04 + 0.08 * _glowCtrl.value), blurRadius: 36)]),
-          child: const Icon(Icons.audio_file_rounded, color: _gold, size: 52))),
+      AnimatedBuilder(
+        animation: Listenable.merge([_glowCtrl, _waveCtrl]),
+        builder: (_, __) => SizedBox(width: 168, height: 168,
+          child: Stack(alignment: Alignment.center, children: [
+            // S250g — a ring that slowly traces the disc, so the empty state
+            // reads as ready rather than as a frozen screenshot
+            SizedBox(width: 156, height: 156,
+              child: Transform.rotate(
+                angle: _waveCtrl.value * 2 * pi,
+                child: CustomPaint(painter: _SweepPainter(t: _waveCtrl.value)))),
+            Container(width: 130, height: 130,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: _card,
+                border: Border.all(color: _gold.withValues(alpha: 0.18 + 0.28 * _glowCtrl.value), width: 1.5),
+                boxShadow: [BoxShadow(color: _gold.withValues(alpha: 0.04 + 0.08 * _glowCtrl.value), blurRadius: 36)]),
+              child: Transform.scale(
+                scale: 0.96 + 0.05 * _glowCtrl.value,
+                child: const Icon(Icons.audio_file_rounded, color: _gold, size: 52))),
+          ]))),
       const SizedBox(height: 24),
       Text(ar ? 'اختر ملف صوتي' : 'Choose an audio file',
           style: const TextStyle(color: _textA, fontSize: 20, fontWeight: FontWeight.w700)),
@@ -1840,7 +1853,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       const Text('MP3 · WAV · M4A · AAC · OGG · FLAC',
           style: TextStyle(color: _textB, fontSize: 13)),
       const SizedBox(height: 32),
-      GestureDetector(onTap: _pick,
+      PressScale(onTap: _pick,
         child: AnimatedBuilder(animation: _glowCtrl,
           builder: (_, __) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 17),
@@ -1974,7 +1987,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   /// at all before the (often slow) action started, which reads as a dropped
   /// tap. Scales down while held, springs back on release.
   Widget _pressable({required Widget child, VoidCallback? onTap}) =>
-      _PressScale(onTap: onTap, child: child);
+      PressScale(onTap: onTap, child: child);
 
   Widget _barIconBtn(IconData icon, VoidCallback? onTap, String tip) => Tooltip(
     message: tip,
@@ -2480,6 +2493,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   int _prevTabIndex = 0;   // S250d — direction of travel for the transition
 
   Widget _tabBody() {
+    _cardSeq = 0;                       // S250g — restart the stagger per tab
     late final Widget child;
     switch (_tab) {
       case _Tab.trim:    child = _trimTab(); break;
@@ -3900,7 +3914,18 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   }
 
   // ── Shared helpers ────────────────────────────────────────────────────────
+  // S250g — cards cascade in when a tab appears instead of the whole page
+  // snapping into place. The counter resets per tab build (see _tabBody), so
+  // the stagger follows reading order rather than drifting upward forever.
+  int _cardSeq = 0;
+
   Widget _card_(String title, IconData icon, List<Widget> body) =>
+    EntranceFade(
+      key: ValueKey('${_tab.name}-$title'),
+      index: _cardSeq++,
+      child: _cardInner(title, icon, body));
+
+  Widget _cardInner(String title, IconData icon, List<Widget> body) =>
     Container(padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: _card, borderRadius: BorderRadius.circular(16),
           border: Border.all(color: _border, width: 1),
@@ -3943,16 +3968,19 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         SizedBox(width: 90, child: Text(label, style: const TextStyle(color: _textB, fontSize: 12))),
         Expanded(child: _slider(val, min, max, _gold, onChanged)),
         const SizedBox(width: 8),
-        Container(
-          constraints: const BoxConstraints(minWidth: 60),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(color: _goldDim.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _gold.withValues(alpha: 0.3))),
-          child: Text(valueStr, textAlign: TextAlign.end,
-              style: const TextStyle(color: _gold, fontSize: 11.5, fontWeight: FontWeight.w700,
-                  fontFamily: 'monospace')),
-        ),
+        // S250g — the readout ticks when it changes, so the number you are
+        // dragging visibly reacts instead of silently updating.
+        ChangePulse(value: valueStr, color: _gold,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 60),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: _goldDim.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _gold.withValues(alpha: 0.3))),
+            child: Text(valueStr, textAlign: TextAlign.end,
+                style: const TextStyle(color: _gold, fontSize: 11.5, fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace')),
+          )),
       ]));
 
   Widget _chip_(String label, VoidCallback onTap) =>
@@ -4564,34 +4592,6 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _snack('✓ ${ar ? "تم" : "Done"}: $done');
     }
   }
-}
-
-// ── S250d: PRESS-SCALE ──────────────────────────────────────────────────────
-// Stateful so the scale survives the parent's frequent rebuilds (the editor
-// rebuilds on every animation tick; a plain AnimatedScale driven by a local
-// bool in the parent would be reset constantly).
-class _PressScale extends StatefulWidget {
-  final Widget child;
-  final VoidCallback? onTap;
-  const _PressScale({required this.child, this.onTap});
-  @override State<_PressScale> createState() => _PressScaleState();
-}
-
-class _PressScaleState extends State<_PressScale> {
-  bool _down = false;
-  void _set(bool v) { if (mounted && _down != v) setState(() => _down = v); }
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: widget.onTap,
-    onTapDown: widget.onTap == null ? null : (_) => _set(true),
-    onTapUp: (_) => _set(false),
-    onTapCancel: () => _set(false),
-    child: AnimatedScale(
-      scale: _down ? 0.93 : 1.0,
-      duration: Duration(milliseconds: _down ? 90 : 220),
-      curve: _down ? Curves.easeOut : Curves.elasticOut,
-      child: widget.child));
 }
 
 // ── WAVEFORM PAINTER ──────────────────────────────────────────────────────────

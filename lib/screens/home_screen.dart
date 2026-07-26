@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // S148
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
+import '../widgets/anim.dart';   // S250g
 import '../services/api_service.dart';
 import 'history_screen.dart';
 import 'audio_editor_screen.dart';
@@ -2076,7 +2077,8 @@ class _HomeScreenState extends State<HomeScreen>
     final sel = _engine == e.id;
     final col = _badgeColor(e.bc);
     final blocked = _engineBlocked(e.id);  // S250
-    return GestureDetector(  // S87: removed Opacity/AbsorbPointer wrapper
+    return PressScale(  // S87: removed Opacity/AbsorbPointer wrapper; S250g: press feedback
+      scale: 0.97,
       onTap: () {
         HapticFeedback.selectionClick(); // S30-P1
         // S250: selecting an engine with no on-device script used to "work"
@@ -2573,7 +2575,11 @@ class _HomeScreenState extends State<HomeScreen>
             if (hasFile) ...[
               const SizedBox(height: 18),
               // ── Elevate button — gold gradient ──
-              GestureDetector(
+              // S250g — the app's primary action now acknowledges the tap.
+              // Processing can take minutes to show anything, so a flat
+              // container that did not react read as a dropped press.
+              PressScale(
+                scale: 0.97,
                 onTap: _busy ? null : () {  // S95
                   HapticFeedback.mediumImpact();
                   _process();

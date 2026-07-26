@@ -343,6 +343,65 @@ void main() {
     _expectNoRenderErrors(tester);
   });
 
+  testWidgets('empty picker state animates', (tester) async {
+    _stubChannels(tester);
+    tester.view.physicalSize = const Size(412, 892);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(LangProvider(
+      notifier: ValueNotifier<bool>(false),
+      child: MaterialApp(
+        theme: ThemeData(fontFamily: 'Tajawal'),
+        home: const AudioEditorScreen()),
+    ));
+    await tester.pump(const Duration(milliseconds: 200));
+    final a = await _capture(tester, raw: true);
+    await tester.pump(const Duration(milliseconds: 500));
+    final b = await _capture(tester, raw: true);
+    // ignore: avoid_print
+    print('picker idle diff: ${(_diff(a, b) * 100).toStringAsFixed(3)}%');
+    expect(_diff(a, b) > 0, isTrue,
+        reason: 'the first screen users see is completely static');
+    await _shot(tester, '32-picker-animated');
+    _expectNoRenderErrors(tester);
+  });
+
+  testWidgets('slider readout pulses when the value changes', (tester) async {
+    _stubChannels(tester);
+    final wav = _makeWav('${_tmpDir.path}/pulse.wav');
+    await _pump(tester, wav.path);
+    await tester.tap(find.text('Effects').first, warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 500));
+    final before = await _capture(tester, raw: true);
+    await tester.drag(find.byType(Slider).first, const Offset(50, 0));
+    await tester.pump(const Duration(milliseconds: 80));
+    final during = await _capture(tester, raw: true);
+    // ignore: avoid_print
+    print('knob pulse diff: ${(_diff(before, during) * 100).toStringAsFixed(3)}%');
+    expect(_diff(before, during) > 0, isTrue,
+        reason: 'moving a slider produced no visible change');
+    _expectNoRenderErrors(tester);
+  });
+
+  testWidgets('cards cascade in on tab switch', (tester) async {
+    _stubChannels(tester);
+    final wav = _makeWav('${_tmpDir.path}/cascade.wav');
+    await _pump(tester, wav.path);
+    await tester.tap(find.text('Effects').first, warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 40));
+    final early = await _capture(tester, raw: true);
+    await tester.pump(const Duration(milliseconds: 220));
+    final mid = await _capture(tester, raw: true);
+    await tester.pump(const Duration(milliseconds: 700));
+    final settled = await _capture(tester, raw: true);
+    // ignore: avoid_print
+    print('card cascade diff: early->mid=${(_diff(early, mid) * 100).toStringAsFixed(2)}% '
+          'mid->settled=${(_diff(mid, settled) * 100).toStringAsFixed(2)}%');
+    expect(_diff(early, mid) > 0 && _diff(mid, settled) > 0, isTrue,
+        reason: 'cards did not animate in over time');
+    _expectNoRenderErrors(tester);
+  });
+
   testWidgets('waveform repaints while playing', (tester) async {
     _stubChannels(tester);
     final wav = _makeWav('${_tmpDir.path}/wave.wav');
