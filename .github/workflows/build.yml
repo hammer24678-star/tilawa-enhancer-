@@ -41,6 +41,19 @@ jobs:
       - name: Local engine wiring check
         run: python3 test/local_engines_test.py
 
+      # S250k: report the committed environment's shared-library closure. The
+      # asset step below rebuilds python-env.tar.gz and re-runs this check
+      # against the fresh archive as a hard gate; this earlier pass is
+      # informational, so a stale committed artifact is visible in the log
+      # without blocking a build that is about to replace it.
+      - name: Committed environment closure (informational)
+        continue-on-error: true
+        run: |
+          python3 test/env_closure_check.py \
+            --tar assets/alpine/alpine-rootfs.tar.gz \
+            --tar assets/alpine/python-env.tar.gz || \
+            echo "::warning::committed python-env.tar.gz is incomplete - the asset step must replace it"
+
       - name: Build asset bundles (Alpine + Python + DeepFilter)
         run: if [ -f build_assets.sh ]; then bash build_assets.sh; else echo "build_assets.sh not found — skipping"; fi  # S151
 

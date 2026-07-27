@@ -65,6 +65,7 @@ docker run --rm \
     --platform linux/arm64 \
     --volume "$PWD/$ASSETS:/out" \
     --volume "$PWD/pip_wheels:/pip_wheels:ro" \
+    --volume "$PWD/test/env_closure_check.py:/closure_check.py:ro" \
     alpine:3.21 \
     sh -eu -c "
         apk update --no-progress 2>&1 | tail -2
@@ -190,6 +191,23 @@ print('  all 14 packages + numpy/scipy still import after apk del')\"
             exit 1
         fi
         echo '    no dangling symlinks'
+        # S250k: the STRONGEST check — resolve the shared-library closure. Walk
+        # every ELF in the archive, read its DT_NEEDED entries and confirm each
+        # named library is present, exactly as the dynamic linker will at
+        # startup. The tarball committed before S250k fails this with 63 missing
+        # libraries: libgcc_s/libstdc++ (numpy's _multiarray_umath links both,
+        # so numpy could not import), libbz2/libffi/liblzma/libsqlite3/libexpat
+        # (Python's own stdlib extensions), and ~45 codec libs including
+        # libmp3lame and libsoxr (so libavcodec could not load and ffmpeg was
+        # dead). That single check explains every 'nothing works' symptom, and
+        # no exists()-based test could ever have caught it.
+        cp /closure_check.py /verify_closure.py 2>/dev/null || true
+        if [ -f /closure_check.py ]; then
+            python3 /closure_check.py /verify || {
+                echo '    !! the archive cannot load its own binaries'; exit 1; }
+        else
+            echo '    (closure checker not mounted — skipped)'
+        fi
         export LD_LIBRARY_PATH=/verify/usr/lib:/verify/lib
         /verify/usr/bin/python3 - <<'VEOF' || { echo '    !! numpy/scipy unusable from the archive'; exit 1; }
 import numpy, scipy, numpy as np
