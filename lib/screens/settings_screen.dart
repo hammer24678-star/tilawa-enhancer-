@@ -310,7 +310,10 @@ class SettingsScreen extends StatelessWidget {
         size: 14, color: Color(0xFF484F58)),
       onTap: () async {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove('seen_welcome_v3'); // S32
+        // S251: this cleared seen_welcome_v3, but main.dart has read
+        // seen_welcome_v5 since S108 — so "Show Welcome Screen" pushed the
+        // screen once and the app still skipped it on the next cold start.
+        await prefs.remove('seen_welcome_v5');
         if (!context.mounted) return;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(

@@ -79,6 +79,25 @@ class S {
   String get step2        => ar ? 'اختر المحرك المناسب'    : 'Select the right engine';
   String get step3        => ar ? 'انتظر المعالجة السحابية': 'Wait for cloud processing';
   String get step4        => ar ? 'حمِّل الملف المحسَّن'    : 'Download the enhanced file';
+  String get welcomeBack  => ar ? 'رجوع'   : 'Back';
+  String get welcomeNext  => ar ? 'التالي' : 'Next';
+  String stepLabel(int n) => ar ? 'الخطوة $n' : 'Step $n';
+
+  // S251: the welcome screen's mode card shipped Arabic-only, so an English
+  // reader's very first screen was half untranslated.
+  String get localModeEngines =>
+    ar ? 'الصفاء · الإتقان · الاسترداد' : 'Safaa · Itqan · Istirdad';
+  String get localModeDesc =>
+    ar ? 'يعمل على جهازك — بدون إنترنت — خصوصية تامة\nيتطلب إعداداً لمرة واحدة (~200MB)'
+       : 'Runs on your device — no internet — fully private\nOne-time setup required (~200MB)';
+  String get serverModeDesc =>
+    ar ? 'يعمل على السحابة — يحتاج إنترنت — بدون تخزين'
+       : 'Runs in the cloud — needs internet — nothing stored';
+  String get welcomeEngines =>
+    ar ? 'محركات التحسين' : 'Enhancement Engines';
+  String get welcomeEnginesSub =>
+    ar ? 'اختر محركك من الصفحة الرئيسية'
+       : 'Choose your engine from the home screen';
 
   // Settings
   String get settings     => ar ? 'الإعدادات'       : 'Settings';

@@ -30,6 +30,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     _pulseCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2200))
       ..repeat(reverse: true);
+    // S251: _geoRotCtrl was created and repeated but never listened to — it
+    // drove nothing while still ticking every frame. The geometry was instead
+    // rotated off _pulseCtrl, which repeats with reverse:true, so the "slow
+    // rotation" actually swung forward and back. Wired up as intended.
     _geoRotCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 90))
       ..repeat();
@@ -52,6 +56,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   }
 
   void _goPage(int p) {
+    if (p == _page || p < 0 || p > 2) return;
     HapticFeedback.selectionClick();
     _fadeCtrl.reset();
     setState(() => _page = p);
@@ -81,40 +86,65 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
-    return Scaffold(
-      backgroundColor: const Color(0xFF020D0C), // S45-WEL
-      body: Stack(children: [
-        // Rotating geo background
-        Positioned.fill(child: AnimatedBuilder(
-          animation: _pulseCtrl,
-          builder: (_, __) => Transform.rotate(
-            angle: _pulseCtrl.value * 6.2832,
-            child: CustomPaint(painter: _GeoPainter())))),
-        // Star particles
-        Positioned.fill(child: AnimatedBuilder(
-          animation: _pulseCtrl,
-          builder: (_, __) => CustomPaint(
-            painter: _WelcomeStarsPainter(_pulseCtrl.value)))),
-        SafeArea(
-          child: FadeTransition(
-            opacity: _fade,
-            child: SlideTransition(
-              position: _slide,
-              child: _page == 0 ? _page0(s) : _page == 1 ? _page1(s) : _page2(s),
+    return PopScope(
+      // S251: system back used to leave the app from page 1 or 2, because
+      // the pages are internal state rather than routes. Back now walks the
+      // onboarding backwards and only exits from the first page.
+      canPop: _page == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goPage(_page - 1);
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF020D0C), // S45-WEL
+        body: Stack(children: [
+          // Rotating geo background
+          Positioned.fill(child: AnimatedBuilder(
+            animation: _geoRotCtrl,
+            builder: (_, child) => Transform.rotate(
+              angle: _geoRotCtrl.value * 6.2832,
+              child: child),
+            child: CustomPaint(painter: _GeoPainter()))),
+          // Star particles
+          Positioned.fill(child: AnimatedBuilder(
+            animation: _pulseCtrl,
+            builder: (_, __) => CustomPaint(
+              painter: _WelcomeStarsPainter(_pulseCtrl.value)))),
+          SafeArea(
+            child: FadeTransition(
+              opacity: _fade,
+              child: SlideTransition(
+                position: _slide,
+                child: _page == 0 ? _page0(s) : _page == 1 ? _page1(s) : _page2(s),
+              ),
             ),
           ),
-        ),
-      ]),
+        ]),
+      ),
     );
   }
 
+  /// S251: every page was a bare centred Column. Page 0 at least scrolled;
+  /// pages 1 and 2 did not, so a short screen (or a large system text scale)
+  /// overflowed them and clipped the button the page exists to show. This
+  /// shell scrolls when the content is taller than the viewport and keeps the
+  /// old vertical centring when it isn't.
+  Widget _shell({required EdgeInsets padding, required List<Widget> children}) =>
+    LayoutBuilder(builder: (_, box) => SingleChildScrollView(
+      padding: padding,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: math.max(0.0, box.maxHeight - padding.vertical)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: children,
+        ),
+      ),
+    ));
+
   // ── Page 0: Brand splash ──────────────────────────────────────────────────
-  Widget _page0(S s) => SingleChildScrollView(
-    child: Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 32),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
+  Widget _page0(S s) => _shell(
+    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+    children: [
             // S44: static 130-px duplicate removed (animated 180-px logo stays)
 
         // Pulsing gold ring around logo
@@ -168,8 +198,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: Color(0xFFF2EFE5), fontSize: 14, height: 1.9)),
-        const SizedBox(height: 48),
-
         const SizedBox(height: 28),
         // S84: Mode info card
         Container(
@@ -180,54 +208,33 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xFF1DB898).withValues(alpha: 0.30))),
           child: Column(children: [
-            // Local mode
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1DB898).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF1DB898).withValues(alpha: 0.5))),
-                child: const Text('🏠 LOCAL',
-                  style: TextStyle(color: Color(0xFF1DB898),
-                    fontSize: 10, fontWeight: FontWeight.bold))),
-              const SizedBox(width: 12),
-              const Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('الصفاء · الإتقان · الاسترداد',
-                  style: TextStyle(color: Color(0xFFD4AF37),
-                    fontSize: 13, fontWeight: FontWeight.bold)),
-                SizedBox(height: 3),
-                Text('يعمل على جهازك — بدون إنترنت — خصوصية تامة\nيتطلب إعداداً لمرة واحدة (~200MB)',
-                  style: TextStyle(color: Color(0xFF8AACBA), fontSize: 10, height: 1.6)),
-              ])),
-            ]),
+            _modeRow(
+              badge: '🏠 LOCAL',
+              badgeColor: const Color(0xFF1DB898),
+              badgeBg: const Color(0xFF1DB898).withValues(alpha: 0.15),
+              badgeBorder: const Color(0xFF1DB898).withValues(alpha: 0.5),
+              title: s.localModeEngines,
+              titleColor: const Color(0xFFD4AF37),
+              titleSize: 13,
+              body: s.localModeDesc,
+              bodyColor: const Color(0xFF8AACBA),
+              ar: s.ar),
             const SizedBox(height: 14),
             const Divider(color: Colors.white10, height: 1),
             const SizedBox(height: 14),
-            // Server mode
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white24)),
-                child: const Text('☁ SERVER',
-                  style: TextStyle(color: Color(0xFF8AACBA),
-                    fontSize: 10, fontWeight: FontWeight.bold))),
-              const SizedBox(width: 12),
-              const Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('v10.0 · v9.0 · v8.5 · v8.0',
-                  style: TextStyle(color: Color(0xFF8AACBA),
-                    fontSize: 12, fontWeight: FontWeight.w600)),
-                SizedBox(height: 3),
-                Text('يعمل على السحابة — يحتاج إنترنت — بدون تخزين',
-                  style: TextStyle(color: Color(0xFF3D5A65), fontSize: 10, height: 1.6)),
-              ])),
-            ]),
+            _modeRow(
+              badge: '☁ SERVER',
+              badgeColor: const Color(0xFF8AACBA),
+              badgeBg: Colors.white.withValues(alpha: 0.06),
+              badgeBorder: Colors.white24,
+              title: 'v10.0 · v9.0 · v8.5 · v8.0',
+              titleColor: const Color(0xFF8AACBA),
+              titleSize: 12,
+              body: s.serverModeDesc,
+              bodyColor: const Color(0xFF3D5A65),
+              ar: s.ar),
           ])),
+        const SizedBox(height: 20),
         _primaryBtn(s.howItWorks, () => _goPage(1)),
         const SizedBox(height: 14),
         TextButton(
@@ -241,8 +248,50 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         // Page dots
         _dots(0),
       ],
-    ),
-  ));
+    );
+
+  /// One row of the mode card. Mirrors for Arabic so the badge sits on the
+  /// leading edge in both languages instead of always on the left.
+  Widget _modeRow({
+    required String badge,
+    required Color badgeColor,
+    required Color badgeBg,
+    required Color badgeBorder,
+    required String title,
+    required Color titleColor,
+    required double titleSize,
+    required String body,
+    required Color bodyColor,
+    required bool ar,
+  }) => Row(
+    textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: badgeBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: badgeBorder)),
+        child: Text(badge,
+          textDirection: TextDirection.ltr,
+          style: TextStyle(color: badgeColor,
+            fontSize: 10, fontWeight: FontWeight.bold))),
+      const SizedBox(width: 12),
+      Expanded(child: Column(
+        crossAxisAlignment: ar
+          ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(title,
+            textAlign: ar ? TextAlign.right : TextAlign.left,
+            style: TextStyle(color: titleColor,
+              fontSize: titleSize, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 3),
+          Text(body,
+            textAlign: ar ? TextAlign.right : TextAlign.left,
+            style: TextStyle(color: bodyColor, fontSize: 10, height: 1.6)),
+        ])),
+    ]);
 
 
   // ── Page 1: How it works ──────────────────────────────────────────────────
@@ -253,11 +302,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       (Icons.cloud_sync_outlined,    s.step3),
       (Icons.download_done_rounded,  s.step4),
     ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
+    // S251: the step rows were pinned to TextDirection.rtl regardless of
+    // language, so in English the numbering read right-to-left with the icon
+    // on the wrong side. Direction now follows the selected language.
+    final dir = s.ar ? TextDirection.rtl : TextDirection.ltr;
+    return _shell(
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      children: [
           Text(s.howItWorks,
             style: const TextStyle(
               color: Color(0xFFD4AF37),
@@ -266,7 +317,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           ...steps.asMap().entries.map((entry) => Padding(
             padding: const EdgeInsets.only(bottom: 18),
             child: Row(
-              textDirection: TextDirection.rtl,
+              textDirection: dir,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
@@ -280,19 +331,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     color: const Color(0xFFD4AF37), size: 20)),
                 const SizedBox(width: 14),
                 Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: s.ar
+                    ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                   children: [
                     Text(
-                      s.ar
-                        ? 'الخطوة ${entry.key + 1}'
-                        : 'Step ${entry.key + 1}',
-                      textDirection: TextDirection.rtl,
+                      s.stepLabel(entry.key + 1),
+                      textDirection: dir,
                       style: const TextStyle(
                         color: Color(0xFF484F58),
                         fontSize: 9, letterSpacing: 0.5)),
                     const SizedBox(height: 2),
                     Text(entry.value.$2,
-                      textDirection: TextDirection.rtl,
+                      textDirection: dir,
+                      textAlign: s.ar ? TextAlign.right : TextAlign.left,
                       style: const TextStyle(
                         color: Color(0xFFF2EFE5),
                         fontSize: 13, height: 1.45)),
@@ -302,11 +353,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             ),
           )),
           const SizedBox(height: 12),
-          _primaryBtn(s.ar ? 'التالي' : 'Next', () => _goPage(2)),
-          const SizedBox(height: 10),
+          _primaryBtn(s.welcomeNext, () => _goPage(2)),
+          const SizedBox(height: 6),
+          _backBtn(s, 0),
+          const SizedBox(height: 4),
           _dots(1),
-        ],
-      ),
+      ],
     );
   }
 
@@ -330,19 +382,16 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               : 'Proven foundational architecture — STABLE',
         const Color(0xFF8AAABB)),
     ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(s.ar ? 'محركات التحسين' : 'Enhancement Engines',
+    return _shell(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      children: [
+          Text(s.welcomeEngines,
             style: const TextStyle(
               color: Color(0xFFD4AF37),
               fontSize: 24, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          Text(s.ar
-            ? 'اختر محركك من الصفحة الرئيسية'
-            : 'Choose your engine from the home screen',
+          Text(s.welcomeEnginesSub,
+            textAlign: TextAlign.center,
             style: TextStyle(color: _cSub(context), fontSize: 12)),
           const SizedBox(height: 24),
           ...tiers.map((t) => Container(
@@ -378,25 +427,42 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             ]))),
           const SizedBox(height: 16),
           _primaryBtn(s.welcomeStart, _finish),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
+          _backBtn(s, 1),
+          const SizedBox(height: 4),
           _dots(2),
-        ],
-      ),
+      ],
     );
   }
 
+  /// S251: pages 1 and 2 only ever pointed forward — no visible way back to
+  /// the page before, and the dots were decoration rather than navigation.
+  Widget _backBtn(S s, int target) => TextButton.icon(
+    onPressed: () => _goPage(target),
+    icon: Icon(
+      s.ar ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+      size: 15, color: const Color(0xFF8AAABB)),
+    label: Text(s.welcomeBack,
+      style: const TextStyle(color: Color(0xFF8AAABB), fontSize: 13)));
+
   Widget _dots(int active) => Row(
     mainAxisAlignment: MainAxisAlignment.center,
-    children: List.generate(3, (i) => AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      width:  i == active ? 20 : 6,
-      height: 6,
-      decoration: BoxDecoration(
-        color: i == active
-          ? const Color(0xFFD4AF37)
-          : const Color(0xFF30363D),
-        borderRadius: BorderRadius.circular(3)))));
+    children: List.generate(3, (i) => GestureDetector(
+      onTap: () => _goPage(i),
+      behavior: HitTestBehavior.opaque,
+      // The dot itself stays 6px tall; the padding turns it into a real tap
+      // target without leaving a 48px hole at the bottom of the page.
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width:  i == active ? 20 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: i == active
+              ? const Color(0xFFD4AF37)
+              : const Color(0xFF30363D),
+            borderRadius: BorderRadius.circular(3)))))));
 
   Widget _primaryBtn(String label, VoidCallback onTap) =>
     SizedBox(width: double.infinity,
