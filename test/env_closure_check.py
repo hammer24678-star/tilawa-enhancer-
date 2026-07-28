@@ -163,12 +163,26 @@ def scan(roots):
     return present, needed, count
 
 
+# S252: kernel-provided filesystems. These are mounted on the device at
+# runtime and can never exist inside a tarball, so a symlink into one is
+# correct rather than broken. /etc/mtab -> /proc/mounts is the standard Linux
+# configuration and is exactly what Alpine's minirootfs ships — counting it as
+# dangling failed the build on a healthy environment.
+_RUNTIME_FS = ('/proc', '/sys', '/dev', '/run')
+
+
+def _is_runtime_target(target):
+    return any(target == m or target.startswith(m + '/') for m in _RUNTIME_FS)
+
+
 def dangling(roots):
     """Symlinks whose target is absent.
 
     An ABSOLUTE symlink inside a rootfs (/bin/ls -> /bin/busybox) must be
     resolved against that rootfs, not against the host filesystem — otherwise
     every busybox applet link reads as broken. Relative links resolve normally.
+    Links into /proc, /sys, /dev and /run are resolved by the kernel on the
+    device and are skipped entirely.
     """
     bad = []
     for root in roots:
@@ -178,6 +192,8 @@ def dangling(roots):
                 if not os.path.islink(p):
                     continue
                 target = os.readlink(p)
+                if os.path.isabs(target) and _is_runtime_target(target):
+                    continue
                 if os.path.isabs(target):
                     resolved = None
                     for r in roots:                    # layered: try each root
@@ -232,8 +248,18 @@ def main():
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 
-    if missing or broken_links:
-        print('\nFAIL: the environment cannot load its own binaries.')
+    # S252: these are two different faults and used to share one message. A
+    # dangling symlink reported as "cannot load its own binaries" is what sent
+    # the S250k diagnosis after a shared-library closure that was already
+    # complete (MISSING libraries: 0).
+    if missing:
+        print('\nFAIL: the environment cannot load its own binaries — '
+              f'{len(missing)} shared librar'
+              f'{"y is" if len(missing) == 1 else "ies are"} missing.')
+        return 1
+    if broken_links:
+        print(f'\nFAIL: {len(broken_links)} symlink(s) resolve to nothing '
+              'inside the environment.')
         return 1
     print('\nPASS: every shared-library dependency resolves.')
     return 0
