@@ -23,6 +23,8 @@ class _GameScreenState extends State<GameScreen> {
   late final WebViewController _controller;
   bool _loading = true;
   bool _failed  = false;
+  bool _pageReady = false;
+  bool? _pushedAr;
 
   @override
   void initState() {
@@ -36,7 +38,11 @@ class _GameScreenState extends State<GameScreen> {
       ..setBackgroundColor(_gBg)
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (_) {
-          if (mounted) setState(() => _loading = false);
+          if (!mounted) return;
+          _pageReady = true;
+          _pushedAr = null;   // force the first push
+          _pushLanguage();
+          setState(() => _loading = false);
         },
         onWebResourceError: (err) {
           // S209: only fail the whole screen if the top-level asset itself
@@ -55,6 +61,30 @@ class _GameScreenState extends State<GameScreen> {
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.edgeToEdge); // S209: matches the app's normal mode
     super.dispose();
+  }
+
+  /// S251: Nova Drift ships every player-facing string in both languages, but
+  /// it has no way to know which one the app is in — the asset is loaded
+  /// straight off disk with no query string. Push it across the bridge on load
+  /// and again whenever the user flips the app language mid-game.
+  void _pushLanguage() {
+    if (!_pageReady || !mounted) return;
+    final ar = LangProvider.of(context).value;
+    if (_pushedAr == ar) return;
+    _pushedAr = ar;
+    final code = ar ? 'ar' : 'en';
+    _controller.runJavaScript(
+      "window.NOVA_LANG='$code';"
+      "if(window.novaSetLanguage)window.novaSetLanguage('$code');",
+    );
+  }
+
+  // LangProvider is an InheritedNotifier, so a language flip re-runs this;
+  // that is the hook that keeps the WebView in step with the app.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pushLanguage();
   }
 
   @override
