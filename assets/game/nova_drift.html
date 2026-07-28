@@ -113,7 +113,8 @@
   }
 
   #hint{
-    position:absolute; bottom:calc(env(safe-area-inset-bottom, 0px) + 14px); left:50%; transform:translateX(-50%);
+    /* Clears the dash/ultimate buttons rather than wrapping down over them. */
+    position:absolute; bottom:calc(env(safe-area-inset-bottom, 0px) + 100px); left:50%; transform:translateX(-50%);
     font-size:9.5px; letter-spacing:1.5px; color:var(--dim); z-index:5; pointer-events:none;
     text-align:center; padding:0 16px; max-width:90vw;
     transition:opacity .6s ease;
@@ -122,7 +123,7 @@
   /* 4.6: contextual one-liners for systems as they first become relevant,
      rather than one wall of instructions at launch. */
   #ctxHint{
-    position:absolute; bottom:calc(env(safe-area-inset-bottom, 0px) + 92px); left:50%;
+    position:absolute; bottom:calc(env(safe-area-inset-bottom, 0px) + 150px); left:50%;
     transform:translateX(-50%) translateY(8px);
     font-size:10px; letter-spacing:1.4px; color:var(--ink);
     background:rgba(13,18,38,.92); border:1px solid rgba(61,240,255,.35);
@@ -172,6 +173,8 @@
   #shipSummary:active{transform:scale(.97);}
   #shipSummary .glyph{flex:0 0 auto; width:34px; height:34px;}
   #shipSummary .meta{flex:1 1 auto; min-width:0;}
+  #shipSummary .shipClassTag{flex:0 0 auto; white-space:nowrap; align-self:center;}
+  #shipSummary .chev{flex:0 0 auto; color:var(--dim); font-size:16px; align-self:center;}
   .shipName{font-family:'Orbitron',sans-serif; font-size:11px; font-weight:700; letter-spacing:1px; margin-bottom:4px;}
   .shipDesc{font-size:9px; color:var(--dim); line-height:1.4;}
   .shipStat{font-size:9px; letter-spacing:1px; color:var(--ink);}
@@ -202,11 +205,13 @@
   }
   #overlay button:active{transform:scale(.96);}
   .menuBtn{
-    font-family:'Orbitron',sans-serif; font-weight:700; letter-spacing:1px; font-size:9.5px;
+    font-family:'Orbitron',sans-serif; font-weight:700; letter-spacing:.5px; font-size:9px;
     background:transparent; border:2px solid var(--dim); color:var(--dim);
-    padding:11px 8px; border-radius:2px; cursor:pointer; flex:1 1 0; min-width:0;
+    padding:11px 6px; border-radius:2px; cursor:pointer;
+    flex:1 1 calc(33.333% - var(--s2)); min-width:96px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  #menuBtnRow{display:flex; gap:var(--s2); width:100%; max-width:400px; flex-wrap:wrap;}
+  #menuBtnRow{display:flex; gap:var(--s2); width:100%; max-width:400px; flex-wrap:wrap; justify-content:center;}
 
   #pauseOverlay{
     position:absolute; inset:0; display:none; align-items:center; justify-content:center;
@@ -1084,7 +1089,7 @@
     x:0,y:0,vx:0,vy:0,life:0,maxLife:1,color:'#fff',r:1,drag:0.96,hot:false
   }));
   const popups = new Pool(MAX_POPUPS, () => ({x:0,y:0,text:'',life:0,color:'#eaf2ff',scale:1}));
-  const powerups = new Pool(MAX_POWERUPS, () => ({x:0,y:0,vx:0,vy:0,type:'rapid',r:12,pulse:0,life:0}));
+  const powerups = new Pool(MAX_POWERUPS, () => ({x:0,y:0,vx:0,vy:0,type:'rapid',r:12,pulse:0,life:0,ttl:0}));
   const shockwaves = new Pool(MAX_SHOCKWAVES, () => ({x:0,y:0,r:0,maxR:1,life:0,maxLife:1,color:'#fff',width:2}));
   // 3.2 Dynamic point lights: each explosion or heavy impact registers one of
   // these, drawn as an additive radial gradient under the gameplay layer so
@@ -3632,6 +3637,9 @@
     p.x = x; p.y = y;
     p.vx = rand(-0.5,0.5); p.vy = rand(-0.5,0.5);
     p.type = type; p.r = 12; p.pulse = 0; p.life = amount || 0;
+    // Uncollected drops fade rather than sitting forever: an unbounded field of
+    // pickups both reads as clutter and starves the pool of later drops.
+    p.ttl = 900;
   }
 
   function applyPowerup(type, x, y, amount){
@@ -4084,6 +4092,12 @@
     for(let i=powerups.n-1;i>=0;i--){
       const p = powerups.items[i];
       p.x += p.vx*dt; p.y += p.vy*dt; p.pulse += 0.1*dt;
+      p.ttl -= dt;
+      if(p.ttl <= 0){
+        spawnParticles(p.x, p.y, 'rgba(90,106,147,0.6)', 4, 1.4, 16);
+        powerups.releaseAt(i);
+        continue;
+      }
       const d = Math.hypot(player.x-p.x, player.y-p.y);
       if(d < p.r + player.r + magnetR + 40){
         // Magnet pulls rather than teleports, so the pickup still reads.
@@ -4792,7 +4806,10 @@
       const p = powerups.items[i];
       if(!onScreen(p.x, p.y, 30)) continue;
       const col = POWER_COLOR[p.type] || '#3df0ff';
+      // Blink out over the last two seconds so the expiry is legible.
+      if(p.ttl < 120 && Math.floor(p.ttl/6) % 2 === 0) continue;
       ctx.save();
+      ctx.globalAlpha = p.ttl < 240 ? 0.45 + 0.55*(p.ttl/240) : 1;
       ctx.translate(p.x, p.y);
       const pulse = 1 + Math.sin(p.pulse)*0.15;
       ctx.scale(pulse, pulse);
@@ -4805,6 +4822,7 @@
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(POWER_ICON[p.type] || '?', 0, 1);
       ctx.restore();
+      ctx.globalAlpha = 1;
       emitBloom(p.x, p.y, p.r*2, col, true);
     }
     ctx.textBaseline = 'alphabetic';
@@ -5126,8 +5144,11 @@
     meta.appendChild(n); meta.appendChild(d);
     const tag = document.createElement('div');
     tag.className = 'shipClassTag';
-    tag.textContent = T(classLabel(ship.cls)) + ' · ' + T('tapToEquip');
-    shipSummaryEl.appendChild(g); shipSummaryEl.appendChild(meta); shipSummaryEl.appendChild(tag);
+    tag.textContent = T(classLabel(ship.cls));
+    const chev = document.createElement('div');
+    chev.className = 'chev'; chev.textContent = isAr() ? '\u2039' : '\u203A';
+    shipSummaryEl.appendChild(g); shipSummaryEl.appendChild(meta);
+    shipSummaryEl.appendChild(tag); shipSummaryEl.appendChild(chev);
 
     if(save.leaderboard.length){
       leaderboardBox.innerHTML = '';
