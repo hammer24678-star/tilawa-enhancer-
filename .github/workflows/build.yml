@@ -48,6 +48,13 @@ jobs:
       - name: Nova Drift content + constraint check
         run: python3 test/nova_drift_check.py
 
+      # S252: build_assets.sh hands Alpine a ~215-line script as one quoted
+      # string. Nothing parsed it until Docker ran it, forty minutes in and
+      # after QEMU, the image pull and the whole apk install. Same reasoning as
+      # the Kotlin gate above.
+      - name: build_assets.sh shell + guard check
+        run: python3 test/build_assets_check.py
+
       # S250k: report the committed environment's shared-library closure. The
       # asset step below rebuilds python-env.tar.gz and re-runs this check
       # against the fresh archive as a hard gate; this earlier pass is

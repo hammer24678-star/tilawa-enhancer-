@@ -92,15 +92,35 @@ docker run --rm \
         apk add --no-progress openblas libdrm libxcb 2>&1 | tail -2 || \
             echo '    (openblas/libdrm/libxcb not added explicitly — relying on deps)'
 
-        echo '==> Installing the 14 embedded audio-editor packages (S250)'
+        # ── S252: this step died on every run since S250 ─────────────────────
+        # soxr 1.1.0 and webrtcvad 2.0.10 publish no musllinux/aarch64 wheel, so
+        # pip compiles both from their sdist — and that compile runs under
+        # qemu-user emulation, where g++ died:
+        #
+        #   ninja: job terminated due to signal 11: /usr/bin/g++ ... -O3 ...
+        #          nanobind/src/nb_func.cpp
+        #
+        # nb_func.cpp is nanobind's heaviest translation unit, and ninja was
+        # compiling several like it at once (the log reaches [23/30] before the
+        # segfault). Under qemu-user the C++ frontend runs out of stack on it.
+        # Two settings remove that without touching any DSP hot path: compile
+        # one translation unit at a time, and give the frontend a real stack.
+        # libsoxr's resampler is C and keeps its own optimisation either way.
+        export CMAKE_BUILD_PARALLEL_LEVEL=1
+        export MAKEFLAGS=-j1
+        ulimit -s 65536 2>/dev/null || true
+
+        # Everything that ships a usable wheel goes first, so a compiler crash
+        # can never take the pure-Python packages down with it.
         # --no-deps + explicit closure: nothing here may pull in a second numpy.
         # Status is checked explicitly — piping into tail would hide a failure
         # behind tail's exit code, which is how the S247 breakage went unnoticed.
+        echo '==> Installing the 12 wheel-provided packages (S250)'
         if pip install --no-cache-dir --break-system-packages --prefer-binary \\
             --find-links=/pip_wheels --no-deps \\
             'nara_wpe==0.0.11' 'noisereduce==3.0.3' 'pystoi==0.4.1' \\
-            'pyloudnorm==0.2.0' 'webrtcvad==2.0.10' 'soundfile==0.14.0' \\
-            'soxr==1.1.0' 'audioread==3.1.0' 'joblib==1.5.3' \\
+            'pyloudnorm==0.2.0' 'soundfile==0.14.0' \\
+            'audioread==3.1.0' 'joblib==1.5.3' \\
             'decorator==5.3.1' 'tqdm==4.69.0' 'msgpack==1.2.1' \\
             'pooch==1.9.0' 'lazy_loader==0.5' \\
             cffi pycparser typing_extensions click packaging platformdirs \\
@@ -109,7 +129,47 @@ docker run --rm \
             tail -8 /pip-install.log
         else
             echo '    !! pip install FAILED — full log follows'
-            tail -60 /pip-install.log
+            cat /pip-install.log
+            exit 1
+        fi
+
+        # The two that must be compiled, one at a time so the log names the
+        # package that failed. S250 dumped only the last 60 lines of a combined
+        # log, which is why webrtcvad's error was never visible at all — the
+        # tail was entirely soxr's CMake output.
+        echo '==> Compiling soxr (no musl/aarch64 wheel exists)'
+        if pip install --no-cache-dir --break-system-packages \\
+            --find-links=/pip_wheels --no-deps 'soxr==1.1.0' \\
+            > /pip-soxr.log 2>&1; then
+            tail -3 /pip-soxr.log
+        else
+            echo '    first attempt failed; retrying at -O1 for C++ only'
+            # Last resort if a future nanobind gets heavier again: -O1 cuts the
+            # frontend's stack depth and memory hard. -DNDEBUG is carried over
+            # because overriding the Release flags drops CMake's own copy.
+            export SKBUILD_CMAKE_ARGS='-DCMAKE_CXX_FLAGS_RELEASE=-O1 -DNDEBUG'
+            export CMAKE_ARGS='-DCMAKE_CXX_FLAGS_RELEASE=-O1'
+            if pip install --no-cache-dir --break-system-packages \\
+                --find-links=/pip_wheels --no-deps 'soxr==1.1.0' \\
+                > /pip-soxr2.log 2>&1; then
+                tail -3 /pip-soxr2.log
+            else
+                echo '    !! soxr FAILED both attempts — full logs follow'
+                echo '    ---- attempt 1 ----'; cat /pip-soxr.log
+                echo '    ---- attempt 2 (-O1) ----'; cat /pip-soxr2.log
+                exit 1
+            fi
+            unset SKBUILD_CMAKE_ARGS CMAKE_ARGS
+        fi
+
+        echo '==> Compiling webrtcvad (no musl/aarch64 wheel exists)'
+        if pip install --no-cache-dir --break-system-packages \\
+            --find-links=/pip_wheels --no-deps 'webrtcvad==2.0.10' \\
+            > /pip-vad.log 2>&1; then
+            tail -3 /pip-vad.log
+        else
+            echo '    !! webrtcvad FAILED — full log follows'
+            cat /pip-vad.log
             exit 1
         fi
 
@@ -149,7 +209,7 @@ PYEOF
         echo '==> Removing build toolchain from the shipped rootfs'
         apk del --no-progress build-base python3-dev libsndfile-dev 2>&1 | tail -3 || true
         apk del --no-progress cmake samurai 2>&1 | tail -1 || true
-        rm -rf /var/cache/apk/* /root/.cache /tmp/* /pip-install.log 2>/dev/null || true
+        rm -rf /var/cache/apk/* /root/.cache /tmp/* /pip-*.log 2>/dev/null || true
         find / -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
         echo '==> Re-verifying after toolchain removal'
