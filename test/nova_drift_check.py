@@ -70,11 +70,23 @@ def main():
     src = open(GAME, encoding="utf-8").read()
 
     # ---- 1. still one self-contained file -------------------------------
+    # S254: there is no longer an exception here. The Orbitron / Space Mono
+    # <link>s to fonts.googleapis.com were the last one, and inside an offline
+    # app they never resolved — the game fell back to the platform's generic
+    # faces and every letter-spacing in the file, all tuned against Orbitron,
+    # was applied to a font it was never measured for. Both are embedded as
+    # base64 woff2 now, so any external URL at all is a regression.
     externals = re.findall(r'(?:src|href)\s*=\s*["\']([^"\']+)["\']', src)
     for url in externals:
-        if url.startswith("https://fonts.g"):
-            continue  # the one documented exception
         fail("external dependency: %s" % url)
+    if "fonts.googleapis.com/css" in src or "fonts.gstatic.com" in src:
+        fail("the webfonts are being fetched again instead of embedded")
+    faces = len(re.findall(r"@font-face\s*\{", src))
+    if faces < 3:
+        fail("expected 3 embedded @font-face rules (Orbitron + Space Mono 400/700), found %d" % faces)
+    for fam in ("Orbitron", "Space Mono"):
+        if not re.search(r"@font-face\{[^}]*font-family:'%s'[^}]*src:url\(data:font/woff2" % fam, src):
+            fail("%s is not embedded as a data: woff2" % fam)
     if re.search(r"<script[^>]+src=", src):
         fail("external script tag")
 
