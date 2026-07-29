@@ -3291,8 +3291,26 @@
     showBanner._t = setTimeout(() => waveBanner.classList.remove('show'), 1100);
   }
 
-  const spawnQueue = [];
+  /** S254: the spawn queue is built fresh per wave and the wave carries a
+      generation token.
+
+      It used to be one module-level array read asynchronously: the drip below
+      runs on setTimeout and captured `total` — the queue's length at schedule
+      time — while reading from the shared array. A second spawnWave() starting
+      before the previous drip drained (a boss aborting a drip clears
+      `transitioning` early, which is enough) reset that array and refilled it,
+      and the stale drip then indexed past the new, shorter queue and handed
+      `undefined` to spawnGroup(). That threw on `def.group`, which killed the
+      drip chain, which left `transitioning` stuck true — so the wave never
+      finished spawning and never completed either. Caught by the headless
+      end-to-end pass, as an uncaught page error, not by any static check.
+
+      A local array per wave costs one small allocation every ~30 seconds and
+      makes the interleaving impossible; the token stops a superseded drip
+      dead rather than letting two waves spawn into each other. */
+  let spawnGen = 0;
   function spawnWave(){
+    const gen = ++spawnGen;
     transitioning = true;
     const cfg = diffCfg();
     const tier = activeTier();
@@ -3316,7 +3334,7 @@
     const pool = buyableFor(tier);
     if(!pool.length){ transitioning = false; return; }
 
-    spawnQueue.length = 0;
+    const queue = [];   // local to this wave — see the note on spawnGen
     // 7.4: protect the floor. At most a third of the budget may go to the
     // single most expensive archetype available, so no wave is wall-to-wall
     // worst case even on a bad roll.
@@ -3342,23 +3360,26 @@
       if(d.cost >= maxCost && heavySpend + d.cost > heavyCap) continue;
       if(d.cost >= maxCost) heavySpend += d.cost;
       usedIds[d.id] = 1;
-      spawnQueue.push(d);
+      queue.push(d);
       budget -= d.cost;
     }
     // Guarantee at least one approachable, killable unit every wave (1.5).
     let cheapest = pool[0];
     for(let i=0;i<pool.length;i++){ if(pool[i].cost < cheapest.cost) cheapest = pool[i]; }
     let hasCheap = false;
-    for(let i=0;i<spawnQueue.length;i++){ if(spawnQueue[i].cost <= cheapest.cost + 1){ hasCheap = true; break; } }
-    if(!hasCheap) spawnQueue.push(cheapest);
+    for(let i=0;i<queue.length;i++){ if(queue[i].cost <= cheapest.cost + 1){ hasCheap = true; break; } }
+    if(!hasCheap) queue.push(cheapest);
 
     let i = 0;
-    const total = spawnQueue.length;
+    const total = queue.length;
     const stepMs = clamp(1400/Math.max(1,total), 80, 260);
     (function drip(){
+      // A newer wave has taken over; this drip is stale and must not spawn
+      // into it, nor clear a `transitioning` flag it no longer owns.
+      if(gen !== spawnGen) return;
       if(!running || bossActive){ transitioning = false; return; }
       if(i >= total){ transitioning = false; return; }
-      spawnGroup(spawnQueue[i++]);
+      spawnGroup(queue[i++]);
       setTimeout(drip, stepMs);
     })();
   }
@@ -3396,6 +3417,12 @@
   }
 
   function spawnGroup(def){
+    // Belt and braces alongside the generation token above: reaching
+    // `def.group` on an undefined def threw inside a setTimeout, which killed
+    // the drip chain and stranded `transitioning` true — a wave that never
+    // finished spawning and could never complete. Never let a bad queue entry
+    // become an exception on the spawn path.
+    if(!def) return;
     const n = def.group || 1;
     const base = spawnEdgePos();
     let first = null;
@@ -7249,6 +7276,47 @@ void main(){
         return made;
       },
       killAll: function(){ for(let i=enemies.n-1;i>=0;i--) releaseEnemyAt(i); },
+      // S254: spawn() places units inside the arena, which is exactly the path
+      // the wave-12 freeze did NOT take — the strandings all came from
+      // spawnEdgePos(), 40px outside. These two let the harness drive the real
+      // entry path and observe the result.
+      spawnEdge: function(id, n){
+        const def = ENEMY_BY_ID[id];
+        if(!def) return 0;
+        let made = 0;
+        for(let i=0;i<(n||1);i++){
+          const p = spawnEdgePos();
+          if(spawnEnemy(def, p.x, p.y)) made++;
+        }
+        return made;
+      },
+      /** Live enemies currently outside the arena. A wave cannot end while any
+          of these remain, so this is the number that decides whether the run
+          can progress at all.
+
+          Two measures, because they fail differently. worstSteps is offT, the
+          continuously-off-screen timer the reachability net maintains — exact,
+          but it only exists because the net exists. worstAgeMs is how long the
+          oldest currently-off-screen unit has been ALIVE, derived from spawnT
+          alone: a unit that has existed for twenty seconds and is still out
+          there is stranded whether or not anything is keeping score. The
+          second one is what tells a stranded roster apart from a wave that is
+          simply still spawning. */
+      offscreen: function(){
+        const now = performance.now();
+        let out = 0, worst = 0, worstId = null, worstAge = 0, worstAgeId = null;
+        for(let i=0;i<enemies.n;i++){
+          const e = enemies.items[i];
+          if(onScreen(e.x, e.y, 0)) continue;
+          out++;
+          if(e.offT > worst){ worst = e.offT; worstId = e.def.id; }
+          const age = now - e.spawnT;
+          if(age > worstAge){ worstAge = age; worstAgeId = e.def.id; }
+        }
+        return {count:out, live:enemies.n,
+                worstSteps:Math.round(worst), worstId:worstId,
+                worstAgeMs:Math.round(worstAge), worstAgeId:worstAgeId};
+      },
       hurtPlayer: function(){ return damagePlayer(1); },
       grantShards: function(n){ save.shards += n; renderMenu(); },
       forceFlash: function(a){ return requestFlash(a); },
