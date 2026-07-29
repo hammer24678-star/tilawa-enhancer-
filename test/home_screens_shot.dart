@@ -150,6 +150,15 @@ Future<void> _pump(WidgetTester tester, Widget screen,
   }
 }
 
+/// Opacity of the app-bar wordmark. It is an Opacity inside the
+/// FlexibleSpaceBar title, so this reads the scroll-reveal directly rather
+/// than eyeballing a PNG.
+double _wordmarkOpacity(WidgetTester tester) {
+  final o = tester.widgetList<Opacity>(
+      find.byKey(const ValueKey('appbar-wordmark-opacity')));
+  return o.isEmpty ? -1 : o.first.opacity;
+}
+
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -157,6 +166,19 @@ void main() {
     // placeholder that draws every glyph as a box, which makes the captured
     // frames useless for judging typography, wrapping or truncation — the
     // things they exist to show.
+    // Material Icons too, or every Icon in the frame is an empty box and the
+    // capture is useless for judging a layout built out of icons. The SDK
+    // always has it cached; skip quietly if a future layout moves it.
+    for (final p in [
+      '${Platform.environment['FLUTTER_ROOT'] ?? '/opt/flutter'}'
+          '/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+    ]) {
+      final f = File(p);
+      if (!f.existsSync()) continue;
+      await (FontLoader('MaterialIcons')
+            ..addFont(Future.value(ByteData.view(f.readAsBytesSync().buffer))))
+          .load();
+    }
     for (final f in const ['Regular', 'Medium', 'Bold', 'ExtraBold']) {
       final file = File('${Directory.current.path}/assets/fonts/Tajawal-$f.ttf');
       if (!file.existsSync()) continue;
@@ -190,6 +212,22 @@ void main() {
   testWidgets('capture home (en)', (tester) async {
     await _pump(tester, const HomeScreen());
     await _captureQuietly(tester, 'home_en');
+  });
+
+  // S255: the wordmark is hidden at rest and fades in as the hero leaves, so
+  // "is the brand still there once you scroll" is the thing to actually look
+  // at. Captures the scrolled state and asserts the reveal really happened.
+  testWidgets('capture home (scrolled) and the wordmark reveals', (tester) async {
+    await _pump(tester, const HomeScreen());
+    final before = _wordmarkOpacity(tester);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -320));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+    final after = _wordmarkOpacity(tester);
+    await _captureQuietly(tester, 'home_scrolled');
+    expect(before, lessThan(0.05), reason: 'wordmark should be hidden at rest');
+    expect(after, greaterThan(0.9), reason: 'wordmark should be shown once scrolled');
   });
 
   testWidgets('capture home (ar)', (tester) async {

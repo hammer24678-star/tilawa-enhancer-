@@ -1160,6 +1160,17 @@ class _HomeScreenState extends State<HomeScreen>
               backgroundColor: const Color(0xFF020D0C),
               elevation: 0,
               expandedHeight: 72,
+              automaticallyImplyLeading: false,
+              actions: _headerActions(),
+              // S255: the wordmark belongs in the AppBar's own title slot, not
+              // FlexibleSpaceBar's. FlexibleSpaceBar centres its title across
+              // the full bar width and the actions are painted over the top of
+              // it, so the lockup ran underneath the buttons and lost its first
+              // characters. AppBar lays leading/title/actions out as a row and
+              // reserves the space, which is exactly the problem it exists to
+              // solve.
+              centerTitle: true,
+              title: _wordmark(),
               bottom: PreferredSize(
                 preferredSize: const Size.fromHeight(1),
                 child: Container(
@@ -1187,43 +1198,14 @@ class _HomeScreenState extends State<HomeScreen>
                 // striped overflow bar was the first thing on screen. scaleDown
                 // keeps the whole name and shrinks it to fit instead of
                 // clipping or ellipsising the app's own title.
-                title: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 34, height: 34,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(
-                          color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
-                          blurRadius: 12)]),
-                      child: ClipOval(child: Image.asset(
-                        'assets/images/logo.png',
-                        fit: BoxFit.cover))),
-                    const SizedBox(width: 10),
-                    ShaderMask(
-                      shaderCallback: (b) => const LinearGradient(
-                        colors: [Color(0xFFD4AF37), Color(0xFFF0CF60),
-                                 Color(0xFFD4AF37)])
-                        .createShader(b),
-                      child: const Text('التلاوة',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 19,
-                          fontWeight: FontWeight.w300,
-                          letterSpacing: 0.3))),
-                    // S193: was 'محسِّن ' BEFORE the ShaderMask above — in this
-                    // plain LTR Row that put 'محسِّن' on the left/'التلاوة' on the
-                    // right, which an RTL reader reads backwards as "التلاوة محسِّن".
-                    const Text(' محسِّن',
-                      style: TextStyle(
-                        color: Color(0xFFE2CFA0),
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5)),
-                  ]))),
+                //
+                // It also only appears once the hero has gone. At rest the logo
+                // and the name were on screen twice within 250px — once here,
+                // once in the hero directly beneath. Now the bar carries the
+                // actions while the hero carries the identity, and the lockup
+                // fades in to take over exactly as the hero scrolls out, so the
+                // brand is always present and never doubled.
+              ),
             ),
             SliverToBoxAdapter(child: _header(s)),
             if (!_localMode) // S147: hide server banner in local mode
@@ -1484,32 +1466,95 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  /// S255: info / game / settings. These used to be Positioned inside the
+  /// hero's Stack, which floated them over the hero artwork and left the app
+  /// bar carrying nothing but the wordmark. They belong in the bar: it is
+  /// pinned, so they stay reachable however far the page is scrolled, instead
+  /// of scrolling away with the header they were painted on top of.
+  List<Widget> _headerActions() => [
+    _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
+    const SizedBox(width: 8),
+    // S209: persistent entry point to the mini-game, always available
+    _iconBtn(Icons.sports_esports_rounded, () => Navigator.push(context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const GameScreen(),
+        transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 220)))),
+    const SizedBox(width: 8),
+    _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const SettingsScreen(),
+        transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 220)))),
+    const SizedBox(width: 12),
+  ];
+
+  /// The compact brand lockup in the app bar, revealed as the hero scrolls
+  /// away. FittedBox(scaleDown) keeps the whole name on a narrow screen or at
+  /// a large text scale rather than letting it overflow the constrained box
+  /// FlexibleSpaceBar hands its title.
+  Widget _wordmark() => AnimatedBuilder(
+    animation: _scrollCtrl,
+    builder: (_, child) {
+      // hasClients guards the first build, before the view is attached.
+      final off = _scrollCtrl.hasClients ? _scrollCtrl.offset : 0.0;
+      final t = ((off - 110.0) / 80.0).clamp(0.0, 1.0);
+      return Opacity(
+        // Keyed so the scroll-reveal can be asserted directly rather than
+        // inferred from where it happens to sit in the tree.
+        key: const ValueKey('appbar-wordmark-opacity'),
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, 10 * (1 - t)), child: child));
+    },
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 30, height: 30,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
+                blurRadius: 12)]),
+            child: ClipOval(child: Image.asset(
+              'assets/images/logo.png', fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: _bgCard,
+                child: const Icon(Icons.menu_book_rounded,
+                  color: _gold, size: 16))))),
+          const SizedBox(width: 9),
+          ShaderMask(
+            shaderCallback: (b) => const LinearGradient(
+              colors: [Color(0xFFD4AF37), Color(0xFFF0CF60),
+                       Color(0xFFD4AF37)]).createShader(b),
+            child: const Text('التلاوة',
+              style: TextStyle(
+                color: Colors.white, fontSize: 18,
+                fontWeight: FontWeight.w300, letterSpacing: 0.3))),
+          // S193: was 'محسِّن ' BEFORE the ShaderMask above — in this plain LTR
+          // Row that put 'محسِّن' on the left/'التلاوة' on the right, which an RTL
+          // reader reads backwards as "التلاوة محسِّن".
+          const Text(' محسِّن',
+            style: TextStyle(
+              color: Color(0xFFE2CFA0), fontSize: 18,
+              fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+        ])));
+
+  // S255: this was a Stack holding the hero plus the three Positioned action
+  // buttons. With the buttons moved into the app bar the Stack had one child
+  // left, and a Stack passes LOOSE constraints to a non-positioned child — so
+  // the hero shrink-wrapped to the width of its widest element (the subtitle
+  // pill) and aligned to the leading edge, pulling the whole lockup ~40px off
+  // centre. A plain Padding takes the sliver's tight width and centres again.
   Widget _header(S s) => Container(
     padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
-    child: Stack(children: [
-      // Top-right action buttons
-      Positioned(top: 16, right: 16,
-        child: Row(children: [
-          _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
-          const SizedBox(width: 8),
-          // S209: persistent entry point to the mini-game, always available
-          _iconBtn(Icons.sports_esports_rounded, () => Navigator.push(context,
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const GameScreen(),
-              transitionsBuilder: (_, anim, __, child) =>
-                FadeTransition(opacity: anim, child: child),
-              transitionDuration: const Duration(milliseconds: 220)))),
-          const SizedBox(width: 8),
-          _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const SettingsScreen(),
-              transitionsBuilder: (_, anim, __, child) =>
-                FadeTransition(opacity: anim, child: child),
-              transitionDuration: const Duration(milliseconds: 220)))),
-        ])),
-      // Centered hero content
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 20),
+    child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
         child: Column(children: [
           // Orbital ring + logo
           // S31-3RINGS
@@ -1591,8 +1636,12 @@ class _HomeScreenState extends State<HomeScreen>
               color: _teal.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: _teal.withValues(alpha: 0.35))),
-            child: RichText(
-              text: TextSpan(
+            // S255: was RichText, which builds its own TextStyle from scratch
+            // instead of inheriting DefaultTextStyle — so this one pill rendered
+            // in the platform font while every other string on the screen is
+            // Tajawal. Text.rich inherits, so it now matches its surroundings.
+            child: Text.rich(
+              TextSpan(
                 style: const TextStyle(
                   color: _textB, fontSize: 10, letterSpacing: 1.5),
                 children: [
@@ -1609,7 +1658,6 @@ class _HomeScreenState extends State<HomeScreen>
                 ])),
           ),
         ])),
-    ]),
   );
 
   Widget _iconBtn(IconData icon, VoidCallback onTap) {
@@ -1663,13 +1711,21 @@ class _HomeScreenState extends State<HomeScreen>
               ? gold.withValues(alpha: 0.45)
               : const Color(0xFF1A2733),
             width: 1.0)),
-        child: Row(children: [
+        // S255: mirror in Arabic, the same way welcome_screen's _modeRow does.
+        // These rows read icon -> label -> switch, which is a leading-to-
+        // trailing order, but the Row was hard-wired LTR: in Arabic the icon
+        // sat on the far side of its own label and the switch ended up on the
+        // leading edge, so the row read inside-out against the text beside it.
+        child: Row(
+          textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+          children: [
           Icon(
             _localMode ? Icons.offline_bolt_rounded : Icons.cloud_outlined,
             color: _localMode ? gold : textB, size: 18),
           const SizedBox(width: 10),
           Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: s.ar
+              ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
             Text(
               _localMode
@@ -1791,12 +1847,15 @@ class _HomeScreenState extends State<HomeScreen>
               ? gold.withValues(alpha: 0.3)
               : const Color(0xFF1A2733),
             width: 1.0)),
-        child: Row(children: [
+        child: Row(
+          textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+          children: [
           Icon(Icons.palette_outlined,
             color: _engineTintEnabled ? gold : textB, size: 18),
           const SizedBox(width: 10),
           Expanded(child: Text(
             s.ar ? 'تظليل الخلفية بلون المحرك' : 'Engine-color background tint',
+            textAlign: s.ar ? TextAlign.right : TextAlign.left,
             style: TextStyle(
               color: _engineTintEnabled ? gold : textB,
               fontSize: 12, fontWeight: FontWeight.w700))),
