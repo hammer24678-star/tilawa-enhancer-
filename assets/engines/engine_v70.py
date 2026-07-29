@@ -29,7 +29,41 @@ warnings.filterwarnings('ignore')
 # ═══════════════════════════════════════════════════════════════════════
 #  CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════
-REF_PATH  = '/mnt/user-data/uploads/المرجع1425.mp3'
+def _resolve_ref_files():
+    """S255: where the reference recordings actually are.
+
+    This engine had the three developer paths under /mnt/user-data/uploads/
+    hard-coded, with no fallback. LocalEngineRunner never passes --ref, so on a
+    phone every one of them was missing and the engine died before doing any
+    work at all: "Error: Failed to load: /mnt/user-data/uploads/المرجع1425.mp3".
+    v7.0 could not run offline, ever.
+
+    Resolution order matches engine_v85.py's: env var, then the proot bind the
+    app really provides, then the Termux home dir, then script-adjacent, then
+    the legacy developer paths last."""
+    import glob as _glob
+    env_dir = os.environ.get('TILAWA_REF_DIR', '')
+    cands = []
+    if env_dir:
+        cands.append(env_dir)
+    cands.append('/reference_audio')                       # the proot bind mount
+    cands.append(os.path.join(os.path.expanduser('~'), '.tilawa_ref'))
+    cands.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reference_audio'))
+    for d in cands:
+        if d and os.path.isdir(d):
+            found = sorted(p for p in _glob.glob(os.path.join(d, '*.mp3'))
+                           if os.path.getsize(p) > 10_000)
+            if found:
+                return found
+    legacy = [
+        '/mnt/user-data/uploads/المرجع1425.mp3',
+        '/mnt/user-data/uploads/سوره_الفتح_174232307.mp3',
+        '/mnt/user-data/uploads/ياسر_الدوسري_ما_تسير_من_سورة_فاطر_1425__اول_مرة_تن_173856242_99.mp3',
+    ]
+    return [p for p in legacy if os.path.exists(p)]
+
+_RESOLVED_REFS = _resolve_ref_files()
+REF_PATH  = _RESOLVED_REFS[0] if _RESOLVED_REFS else ''
 REF_CACHE = '/tmp/enhance_ref_fp.v7.json'
 _CLI_REF_FILES = []  # S22: set by --ref CLI args; overrides REF_FILES in get_reference_fingerprint()
 SR        = 48000
@@ -318,12 +352,14 @@ def get_reference_fingerprint() -> ReferenceFingerprint:
     import json
     cache_file = '/tmp/enhance_ref_fp.v7.json'
 
-    # S22: use CLI-provided server paths if set; fall back to Termux dev paths
-    REF_FILES = (_CLI_REF_FILES if _CLI_REF_FILES else [
-        '/mnt/user-data/uploads/المرجع1425.mp3',
-        '/mnt/user-data/uploads/سوره_الفتح_174232307.mp3',
-        '/mnt/user-data/uploads/ياسر_الدوسري_ما_تسير_من_سورة_فاطر_1425__اول_مرة_تن_173856242_99.mp3',
-    ])
+    # S22: CLI-provided paths win; otherwise _resolve_ref_files() finds the
+    # bundled recordings (S255 — this used to be the same hard-coded developer
+    # list, which does not exist on a phone).
+    REF_FILES = (_CLI_REF_FILES if _CLI_REF_FILES else _RESOLVED_REFS)
+    if not REF_FILES:
+        raise RuntimeError(
+            'no reference recordings found — looked in $TILAWA_REF_DIR, '
+            '/reference_audio, ~/.tilawa_ref and alongside the engine')
     # نستخدم الملف الأول للتحقق من تغيير cache
     primary = REF_FILES[0]
 

@@ -408,16 +408,26 @@ def _wpe(wav, rt60, st):
         else:                         taps, iters = 8, 3
         delay = 3
 
-        Y = _wpe_stft(y, size=512, shift=128)
-        Z = wpe_v8(Y[..., np.newaxis], taps=taps, delay=delay, iterations=iters)
-        z = _wpe_istft(Z[..., 0], size=512, shift=128)
+        # S255: nara_wpe's wpe_v8 wants (bins, channels, frames). _wpe_stft on a
+        # mono signal returns (frames, bins), so `Y[..., np.newaxis]` handed it
+        # (frames, bins, 1) — read as `frames` bins, each with `bins` channels
+        # and ONE time frame. For a 3s clip that is 1128 bins x 257 channels,
+        # so every iteration inverted a (taps*257)=2570 square matrix 1128
+        # times. It never returned: a 0.25s clip did not finish in 120s, and
+        # this stage runs on any recording with RT60 >= 1.0s — which is exactly
+        # the reverberant mosque recordings the engine exists for. With one
+        # time frame it could not have dereverberated anything even if it had.
+        Y = _wpe_stft(y, size=512, shift=128)              # (frames, bins)
+        Yw = np.ascontiguousarray(Y.T[:, np.newaxis, :])   # (bins, 1, frames)
+        Z = wpe_v8(Yw, taps=taps, delay=delay, iterations=iters)
+        z = _wpe_istft(Z[:, 0, :].T, size=512, shift=128)
         z = z[:len(y)] if len(z) > len(y) else np.pad(z, (0, len(y) - len(z)))
 
         ld = abs(_lra_overlapping(y) - _lra_overlapping(z))   # [I5]
         if ld > _LRA_MAX_DELTA:
             _L(st, f'  [S3-WPE] LRA Δ={ld:.2f}LU — retry iters-1')
-            Z2 = wpe_v8(Y[..., np.newaxis], taps=taps, delay=delay, iterations=max(1, iters - 1))
-            z2 = _wpe_istft(Z2[..., 0], size=512, shift=128)
+            Z2 = wpe_v8(Yw, taps=taps, delay=delay, iterations=max(1, iters - 1))
+            z2 = _wpe_istft(Z2[:, 0, :].T, size=512, shift=128)
             z2 = z2[:len(y)] if len(z2) > len(y) else np.pad(z2, (0, len(y) - len(z2)))
             ld2 = abs(_lra_overlapping(y) - _lra_overlapping(z2))
             if ld2 > _LRA_MAX_DELTA:

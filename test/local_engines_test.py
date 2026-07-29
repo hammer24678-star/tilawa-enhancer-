@@ -24,6 +24,7 @@ This test asserts the invariants that make that state unreachable:
 
 Run: python3 test/local_engines_test.py     (stdlib only, no build needed)
 """
+import ast
 import os
 import re
 import sys
@@ -56,6 +57,38 @@ def engine_scripts(kt):
     if not m:
         return {}
     return dict(re.findall(r'"([^"]+)"\s+to\s+"([^"]+)"', m.group(1)))
+
+
+def _uses_literal(src, values):
+    """True if the module contains a string literal EXACTLY equal to one of
+    `values`, outside of any docstring.
+
+    Exact, not substring, and literals rather than file text — because both
+    weaker forms pass on things that are not code paths. A comment saying
+    "/reference_audio" is documentation; so is a docstring; and so is an error
+    message that happens to name the directories it searched
+    ("looked in $TILAWA_REF_DIR, /reference_audio, ..."). A path is used by
+    being written out as itself, so that is what this looks for.
+    """
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return any(v in src for v in values)         # fall back rather than crash
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            body = getattr(node, 'body', None)
+            if (body and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)):
+                docstrings.add(id(body[0].value))
+    wanted = set(values)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and id(node) not in docstrings and node.value in wanted):
+            return True
+    return False
 
 
 def support_scripts(kt):
@@ -98,7 +131,19 @@ def main():
           len(id_maps) == 1, f'{len(id_maps)} found')
 
     # 4: the ids that can run offline must accept runEngine's actual CLI.
-    #    Safaa takes positional `input output`; everything else -i/-o/--ref.
+    #    Safaa takes positional `input output`; everything else takes flags.
+    #
+    #    S255: this used to hard-code the pair it checked for, -i and -o, while
+    #    runEngine has always also passed `--iterations 3`. ihyaa_ve.py's parser
+    #    does not define --iterations, so argparse exited rc=2 before the engine
+    #    did any work and v11.3 could not run in local mode at all — and this
+    #    test passed the whole time. So read the flag list out of the Kotlin
+    #    instead of restating it: whatever runEngine sends, every engine it
+    #    sends it to has to accept.
+    m = re.search(r'arrayOf\("-i",.*?\)', kt, re.S)
+    flags = sorted(set(re.findall(r'"(--?[a-zA-Z][\w-]*)"', m.group(0)))) if m else []
+    check("runEngine's engine flags were parsed out of the Kotlin",
+          bool(flags), ' '.join(flags))
     for eid, script in sorted(scripts.items()):
         path = os.path.join(ASSETS, script)
         if not os.path.exists(path):
@@ -107,11 +152,34 @@ def main():
         if script.startswith('engine_safaa'):
             ok = bool(re.search(r"add_argument\(\s*['\"]input", src))
             check(f'{eid} ({script}) takes positional input/output', ok)
-        else:
-            has_i = bool(re.search(r"add_argument\(\s*['\"]-i['\"]", src))
-            has_o = bool(re.search(r"add_argument\(\s*['\"]-o['\"]", src))
-            check(f'{eid} ({script}) accepts -i/-o', has_i and has_o,
-                  f'-i={has_i} -o={has_o}')
+            continue
+        unaccepted = [f for f in flags
+                      if not re.search(r"add_argument\([^)]*['\"]%s['\"]" % re.escape(f), src)]
+        check(f'{eid} ({script}) accepts every flag runEngine passes',
+              not unaccepted,
+              'rejects ' + ' '.join(unaccepted) if unaccepted else ' '.join(flags))
+
+    # 4b: an engine that needs the bundled reference recordings must look where
+    #     the app actually puts them. LocalEngineRunner binds them at
+    #     /reference_audio inside proot; engine_v70 had only the developer's
+    #     /mnt/user-data/uploads/ paths hard-coded and died on every phone with
+    #     "Failed to load", and engine_v85's resolver simply never checked the
+    #     bind mount, so it ran with no reference fingerprint at all.
+    for eid, script in sorted(scripts.items()):
+        path = os.path.join(ASSETS, script)
+        if not os.path.exists(path):
+            continue
+        src = open(path, encoding='utf-8', errors='replace').read()
+        if '/mnt/user-data' not in src:
+            continue
+        # Look at real string literals, not the file text: a comment or a
+        # docstring saying "/reference_audio" is not a code path, and a plain
+        # substring search happily passes on one.
+        knows = _uses_literal(src, ('/reference_audio', 'TILAWA_REF_DIR'))
+        check(f'{eid} ({script}) resolves reference audio where the app binds it',
+              knows,
+              'resolves the bind mount' if knows
+              else 'has /mnt/user-data paths but no /reference_audio fallback')
 
     # 5: no two engine ids may share a script (would silently mis-attribute
     #    output to the engine the user thought they picked)

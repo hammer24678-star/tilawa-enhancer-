@@ -13,3 +13,6 @@ assets/dsp/__pycache__/
 pubspec.lock
 test/.screenshots/
 .kotlin_check/
+
+# S255: byte-compiled cache from running the engines locally under test
+assets/engines/__pycache__/

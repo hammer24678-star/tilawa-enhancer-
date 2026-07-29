@@ -423,6 +423,10 @@ except ImportError:
 # pip install nara_wpe
 try:
     from nara_wpe.wpe import wpe_v8         # type: ignore
+    # S255: wpe_v8 operates on an STFT, so the transform utilities are part of
+    # the dependency — see _wpe_derev_1d() for why importing only wpe_v8 was
+    # what allowed a time-domain array to be passed to it.
+    from nara_wpe.utils import stft as _wpe_stft, istft as _wpe_istft  # type: ignore
     _NARA_WPE_OK = True
 except ImportError:
     _NARA_WPE_OK = False
@@ -4110,10 +4114,23 @@ def _nara_wpe_derev(wav_path, state, ref, log_fn=None):
             active = lvls[lvls > np.max(lvls) - 30]
             return float(np.percentile(active, 95) - np.percentile(active, 10)) if len(active) >= 2 else 0.0
 
+        # S255: wpe_v8 takes an STFT shaped (bins, channels, frames). This used
+        # to hand it `audio.reshape(1, -1).T` — a raw (N, 1) time-domain array,
+        # read as N frequency bins with 1 channel and 1 frame. wpe_v8 then
+        # tried to build an (N*taps) square correlation matrix: for one second
+        # at 48kHz that is a request for 1.68 TiB, which raised MemoryError
+        # into the enclosing `try`, so this whole dereverberation stage has
+        # been a silent no-op. Transform first, then let it work per bin.
+        def _wpe_derev_1d(x, iters):
+            Y = _wpe_stft(np.asarray(x, dtype=np.float64), size=512, shift=128)
+            Z = wpe_v8(np.ascontiguousarray(Y.T[:, np.newaxis, :]),
+                       taps=10, delay=3, iterations=iters)   # type: ignore
+            z = np.real(_wpe_istft(Z[:, 0, :].T, size=512, shift=128))
+            return (z[:len(x)] if len(z) >= len(x)
+                    else np.pad(z, (0, len(x) - len(z)))).astype(np.float32)
+
         lra_b  = _lra_est(audio)
-        obs    = audio.reshape(1, -1).astype(np.float64)
-        enh    = wpe_v8(obs.T, taps=10, delay=3, iterations=3).T  # type: ignore
-        audio_wpe = enh[0].astype(np.float32)
+        audio_wpe = _wpe_derev_1d(audio, 3)
 
         # Normalize to input peak
         peak_b  = float(np.max(np.abs(audio)) + 1e-10)
@@ -4126,8 +4143,8 @@ def _nara_wpe_derev(wav_path, state, ref, log_fn=None):
         _log(f'  [WPE] LRA {lra_b:.2f}→{lra_a:.2f} Δ={lra_delta:.3f}LU (limit=0.5)')
         if lra_delta > 0.5:
             # Retry at iterations=1
-            enh2 = wpe_v8(obs.T, taps=10, delay=3, iterations=1).T  # type: ignore
-            a2   = enh2[0].astype(np.float32) * (peak_b / (float(np.max(np.abs(enh2[0]))) + 1e-10))
+            enh2 = _wpe_derev_1d(audio, 1)
+            a2   = enh2 * (peak_b / (float(np.max(np.abs(enh2))) + 1e-10))
             ld2  = lra_b - _lra_est(a2)
             _log(f'  [WPE] retry iterations=1: Δ={ld2:.3f}LU')
             if ld2 > 0.5:

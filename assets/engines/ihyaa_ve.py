@@ -1446,6 +1446,14 @@ if __name__ == '__main__':
                    help='Frame SNR estimate dB')
     p.add_argument('--target-lra', type=float, default=3.37,
                    help='Target LRA in LU')
+    # S255: LocalEngineRunner.runEngine() invokes every non-Safaa engine as
+    #   python3 <script> -i IN -o OUT --iterations 3
+    # argparse rejected the unknown flag and exited rc=2 before doing any work,
+    # so v11.3 could never run in local mode at all. This engine's restoration
+    # depth is set by --tier, not by an iteration count, so the value is
+    # accepted for CLI compatibility and deliberately unused.
+    p.add_argument('--iterations', type=int, default=3,
+                   help=argparse.SUPPRESS)
     args = p.parse_args()
 
     if not NUMPY_OK:

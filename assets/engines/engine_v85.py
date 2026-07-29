@@ -102,7 +102,18 @@ def _resolve_ref_files() -> List[str]:
     if env_dir and os.path.isdir(env_dir):
         found = sorted([str(p) for p in Path(env_dir).glob('*.mp3')])
         if found: return found
-    # 2. Termux home ref directory (user populates this once)
+    # 2. S255: /reference_audio — where LocalEngineRunner actually binds the
+    #    bundled reference recordings inside proot ("-b <refAudioDir>:
+    #    /reference_audio"). Every other entry in this list is a server or
+    #    developer location, so on a phone the resolver fell straight through
+    #    to the legacy /mnt/user-data paths, found nothing, and the engine ran
+    #    with no reference fingerprint at all.
+    proot_ref = Path('/reference_audio')
+    if proot_ref.is_dir():
+        found = sorted([str(p) for p in proot_ref.glob('*.mp3')
+                        if p.stat().st_size > 10_000])
+        if found: return found
+    # 3. Termux home ref directory (user populates this once)
     home_ref = Path.home() / '.tilawa_ref'
     if home_ref.is_dir():
         found = sorted([str(p) for p in home_ref.glob('*.mp3')])

@@ -5444,10 +5444,17 @@ def main() -> int:
             f'\n  Score: {r["score"]:.1f}/100  ceiling={r["ceiling"]:.0f}/100'
             f'  LUFS={r["lufs"]:.2f}  Crest={r["crest"]:.2f}  LRA={r["lra"]:.2f}'
         )
-        print(f'  EQ_bands={r["itiqan_eq_bands"]}  '
-              f'phrases={r["itiqan_phrases_sculpted"]}/{r["itiqan_phrases_detected"]}  '
-              f'warmth={r["itiqan_warmth_applied"]}  '
-              f'F0={r["itiqan_f0_median"]:.0f}Hz')
+        # S255: these are only populated on the paths that actually run the
+        # Itiqan phrase sculptor. On the DAMAGED path they are absent, so this
+        # line raised KeyError('itiqan_phrases_sculpted') AFTER the restored
+        # file had already been written — the run was reported as a failure
+        # purely because its summary could not be printed. Read them softly.
+        _f0 = r.get('itiqan_f0_median')
+        _f0s = f'{_f0:.0f}Hz' if isinstance(_f0, (int, float)) else 'n/a'
+        print(f'  EQ_bands={r.get("itiqan_eq_bands", "n/a")}  '
+              f'phrases={r.get("itiqan_phrases_sculpted", 0)}/{r.get("itiqan_phrases_detected", 0)}  '
+              f'warmth={r.get("itiqan_warmth_applied", "n/a")}  '
+              f'F0={_f0s}')
         return 0 if r['score'] >= 90.0 else 1
     except Exception as e:
         import traceback
