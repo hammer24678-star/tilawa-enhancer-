@@ -1180,7 +1180,16 @@ class _HomeScreenState extends State<HomeScreen>
                       colors: [
                         Color(0xFF0D2E1F),
                         Color(0xFF020D0C)]))),
-                title: Row(
+                // S255: the brand lockup is a fixed-width logo plus two runs of
+                // 19px text, and nothing bounded it. FlexibleSpaceBar hands its
+                // title a constrained box, so on a 360px screen it overflowed by
+                // 38px — 106px once the system text size is turned up — and the
+                // striped overflow bar was the first thing on screen. scaleDown
+                // keeps the whole name and shrinks it to fit instead of
+                // clipping or ellipsising the app's own title.
+                title: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
@@ -1214,7 +1223,7 @@ class _HomeScreenState extends State<HomeScreen>
                         fontSize: 19,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5)),
-                  ])),
+                  ]))),
             ),
             SliverToBoxAdapter(child: _header(s)),
             if (!_localMode) // S147: hide server banner in local mode

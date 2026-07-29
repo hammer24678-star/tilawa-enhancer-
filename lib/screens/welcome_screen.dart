@@ -209,7 +209,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             border: Border.all(color: const Color(0xFF1DB898).withValues(alpha: 0.30))),
           child: Column(children: [
             _modeRow(
-              badge: '🏠 LOCAL',
+              badgeIcon: Icons.phone_android_rounded,
+              badge: 'LOCAL',
               badgeColor: const Color(0xFF1DB898),
               badgeBg: const Color(0xFF1DB898).withValues(alpha: 0.15),
               badgeBorder: const Color(0xFF1DB898).withValues(alpha: 0.5),
@@ -223,7 +224,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             const Divider(color: Colors.white10, height: 1),
             const SizedBox(height: 14),
             _modeRow(
-              badge: '☁ SERVER',
+              badgeIcon: Icons.cloud_outlined,
+              badge: 'SERVER',
               badgeColor: const Color(0xFF8AACBA),
               badgeBg: Colors.white.withValues(alpha: 0.06),
               badgeBorder: Colors.white24,
@@ -253,6 +255,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   /// One row of the mode card. Mirrors for Arabic so the badge sits on the
   /// leading edge in both languages instead of always on the left.
   Widget _modeRow({
+    required IconData badgeIcon,
     required String badge,
     required Color badgeColor,
     required Color badgeBg,
@@ -273,10 +276,23 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           color: badgeBg,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: badgeBorder)),
-        child: Text(badge,
+        // S255: these labels used to carry a literal house and cloud emoji
+        // inside the Text. Android resolves both through Noto Color Emoji, so
+        // they did render — as full-colour emoji, at a size the font picks,
+        // ignoring badgeColor entirely. Against a flat 10px gold-or-teal badge
+        // that is the one element on the card not obeying the palette. Material
+        // Icons ship in the APK, scale with the text and take the badge's own
+        // colour, so the badge reads as one object.
+        child: Row(mainAxisSize: MainAxisSize.min,
           textDirection: TextDirection.ltr,
-          style: TextStyle(color: badgeColor,
-            fontSize: 10, fontWeight: FontWeight.bold))),
+          children: [
+            Icon(badgeIcon, size: 11, color: badgeColor),
+            const SizedBox(width: 4),
+            Text(badge,
+              textDirection: TextDirection.ltr,
+              style: TextStyle(color: badgeColor,
+                fontSize: 10, fontWeight: FontWeight.bold)),
+          ])),
       const SizedBox(width: 12),
       Expanded(child: Column(
         crossAxisAlignment: ar
