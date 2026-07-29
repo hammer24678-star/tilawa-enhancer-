@@ -152,6 +152,49 @@ def main():
             continue
         fail("shadowBlur assignment bypasses sb(): %s" % expr)
 
+    # ---- 5b. the WebGL2 renderer -----------------------------------------
+    # GLSL is invisible to every other tool here, and a shader that fails to
+    # compile only shows up as a black screen on someone's phone.
+    shader_srcs = re.findall(r"GLSL\.(\w+)\s*=\s*`([^`]*)`", src)
+    if len(shader_srcs) < 5:
+        fail("expected the GLSL sources to be present; found %d" % len(shader_srcs))
+    for name, body in shader_srcs:
+        if not body.startswith("#version 300 es"):
+            fail("shader %s must open with '#version 300 es' on the first line" % name)
+        if "texture2D(" in body:
+            fail("shader %s uses the GLSL ES 1.00 texture2D(); use texture()" % name)
+
+    # The 2D path is the safety net for a driver that rejects a shader, a
+    # device with no WebGL2, or a lost context. It must stay reachable.
+    if not re.search(r"if\(GL_ON && glDrawFrame\(dt\)\)", src):
+        fail("draw() must fall through to the Canvas2D path when GL is off or fails")
+    for needle, why in (
+        ("webglcontextlost", "context-loss handling"),
+        ("NOVA_FORCE_2D", "the forced-2D switch the fallback is tested with"),
+        ("fxCanvas.getContext('2d')", "the text overlay above the GL layer"),
+    ):
+        if needle not in src:
+            fail("missing %s (%s)" % (needle, why))
+
+    # No allocation inside the per-frame GL functions (2.8).
+    for fn_name in ("glDrawFrame", "glCollect", "glDrawRange", "glPush"):
+        m = re.search(r"function %s\([^)]*\)\{" % fn_name, src)
+        if not m:
+            fail("GL function %s not found" % fn_name)
+            continue
+        depth, i = 0, m.end() - 1
+        while i < len(src):
+            if src[i] == "{":
+                depth += 1
+            elif src[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = src[m.start():i]
+        for bad in re.finditer(r"new (?:Float32Array|Array|Map)\(", body):
+            fail("%s allocates per frame: %s" % (fn_name, bad.group(0)))
+
     # ---- 6. no music, per the hard constraint in the spec ----------------
     # A loop point or a sustained source is the thing to catch; every voice in
     # the file has to stop at an explicit time.
