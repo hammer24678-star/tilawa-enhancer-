@@ -87,4 +87,29 @@ check "ffmpegWorks() -> boolean"          'boolean ffmpegWorks\(\)'
 check "numpyImports() -> boolean"         'boolean numpyImports\(\)'
 [ "$fail" = "0" ] || exit 1
 echo "  channel contract matches the Dart call sites"
+
+# 5. S254: setup must never reach the network. Python, numpy, scipy, the audio
+#    packages, the Alpine rootfs and the DeepFilter binary all ship inside the
+#    APK. Every download fallback that used to sit here was unreachable in
+#    practice — the Alpine CDN and a GitHub Release are no use to an offline
+#    app, pip is not in the bundle to begin with, and the DeepFilter URL was a
+#    permanent 404 — but each one turned a packaging fault into a "check your
+#    internet connection" the user could do nothing about. They are gone; this
+#    keeps them gone.
+KT="$WORK/LocalEngineRunner.kt"
+netfail=0
+forbid() {
+    if grep -nE "$1" "$KT" | grep -vE '^\s*[0-9]+:\s*//' > "$WORK/hits.txt"; then
+        echo "  FAIL setup reaches the network: $2"
+        sed 's/^/         /' "$WORK/hits.txt" | head -5
+        netfail=1
+    else
+        echo "  OK   no $2"
+    fi
+}
+forbid 'https?://[^"]*(dl-cdn\.alpinelinux|releases/download)' "rootfs/binary download URL"
+forbid '\b(pip|pip3) install'                                  "on-device pip install"
+forbid '\bapk (add|update)\b'                                  "on-device apk install"
+[ "$netfail" = "0" ] || exit 1
+echo "  setup is fully offline (every asset comes from the APK)"
 echo "kotlin_compile_check: PASS"

@@ -428,8 +428,6 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 import java.io.*
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.TimeUnit
 
 /** S65 — proot-based offline audio engine runner. */
@@ -731,29 +729,28 @@ class LocalEngineRunner(
                 .edit().putBoolean("setup_complete", false).apply()
         }
 
-        // 2. Alpine rootfs — download like Termux proot-distro
+        // 2. Alpine rootfs — bundled in the APK (S254: no longer downloaded).
         if (!File(alpineDir, "usr/bin/busybox").exists()) {
             progress(12, "Extracting Alpine Linux (bundled)…")
             alpineDir.mkdirs()
             val tmp = File(dataDir, "alpine.tar.gz")
             var alpineOk = false
-            try {
-                context.assets.open("flutter_assets/assets/alpine/alpine-rootfs.tar.gz")
-                    .use { it.copyTo(java.io.FileOutputStream(tmp)) }
-                alpineOk = true
-            } catch (_: Exception) {
-                // S206: fall back to the old (wrong) un-prefixed path just in case —
-                // the prefixed attempt above is the one that actually matches
-                // Flutter's AssetManager namespace and will now succeed.
+            // S206: the flutter_assets/ prefix is what matches Flutter's
+            // AssetManager namespace; the bare path is a second chance only.
+            for (p in listOf("flutter_assets/assets/alpine/alpine-rootfs.tar.gz",
+                             "alpine/alpine-rootfs.tar.gz")) {
                 try {
-                    context.assets.open("alpine/alpine-rootfs.tar.gz")
-                        .use { it.copyTo(java.io.FileOutputStream(tmp)) }
+                    context.assets.open(p).use { it.copyTo(java.io.FileOutputStream(tmp)) }
                     alpineOk = true
+                    break
                 } catch (_: Exception) {}
             }
             if (!alpineOk) {
-                progress(12, "Downloading Alpine Linux (~4MB)…")
-                download("https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/${archStr}/alpine-minirootfs-3.21.3-${archStr}.tar.gz", tmp, "Alpine rootfs", 12, 32)  // S195-BUG5
+                tmp.delete()
+                throw IOException(
+                    "alpine-rootfs.tar.gz is missing from the app package. This build " +
+                    "is incomplete — reinstall the app. The rootfs ships inside the " +
+                    "APK and is never downloaded.")
             }
             extractTarGz(tmp, alpineDir)
             tmp.delete()
@@ -795,46 +792,34 @@ class LocalEngineRunner(
             File(alpineDir, "usr/bin/python3").exists() && numpyImports()
         if (!numpyOk) { basicVerifiedMarker.delete() }
         if (!File(alpineDir, "usr/bin/python3").exists() || !numpyOk) {  // S115: re-extract if numpy missing
-            val tmp2 = File(dataDir, "python-env.tar.gz")
-            var pyOk = false
-            // Try bundled asset first
-            try {
-                progress(38, "Extracting Python + ffmpeg (bundled)…")
-                context.assets.open("flutter_assets/assets/alpine/python-env.tar.gz")
-                    .use { it.copyTo(FileOutputStream(tmp2)) }
-                pyOk = true
-            } catch (_: Exception) {
-                // S206: same missing-prefix bug as alpine-rootfs above — see this
-                // script's header for why this one mattered most (it gates both
-                // isBasicSetupComplete() and isSetupComplete()).
-                try {
-                    context.assets.open("alpine/python-env.tar.gz")
-                        .use { it.copyTo(FileOutputStream(tmp2)) }
-                    pyOk = true
-                } catch (_: Exception) {}
-            }
-            // Fallback: download from GitHub Release
-            if (!pyOk) {
-                progress(38, "Downloading Python + ffmpeg (~135 MB, one-time)…")
-                val pyUrl = "https://github.com/hammer24678-star/tilawa-enhancer-/releases/download/latest/python-env.tar.gz"
-                download(pyUrl, tmp2, "Python env", 38, 75)
-                pyOk = tmp2.exists() && tmp2.length() > 1_000_000
-            }
-            if (!pyOk) throw IOException("python-env.tar.gz unavailable — check internet connection")
-            progress(75, "Extracting Python + ffmpeg…")
-            extractTarGz(tmp2, alpineDir)
-            tmp2.delete()
+            progress(38, "Extracting Python + ffmpeg (bundled)…")
+            extractBundledPythonEnv(38, 75)
         }
         // S223: numpyWorks() now ALWAYS runs a real proot import probe —
         // trusting bare directory existence for the "system" path let a
         // rootfs with a present-but-unimportable numpy/scipy (e.g. a
         // shared-library symlink dropped by extractTarGz — see S223 fix
-        // below) report setup as permanently "complete". Install order is
-        // apk (Alpine's own prebuilt musl binaries — free, no compiler
-        // needed) → pip → pip retry-after-wipe, and a final failure now
-        // surfaces the real apk/pip/import output instead of a generic
-        // "check internet connection" message.
-        val numpyTarget = File(alpineDir, "tilawa_numpy")
+        // below) report setup as permanently "complete".
+        //
+        // S254: numpy and scipy are NOT installed on-device any more. They are
+        // built into python-env.tar.gz by build_assets.sh (`apk add py3-numpy
+        // py3-scipy`, then verified by importing them out of the produced
+        // archive), so by the time this runs they are already extracted. The
+        // old ladder — apk add → pip install → wipe and pip again — could
+        // never have worked on a device:
+        //
+        //   * `apk add` needs Alpine's CDN, and this app's whole point is that
+        //     it runs offline;
+        //   * `pip install` needs the network too, AND pip itself is not in
+        //     the bundle (the committed archive has no site-packages/pip at
+        //     all), AND scipy publishes no musl/aarch64 wheel, so it would
+        //     have to compile a Fortran/BLAS stack under proot on a phone.
+        //
+        // Three network round-trips and up to 50 minutes of timeouts to arrive
+        // at a failure that was certain from the start. If the probe fails now
+        // it means the extraction was incomplete, so the fix is to extract the
+        // bundled archive again — no network, bounded, and it addresses the
+        // only cause that is actually possible.
         val numpyVerifiedMarker = File(alpineDir, ".numpy_verified")
         val scipyVerifiedMarker = File(alpineDir, ".scipy_verified")  // S226
         var lastNumpyProbe = ""
@@ -865,40 +850,21 @@ class LocalEngineRunner(
             return ok
         }
         if (!numpyWorks() || !scipyWorks()) {
-            progress(79, "Installing numpy + scipy (apk, one-time)…")
-            val apkResult = runProot(listOf("/bin/sh", "-c",
-                "apk update --no-progress 2>&1 | tail -3 && " +
-                "apk add --no-progress --no-cache py3-numpy py3-scipy 2>&1 | tail -8"),
-                timeoutMin = 10)
-            if (!numpyWorks() || !scipyWorks()) {
-                progress(79, "apk unavailable — installing via pip (one-time ~2 min)…")
-                numpyTarget.mkdirs()
-                val pip1 = runProot(listOf("/bin/sh", "-c",
-                    "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                    "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
-                    timeoutMin = 20)
-                if (!numpyWorks() || !scipyWorks()) {
-                    // BUG-C fix: wipe broken/partial install and retry once
-                    progress(79, "Retrying numpy + scipy install (cleaning previous attempt)…")
-                    numpyTarget.deleteRecursively()
-                    numpyTarget.mkdirs()
-                    val pip2 = runProot(listOf("/bin/sh", "-c",
-                        "pip3 install --quiet --no-cache-dir --target /tilawa_numpy numpy scipy 2>&1 || " +
-                        "pip install --quiet --no-cache-dir --break-system-packages --target /tilawa_numpy numpy scipy 2>&1"),  // S213
-                        timeoutMin = 20)
-                    numpyWorks(); scipyWorks()  // S226: refresh both markers after final attempt
-                    if (!numpyVerifiedMarker.exists()) {
-                        // S226 (was S223): only numpy failing to import is fatal now —
-                        // every local engine (S225) runs fine on numpy alone. A scipy
-                        // shortfall just disables naqaa's full 8-phase DSP path, which
-                        // already falls back to numpy-only analysis on its own.
-                        throw IOException(
-                            "numpy install failed.\n" +
-                            "apk: " + apkResult.second.takeLast(400) + "\n" +
-                            "pip: " + pip1.second.takeLast(200) + " / " + pip2.second.takeLast(400) + "\n" +
-                            "import probe: " + lastNumpyProbe.takeLast(300))
-                    }
-                }
+            // The bundled env is the only source, so an unimportable numpy can
+            // only mean a truncated or interrupted extraction. Redo it once.
+            progress(79, "Repairing the bundled Python environment…")
+            extractBundledPythonEnv(79, 88)
+            numpyWorks(); scipyWorks()   // S226: refresh both markers independently
+            if (!numpyVerifiedMarker.exists()) {
+                // S226 (was S223): only numpy failing to import is fatal —
+                // every local engine (S225) runs fine on numpy alone. A scipy
+                // shortfall just disables naqaa's full 8-phase DSP path, which
+                // already falls back to numpy-only analysis on its own.
+                throw IOException(
+                    "The bundled Python environment is not usable after re-extracting it.\n" +
+                    "This is a packaging fault, not a connectivity one — numpy ships " +
+                    "inside the app and is never downloaded.\n" +
+                    "import probe: " + lastNumpyProbe.takeLast(400))
             }
         }
         // S104: discover actual Python site-packages path at runtime
@@ -913,27 +879,37 @@ class LocalEngineRunner(
         progress(78, "Python + ffmpeg ready")
 
         // 4. DeepFilter — bundled in APK assets/alpine/
+        // S254: the two download fallbacks that used to live here asked for
+        //   .../v0.5.6/deep-filter-0_5_6-aarch64-unknown-linux-musl
+        // That asset does not exist and never has — v0.5.6 publishes a
+        // dot-versioned *-gnu binary and no musl one at all, which
+        // build_assets.sh already documents at its own DeepFilter step. So the
+        // fallback answered a missing binary with a guaranteed 404 and then
+        // blamed the user's connection. The committed aarch64 binary is in the
+        // APK (build_assets.sh gates on its ELF e_machine), so extraction is
+        // the whole story: if it is not there, the build is broken.
         val dfBin = File(alpineDir, "usr/local/bin/deep-filter")
         if (!dfBin.exists()) {
             dfBin.parentFile?.mkdirs()
-            try {
-                progress(80, "Extracting DeepFilter…")
-                context.assets.open("flutter_assets/assets/alpine/deep-filter")
-                    .use { it.copyTo(FileOutputStream(dfBin)) }
-                dfBin.setExecutable(true)
-            } catch (_: Exception) {
+            progress(80, "Extracting DeepFilter…")
+            var dfOk = false
+            for (p in listOf("flutter_assets/assets/alpine/deep-filter",
+                             "alpine/deep-filter")) {
                 try {
-                    progress(80, "Downloading DeepFilter…")
-                    val dfVer = "0_5_6"
-                    val url = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-${dfVer}-aarch64-unknown-linux-musl"
-                    download(url, dfBin, "DeepFilter", 80, 88)
-                    dfBin.setExecutable(true)
-                } catch (_: Exception) {
-                    throw IOException("DeepFilter install failed — check internet and retry setup")
-                }
+                    context.assets.open(p).use { it.copyTo(FileOutputStream(dfBin)) }
+                    dfOk = true
+                    break
+                } catch (_: Exception) {}
             }
+            if (!dfOk) {
+                dfBin.delete()
+                throw IOException(
+                    "deep-filter is missing from the app package. This build is " +
+                    "incomplete — reinstall the app.")
+            }
+            dfBin.setExecutable(true)
         }
-        // S-DF3ARCH: verify/repair — if bundled asset was x86_64, replace with aarch64
+        // S-DF3ARCH: the bundled binary must be aarch64 (e_machine 0xB7).
         val dfHdrBuf = ByteArray(20)
         val dfIsAarch64 = try {
             FileInputStream(dfBin).use { it.read(dfHdrBuf) }
@@ -941,14 +917,9 @@ class LocalEngineRunner(
         } catch (_: Exception) { false }
         if (!dfIsAarch64) {
             dfBin.delete()
-            progress(80, "DF3: wrong arch detected — downloading aarch64…")
-            try {
-                val dfUrl = "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/deep-filter-0_5_6-aarch64-unknown-linux-musl"
-                download(dfUrl, dfBin, "DeepFilter aarch64", 80, 88)
-                dfBin.setExecutable(true)
-            } catch (e: Exception) {
-                throw IOException("DF3 aarch64 download failed: ${e.message}")
-            }
+            throw IOException(
+                "The bundled deep-filter binary is not aarch64. This is a packaging " +
+                "fault in the APK, not a device or network problem.")
         }
         progress(88, "DeepFilter ready (aarch64 ✓)")
 
@@ -1211,30 +1182,56 @@ class LocalEngineRunner(
         return Pair(code, output)
     }
 
-    private fun download(url: String, dest: File, label: String, p0: Int, p1: Int) {
-        dest.parentFile?.mkdirs()
-        var conn: HttpURLConnection? = null
+    // S254: download() lived here and is gone. Setup no longer fetches
+    // anything — the Alpine rootfs, Python, ffmpeg, numpy, scipy, the audio
+    // packages and the DeepFilter binary all ship inside the APK. Every
+    // caller it had was a fallback that could not succeed on a device: the
+    // Alpine CDN and a GitHub Release are unreachable for an offline app, pip
+    // is not even in the bundle, and the DeepFilter URL was a permanent 404.
+    // Deleting it keeps that decision from quietly eroding — a missing asset
+    // is now a packaging bug that says so, not a "check your connection".
+
+    /**
+     * S254: extract python-env.tar.gz — Python, ffmpeg, numpy, scipy and the
+     * audio package set — out of the APK's own assets.
+     *
+     * This is the ONLY source. Nothing here reaches the network: the archive
+     * is built and verified by build_assets.sh (which imports numpy and scipy
+     * out of the produced tarball and fails the build if either is unusable)
+     * and then shipped inside the app, which is the whole point of an offline
+     * enhancer. The old code fell back to a GitHub Release download when the
+     * asset was missing, which only ever masked a broken build behind a
+     * "check your internet connection" message on the device.
+     */
+    private fun extractBundledPythonEnv(p0: Int, p1: Int) {
+        val tmp = File(dataDir, "python-env.tar.gz")
+        // S206: the flutter_assets/ prefix is the one that matches Flutter's
+        // AssetManager namespace; the bare path is kept as a second chance for
+        // any host that registers assets without it.
+        val paths = listOf(
+            "flutter_assets/assets/alpine/python-env.tar.gz",
+            "alpine/python-env.tar.gz")
+        var opened = false
+        for (p in paths) {
+            try {
+                context.assets.open(p).use { it.copyTo(FileOutputStream(tmp)) }
+                opened = true
+                break
+            } catch (_: Exception) {}
+        }
+        if (!opened || !tmp.exists() || tmp.length() < 1_000_000) {
+            tmp.delete()
+            throw IOException(
+                "python-env.tar.gz is missing from the app package. " +
+                "This build is incomplete — reinstall the app; it is not a " +
+                "network problem, the environment ships inside the APK.")
+        }
+        progress(p1.coerceAtMost(p0 + 1), "Extracting Python + ffmpeg…")
         try {
-            conn = URL(url).openConnection() as HttpURLConnection
-            conn.connectTimeout = 30_000; conn.readTimeout = 300_000
-            conn.instanceFollowRedirects = true; conn.connect()
-            if (conn.responseCode !in 200..299)
-                throw IOException("HTTP ${conn.responseCode} for $url")
-            val total = conn.contentLengthLong; var done = 0L
-            conn.inputStream.use { inp ->
-                FileOutputStream(dest).use { out ->
-                    val buf = ByteArray(65_536); var n: Int
-                    while (inp.read(buf).also { n = it } != -1) {
-                        out.write(buf, 0, n); done += n
-                        if (total > 0) {
-                            val pct = p0 + ((done.toDouble() / total) * (p1 - p0)).toInt()
-                            ui { channel?.invokeMethod("setupProgress",
-                                mapOf("pct" to pct, "phase" to "Downloading $label…")) }
-                        }
-                    }
-                }
-            }
-        } finally { conn?.disconnect() }
+            extractTarGz(tmp, alpineDir)
+        } finally {
+            tmp.delete()   // ~62 MB: never leave it behind on a device
+        }
     }
 
     private fun extractTarGz(tarGz: File, destDir: File) {

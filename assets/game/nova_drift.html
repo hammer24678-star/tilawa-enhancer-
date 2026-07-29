@@ -1118,7 +1118,7 @@
     active:false, def:null, faction:'drifter_swarm',
     x:0, y:0, vx:0, vy:0, r:10, hp:1, maxHp:1, hue:200,
     rot:0, vr:0, verts:null, scale:1, squash:0, flash:0,
-    t:0, fireTimer:0, phase:0, seed:0, state:0, stateTimer:0,
+    t:0, fireTimer:0, phase:0, seed:0, rnd:0, offT:0, state:0, stateTimer:0,
     shieldHp:0, maxShieldHp:0, cloak:0, alpha:1, telegraph:0,
     ax:0, ay:0, anchorX:0, anchorY:0, linkTo:null, ownerId:0, spawnT:0,
     trailX:null, trailY:null, trailN:0,
@@ -1209,6 +1209,15 @@
     return x > -p && x < W + p && y > -p && y < H + p;
   }
   function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+  const TAU = Math.PI*2;
+  /** 2.9: Math.hypot is ~20x slower than the equivalent sqrt under V8 — it is
+      variadic and does overflow-safe scaling, so it never inlines, and this is
+      called several thousand times per frame across the collision and steering
+      loops. Arena coordinates never leave a few thousand pixels, decades away
+      from the overflow the scaling exists to protect, so the naive form is
+      exact here. (Microbenchmarked at 20-23x under V8; the win on-device is
+      whatever share of the frame these loops actually hold.) */
+  function hyp(x, y){ return Math.sqrt(x*x + y*y); }
   function angDiff(a, b){
     let d = a - b;
     while(d > Math.PI) d -= Math.PI*2;
@@ -1315,7 +1324,7 @@
       const cur = Math.atan2(e.vy, e.vx);
       const turn = 0.045*dt;
       const na = cur + clamp(angDiff(a, cur), -turn, turn);
-      const sp = Math.hypot(e.vx, e.vy) || e.def.speed;
+      const sp = hyp(e.vx, e.vy) || e.def.speed;
       e.vx = Math.cos(na)*sp; e.vy = Math.sin(na)*sp;
       e.x += e.vx*dt; e.y += e.vy*dt;
       e.rot = na;
@@ -1324,7 +1333,7 @@
     chase_slow(e, dt){
       const a = Math.atan2(player.y-e.y, player.x-e.x);
       e.vx += Math.cos(a)*0.012*dt; e.vy += Math.sin(a)*0.012*dt;
-      const sp = Math.hypot(e.vx, e.vy), mx = e.def.speed;
+      const sp = hyp(e.vx, e.vy), mx = e.def.speed;
       if(sp > mx){ e.vx = e.vx/sp*mx; e.vy = e.vy/sp*mx; }
       e.x += e.vx*dt; e.y += e.vy*dt;
       e.rot += e.vr*0.3*dt;
@@ -1378,7 +1387,7 @@
       const a = Math.atan2(player.y-e.y, player.x-e.x);
       e.vx += Math.cos(a)*0.022*dt; e.vy += Math.sin(a)*0.022*dt;
       e.vx += rand(-0.12,0.12)*dt; e.vy += rand(-0.12,0.12)*dt;
-      const sp = Math.hypot(e.vx,e.vy), mx = e.def.speed*1.7;
+      const sp = hyp(e.vx,e.vy), mx = e.def.speed*1.7;
       if(sp > mx){ e.vx = e.vx/sp*mx; e.vy = e.vy/sp*mx; }
       e.x += e.vx*dt; e.y += e.vy*dt;
       wrapEnemy(e);
@@ -1386,18 +1395,26 @@
     orbit_cluster(e, dt){
       e.t += 0.03*dt;
       e.anchorX += e.vx*dt; e.anchorY += e.vy*dt;
+      // Wrap the anchor BEFORE deriving the position from it. Deriving first
+      // left the drawn position a frame behind its own anchor, so a cluster
+      // whose anchor crossed the wrap boundary had its position pinned to the
+      // far side of the arena — and once there, each step wrapped the anchor
+      // back the other way, giving a two-frame limit cycle that kept the unit
+      // permanently off-screen while the wave waited for it to die.
+      if(e.anchorX < -80) e.anchorX = W+80; else if(e.anchorX > W+80) e.anchorX = -80;
+      if(e.anchorY < -80) e.anchorY = H+80; else if(e.anchorY > H+80) e.anchorY = -80;
       const rad = 26 + e.phase*3;
       e.x = e.anchorX + Math.cos(e.t + e.phase*2.1)*rad;
       e.y = e.anchorY + Math.sin(e.t + e.phase*2.1)*rad;
-      if(e.anchorX < -80) e.anchorX = W+80; if(e.anchorX > W+80) e.anchorX = -80;
-      if(e.anchorY < -80) e.anchorY = H+80; if(e.anchorY > H+80) e.anchorY = -80;
     },
     orbit_player(e, dt){
       e.t += 0.016*dt;
-      const want = 190 + Math.sin(e.t*0.6 + e.seed)*40;
+      const want = 190 + Math.sin(e.t*0.6 + e.rnd*TAU)*40;
       const dx = e.x-player.x, dy = e.y-player.y;
-      let d = Math.hypot(dx,dy) || 1;
-      const a = Math.atan2(dy,dx) + (0.011*dt)*(e.seed > 0.5 ? 1 : -1);
+      let d = hyp(dx,dy) || 1;
+      // e.seed is always >= 1, so the old `e.seed > 0.5` test was a constant:
+      // every orbiter circled the same way and the ring never read as a ring.
+      const a = Math.atan2(dy,dx) + (0.011*dt)*(e.rnd > 0.5 ? 1 : -1);
       d += (want - d)*0.035*dt;
       e.x = player.x + Math.cos(a)*d;
       e.y = player.y + Math.sin(a)*d;
@@ -1441,26 +1458,47 @@
       }
     },
     hover_advance(e, dt){
-      const line = 120 + (e.seed*0.5)*H*0.35;
-      if(e.y < line){ e.y += e.def.speed*dt; }
+      // Descends to a hover line, then holds it and bobs. The line is a
+      // fraction of the arena height, so it must be derived from e.rnd (0..1)
+      // and NOT from e.seed — seed is a monotonically increasing spawn counter,
+      // and multiplying it by H put the line tens of thousands of pixels below
+      // the arena. Every Iron Legion unit then descended forever, left the
+      // bottom of the screen, and hung the wave: the run only advances when the
+      // last enemy dies, and one that cannot be reached cannot be killed.
+      const line = clamp(120 + e.rnd*H*0.35, e.r+70, H - e.r - 90);
+      // Approach the line from either side. Descending was the only case
+      // handled, so a unit that spawned from the bottom edge — already below
+      // its line — never rose to it, and simply bobbed in place off the bottom
+      // of the screen for the rest of the run.
+      if(e.y < line - 4){ e.y += e.def.speed*dt; }
+      else if(e.y > line + 4){ e.y -= e.def.speed*dt; }
       else { e.y += Math.sin(e.t*0.04)*0.3*dt; }
       e.t += dt;
-      e.x += Math.sin(e.t*0.02 + e.seed*6)*e.def.speed*0.5*dt;
+      e.x += Math.sin(e.t*0.02 + e.rnd*TAU)*e.def.speed*0.5*dt;
       e.x = clamp(e.x, e.r, W-e.r);
       e.rot = Math.PI/2;
     },
     strafe(e, dt){
       e.t += dt;
       e.y += e.def.speed*0.35*dt;
-      e.x += Math.cos(e.t*0.05 + e.seed*6)*e.def.speed*1.4*dt;
+      // Phase off e.rnd: consecutive seeds are 6 rad apart, which is 0.28 rad
+      // apart once wrapped, so a group spawned together strafed in lockstep.
+      e.x += Math.cos(e.t*0.05 + e.rnd*TAU)*e.def.speed*1.4*dt;
       if(e.y > H + 60){ e.y = -60; e.x = rand(40, W-40); }
       e.x = clamp(e.x, e.r, W-e.r);
     },
     wander(e, dt){
       e.t += dt;
-      e.vx += Math.cos(e.t*0.03 + e.seed*7)*0.02*dt;
-      e.vy += Math.sin(e.t*0.026 + e.seed*4)*0.02*dt;
-      const sp = Math.hypot(e.vx,e.vy), mx = e.def.speed;
+      e.vx += Math.cos(e.t*0.03 + e.rnd*TAU)*0.02*dt;
+      e.vy += Math.sin(e.t*0.026 + e.rnd*TAU*1.7)*0.02*dt;
+      // A pure bounded random walk has no reason to ever visit the arena, and
+      // these spawn 40px outside it — Spores and Entropy Seeds could drift
+      // along the outside of the screen indefinitely. A faint pull toward the
+      // centre keeps the walk aimless-looking while keeping it in play.
+      const cx = W*0.5 - e.x, cy = H*0.5 - e.y;
+      const cd = Math.sqrt(cx*cx + cy*cy) || 1;
+      e.vx += (cx/cd)*0.004*dt; e.vy += (cy/cd)*0.004*dt;
+      const sp = hyp(e.vx,e.vy), mx = e.def.speed;
       if(sp > mx){ e.vx = e.vx/sp*mx; e.vy = e.vy/sp*mx; }
       e.x += e.vx*dt; e.y += e.vy*dt;
       wrapEnemy(e);
@@ -1499,7 +1537,7 @@
           const o = near[i];
           if(o === e || !o.active || o.faction !== e.faction) continue;
           if(o.def.movement === 'escort') continue;
-          const d = Math.hypot(o.x-e.x, o.y-e.y);
+          const d = hyp(o.x-e.x, o.y-e.y);
           if(d < bd){ bd = d; best = o; }
         }
         if(best) e.linkTo = best;
@@ -1517,7 +1555,18 @@
       }
     },
     vine_grow(e, dt){
-      // Extends from its anchor over time, walling off a lane.
+      // Extends from its anchor over time, walling off a lane. The anchor is
+      // seeded from the spawn point, which spawnEdgePos() puts 40px OUTSIDE
+      // the arena — so a vine that rolled the left, right or bottom edge grew
+      // entirely off-screen and could never be shot. It has speed 0, so
+      // nothing else was ever going to bring it back. Latch the anchor inside
+      // the playfield once, leaving room for the length it is about to add.
+      if(e.state === 0){
+        e.anchorX = clamp(e.anchorX, e.r + 10, W - e.r - 10);
+        e.anchorY = clamp(e.anchorY, e.r + 54, H - e.r - 10 - Math.min(210, H*0.3));
+        e.x = e.anchorX; e.y = e.anchorY;
+        e.state = 1;
+      }
       e.growth = Math.min(1, e.growth + 0.0035*dt);
       e.r = e.def.radius * (0.4 + e.growth*0.6);
       e.t += dt;
@@ -1525,7 +1574,7 @@
       e.y = e.anchorY + e.growth*Math.min(210, H*0.3);
     },
     cloak_stalk(e, dt){
-      const d = Math.hypot(player.x-e.x, player.y-e.y);
+      const d = hyp(player.x-e.x, player.y-e.y);
       if(d > e.def.radius*8 && e.state === 0){
         e.alpha = Math.max(0.06, e.alpha - 0.05*dt);
         MOVEMENTS.wander(e, dt);
@@ -1539,7 +1588,7 @@
         if(e.telegraph > 18){
           const a = Math.atan2(player.y-e.y, player.x-e.x);
           e.vx += Math.cos(a)*0.18*dt; e.vy += Math.sin(a)*0.18*dt;
-          const sp = Math.hypot(e.vx,e.vy), mx = e.def.speed*3;
+          const sp = hyp(e.vx,e.vy), mx = e.def.speed*3;
           if(sp > mx){ e.vx = e.vx/sp*mx; e.vy = e.vy/sp*mx; }
         }
         e.x += e.vx*dt; e.y += e.vy*dt;
@@ -1585,6 +1634,52 @@
     if(e.x < -70) e.x = W+70; else if(e.x > W+70) e.x = -70;
     if(e.y < -70) e.y = H+70; else if(e.y > H+70) e.y = -70;
   }
+
+  /** Reachability guarantee.
+   *
+   *  A wave only ends when the last enemy dies, so a single unit the player
+   *  cannot reach does not merely look wrong — it hangs the run permanently,
+   *  with the stranded unit still free to shoot. Three separate movement
+   *  entries have shipped that bug (hover_advance's line, vine_grow's anchor,
+   *  wander's undirected walk), which is the signal that policing bounds
+   *  inside twenty-three movement functions is the wrong place to do it.
+   *
+   *  So it is enforced once, here, for every unit regardless of movement:
+   *  each enemy gets a grace period to make its entrance, and after that it is
+   *  drawn back into the arena. Anchored movers recompute position from their
+   *  anchor every step, so the anchor travels with it or the pull is undone on
+   *  the next update. */
+  const REACH_GRACE = 96;          // ~1.6s at 60Hz: long enough for a dive or a wrap
+  const REACH_SNAP2 = 520*520;     // beyond this it is stranded, not arriving
+  function enforceReachable(e, dt){
+    const mx = e.r + 10, myTop = e.r + 46, myBot = e.r + 10;
+    if(e.x > mx && e.x < W-mx && e.y > myTop && e.y < H-myBot){ e.offT = 0; return; }
+    e.offT += dt;
+    if(e.offT < REACH_GRACE) return;
+    const tx = clamp(e.x, mx, W-mx), ty = clamp(e.y, myTop, H-myBot);
+    const dx = tx - e.x, dy = ty - e.y;
+    if(dx*dx + dy*dy > REACH_SNAP2){
+      // Far enough out that no legitimate pattern put it there. Returning it
+      // gradually would take longer than the player will wait, so it re-enters
+      // now, with the same arrival flourish a blink uses so it reads as an
+      // entrance rather than a glitch.
+      e.x = tx; e.y = ty; e.anchorX = tx; e.anchorY = ty;
+      e.offT = 0; e.squash = 0.6;
+      spawnParticles(e.x, e.y, factionOf(e.faction).ink, 8, 2.6, 20);
+      return;
+    }
+    // Turn it around before tugging on it. A proportional pull on its own is
+    // not enough: a unit under constant outward velocity settles where thrust
+    // balances pull — a stable equilibrium a few dozen pixels outside the
+    // arena, which is the same bug wearing a different hat. Reversing the
+    // outward component makes re-entry monotonic for velocity-driven movers
+    // and is a no-op for the ones that set position from an anchor.
+    if(e.vx*dx < 0) e.vx = -e.vx;
+    if(e.vy*dy < 0) e.vy = -e.vy;
+    const k = 0.03*dt;
+    e.x += dx*k; e.y += dy*k;
+    e.anchorX += dx*k; e.anchorY += dy*k;
+  }
   /** 3.5 motion trail: a short ring buffer of recent positions, capped, drawn
       as a tapering ribbon. Allocated once with the entity, never per frame. */
   function pushTrail(e){
@@ -1606,6 +1701,11 @@
   }
 
   function fireEnemyBullet(e, ang, speed, opts){
+    // Fairness (1.3: everything telegraphs): a unit entirely outside the arena
+    // can be neither seen nor shot, so it does not get to shoot either. One
+    // choke point covers every attack in the library, and it is what turned a
+    // stranded enemy from an annoyance into an unavoidable death.
+    if(e.x < 0 || e.x > W || e.y < 0 || e.y > H) return null;
     const b = enemyBullets.acquireOrRecycle();
     if(!b) return null;
     const o = opts || EMPTY;
@@ -1714,7 +1814,7 @@
       sfxAttack(e.faction);
     },
     proximity_detonate(e, dt){
-      const d = Math.hypot(player.x-e.x, player.y-e.y);
+      const d = hyp(player.x-e.x, player.y-e.y);
       const trigger = e.def.radius*5.5;
       if(e.state === 0){
         e.telegraph = clamp(1 - (d - trigger)/120, 0, 0.6);
@@ -1771,7 +1871,7 @@
       for(let i=0;i<near.length;i++){
         const o = near[i];
         if(o === e || o.hp >= o.maxHp) continue;
-        if(Math.hypot(o.x-e.x, o.y-e.y) > 150) continue;
+        if(hyp(o.x-e.x, o.y-e.y) > 150) continue;
         o.hp = Math.min(o.maxHp, o.hp + 1);
         spawnParticles(o.x, o.y, 'rgba(120,255,170,0.7)', 3, 1.2, 16);
       }
@@ -1791,14 +1891,14 @@
         const o = near[i];
         if(o === e || o.maxShieldHp > 0) continue;
         if(o.faction !== e.faction) continue;
-        if(Math.hypot(o.x-e.x, o.y-e.y) > 170) continue;
+        if(hyp(o.x-e.x, o.y-e.y) > 170) continue;
         o.shieldHp = Math.max(o.shieldHp, 1);
         o.maxShieldHp = Math.max(o.maxShieldHp, 1);
         o.linkTo = e;
       }
     },
     tether(e, dt){
-      const d = Math.hypot(player.x-e.x, player.y-e.y);
+      const d = hyp(player.x-e.x, player.y-e.y);
       if(d < 220){
         e.tag = 3;
         // Brief movement-slow rather than damage, so it teaches spacing.
@@ -1825,7 +1925,7 @@
       e.t = 0;
       for(let i=0;i<bullets.n;i++){
         const b = bullets.items[i];
-        if(Math.hypot(b.x-e.x, b.y-e.y) < e.r + 22){
+        if(hyp(b.x-e.x, b.y-e.y) < e.r + 22){
           spawnParticles(b.x, b.y, 'rgba(255,217,138,0.9)', 4, 2, 14);
           bullets.releaseAt(i);
           sfxAttack(e.faction);
@@ -1847,7 +1947,7 @@
       }
     },
     flash_burst(e, dt){
-      const d = Math.hypot(player.x-e.x, player.y-e.y);
+      const d = hyp(player.x-e.x, player.y-e.y);
       if(e.state === 0 && d < 210){ e.state = 1; e.stateTimer = 40; }
       if(e.state === 1){
         e.stateTimer -= dt;
@@ -1961,7 +2061,7 @@
       addLight(e.x, e.y, factionOf(e.faction).ink, 1.1, 200, 0.07);
       addShake(9);
       // Damaging blast, telegraphed by the wind-up in self_destruct_low.
-      if(invuln <= 0 && Math.hypot(player.x-e.x, player.y-e.y) < 110) damagePlayer(1);
+      if(invuln <= 0 && hyp(player.x-e.x, player.y-e.y) < 110) damagePlayer(1);
     },
     recursion(e){
       ONDEATH.burst(e);
@@ -2258,7 +2358,7 @@
     for(let i=0;i<near.length;i++){
       const o = near[i];
       if(o === e || o.isBoss || o.r > 18) continue;
-      if(Math.hypot(o.x-e.x, o.y-e.y) > e.r + 26) continue;
+      if(hyp(o.x-e.x, o.y-e.y) > e.r + 26) continue;
       // Swallow it: heal and grow, and let the player see the trade.
       e.hp = Math.min(e.maxHp + 4, e.hp + 2);
       e.maxHp = Math.max(e.maxHp, e.hp);
@@ -2885,13 +2985,13 @@
       for(let i=0;i<enemies.n;i++){
         const e = enemies.items[i];
         if(e.r > 18 || e.isBoss) continue;
-        const dx = player.x-e.x, dy = player.y-e.y, d = Math.hypot(dx,dy);
+        const dx = player.x-e.x, dy = player.y-e.y, d = hyp(dx,dy);
         if(d > 240 || d < 1) continue;
         e.x += (dx/d)*0.28*dt; e.y += (dy/d)*0.28*dt;
       }
       for(let i=0;i<powerups.n;i++){
         const p = powerups.items[i];
-        const dx = player.x-p.x, dy = player.y-p.y, d = Math.hypot(dx,dy);
+        const dx = player.x-p.x, dy = player.y-p.y, d = hyp(dx,dy);
         if(d > 300 || d < 1) continue;
         p.x += (dx/d)*0.9*dt; p.y += (dy/d)*0.9*dt;
       }
@@ -3034,6 +3134,10 @@
     {id:'focus',    name:'TARGETING FOCUS',    nameAr:'تركيز التصويب',     icon:'⊕', desc:'+6% critical chance per stack.', descAr:'+٦٪ فرصة ضربة حاسمة لكل طبقة.'},
     {id:'thruster', name:'COLD THRUSTERS',     nameAr:'دوافع باردة',       icon:'❄', desc:'-15% dash cooldown per stack.', descAr:'−١٥٪ تبريد الاندفاع لكل طبقة.'}
   ];
+  // Indexed once: updateBuffs() runs inside update() and used to do a linear
+  // RELICS.find() per held relic, per step.
+  const RELIC_BY_ID = {};
+  for(let i=0;i<RELICS.length;i++) RELIC_BY_ID[RELICS[i].id] = RELICS[i];
   let runRelics = {};
 
   // --------------------------------------------------------------------------
@@ -3269,7 +3373,14 @@
     e.hue = def.hue < 0 ? (performance.now()*0.05)%360 : def.hue;
     e.rot = rand(0, Math.PI*2); e.vr = rand(-0.04, 0.04);
     e.t = 0; e.fireTimer = rand(50, 140); e.phase = 0;
-    e.seed = enemySeq++; e.state = 0; e.stateTimer = rand(20, 60);
+    // `seed` is an identity, not a number to do arithmetic with: it is what
+    // spawned children match against their parent via `ownerId`, so it has to
+    // stay a unique integer. `rnd` is the per-unit unit random the movement
+    // library wants for hover lines, orbit direction and oscillation phase.
+    // Conflating the two is what stranded whole waves off-screen — see the
+    // note on hover_advance.
+    e.seed = enemySeq++; e.rnd = Math.random(); e.offT = 0;
+    e.state = 0; e.stateTimer = rand(20, 60);
     e.shieldHp = e.maxShieldHp = def.shield || 0;
     e.cloak = def.cloak ? 1 : 0;
     e.alpha = def.cloak ? 0.1 : 1;
@@ -3361,13 +3472,13 @@
       const id = t.identifier;
       if(id === moveTouchId){
         const dx = t.clientX-moveOrigin.x, dy = t.clientY-moveOrigin.y;
-        const dist = Math.min(Math.hypot(dx,dy), max), ang = Math.atan2(dy,dx);
+        const dist = Math.min(hyp(dx,dy), max), ang = Math.atan2(dy,dx);
         touchVec.x = Math.cos(ang)*(dist/max); touchVec.y = Math.sin(ang)*(dist/max);
         joyKnob.style.left = (moveOrigin.x+Math.cos(ang)*dist)+'px';
         joyKnob.style.top  = (moveOrigin.y+Math.sin(ang)*dist)+'px';
       } else if(id === aimTouchId){
         const dx = t.clientX-aimOrigin.x, dy = t.clientY-aimOrigin.y;
-        const dist = Math.min(Math.hypot(dx,dy), max);
+        const dist = Math.min(hyp(dx,dy), max);
         if(dist > 6){
           const ang = Math.atan2(dy,dx);
           aimVecTouch.x = Math.cos(ang); aimVecTouch.y = Math.sin(ang);
@@ -3464,7 +3575,7 @@
     damageEnemiesInRadius(player.x, player.y, Math.max(W,H)*0.55, 6 + stats.damage*2, 'ultimate');
     for(let i=enemyBullets.n-1;i>=0;i--){
       const b = enemyBullets.items[i];
-      if(Math.hypot(b.x-player.x, b.y-player.y) < 280){
+      if(hyp(b.x-player.x, b.y-player.y) < 280){
         spawnParticles(b.x, b.y, 'rgba(234,242,255,0.8)', 2, 1.6, 14);
         enemyBullets.releaseAt(i);
       }
@@ -3480,7 +3591,7 @@
     for(let i=near.length-1;i>=0;i--){
       const e = near[i];
       if(!e.active) continue;
-      const d = Math.hypot(e.x-x, e.y-y);
+      const d = hyp(e.x-x, e.y-y);
       if(d > r + e.r) continue;
       hurtEnemy(e, dmg, source, x, y);
     }
@@ -3808,7 +3919,7 @@
     // ---- player ----------------------------------------------------------
     const input = dirFromInput();
     let dx = input.dx, dy = input.dy;
-    const mag = Math.hypot(dx, dy);
+    const mag = hyp(dx, dy);
     if(slowTimer > 0){ slowTimer -= dt; if(slowTimer <= 0) slowFactor = 1; }
     let speedMul = stats.speed * slowFactor;
     if(paradoxKey === 'speedMul') speedMul *= paradoxVal;
@@ -3823,7 +3934,7 @@
     // Drift Compensator: bleed speed specifically when the stick is pushed
     // against current travel, which is exactly where overshoot is felt.
     if(stats.driftComp && mag > 0.05){
-      const dot = (dx*player.vx + dy*player.vy)/(Math.max(mag,0.001)*Math.max(Math.hypot(player.vx,player.vy),0.001));
+      const dot = (dx*player.vx + dy*player.vy)/(Math.max(mag,0.001)*Math.max(hyp(player.vx,player.vy),0.001));
       if(dot < -0.2){
         const bleed = Math.pow(1 - stats.driftComp*0.5, dt);
         player.vx *= bleed; player.vy *= bleed;
@@ -3834,7 +3945,7 @@
       const cur = Math.atan2(player.vy, player.vx);
       const want = Math.atan2(dy, dx);
       if(Math.abs(angDiff(want, cur)) > 0.8){
-        const s2 = Math.hypot(player.vx, player.vy);
+        const s2 = hyp(player.vx, player.vy);
         if(s2 > 4){
           player.vx = Math.cos(want)*s2; player.vy = Math.sin(want)*s2;
           vectorUsed = true;
@@ -3843,7 +3954,7 @@
       }
     }
     const maxSpeed = 6.4 * speedMul * (nearMissBoost > 0 ? 1.35 : 1);
-    const sp = Math.hypot(player.vx, player.vy);
+    const sp = hyp(player.vx, player.vy);
     if(sp > maxSpeed){ player.vx = player.vx/sp*maxSpeed; player.vy = player.vy/sp*maxSpeed; }
     player.x += player.vx*dt; player.y += player.vy*dt;
     player.x = clamp(player.x, player.r, W-player.r);
@@ -3862,7 +3973,7 @@
       if(save.settings.aimAssist){
         const t = nearestTarget(player.x, player.y);
         if(t){
-          const dtar = Math.hypot(t.x-player.x, t.y-player.y);
+          const dtar = hyp(t.x-player.x, t.y-player.y);
           if(dtar < 320){
             const d = angDiff(Math.atan2(t.y-player.y, t.x-player.x), desiredAngle);
             if(Math.abs(d) < 0.6) desiredAngle += d*0.3;
@@ -3966,7 +4077,7 @@
         if(t){
           const cur = Math.atan2(b.vy, b.vx);
           const na = cur + clamp(angDiff(Math.atan2(t.y-b.y, t.x-b.x), cur), -0.16*dt, 0.16*dt);
-          const s = Math.hypot(b.vx, b.vy);
+          const s = hyp(b.vx, b.vy);
           b.vx = Math.cos(na)*s; b.vy = Math.sin(na)*s;
         }
       }
@@ -3979,8 +4090,12 @@
         const e = near[j];
         if(!e.active) continue;
         if(e.alpha < 0.3 && e.cloak) continue;      // cannot hit what is not there
+        // The innermost loop in the whole simulation — every live bullet
+        // against every enemy its grid cell holds. Compare squared distances:
+        // the root is never needed to answer "did it hit".
         const hitR = e.r*(e.def.frontShield ? 1 : 0.95);
-        if(Math.hypot(b.x-e.x, b.y-e.y) > hitR) continue;
+        const bdx = b.x-e.x, bdy = b.y-e.y;
+        if(bdx*bdx + bdy*bdy > hitR*hitR) continue;
         // A directional shield must be flanked: hits from the facing arc bounce.
         if(e.def.frontShield){
           const toB = Math.atan2(b.y-e.y, b.x-e.x);
@@ -4020,11 +4135,12 @@
       if(e.flash > 0) e.flash -= dt;
       if(e.squash > 0) e.squash = Math.max(0, e.squash - 0.06*dt);
       if(def.cloak && e.def.movement === 'stationary'){
-        const d = Math.hypot(player.x-e.x, player.y-e.y);
+        const d = hyp(player.x-e.x, player.y-e.y);
         e.alpha = d < def.radius*7 ? Math.min(1, e.alpha + 0.08*dt) : Math.max(0.08, e.alpha - 0.04*dt);
       }
       const mv = MOVEMENTS[def.movement];
       if(mv) mv(e, dt);
+      enforceReachable(e, dt);
       if(def.attack){
         const buffed = enemyBuffed(e) ? 1.6 : 1;
         const at = ATTACKS[def.attack];
@@ -4038,16 +4154,21 @@
 
       // A charging beam resolves against the player here rather than as a
       // projectile, so the telegraph and the hit share one source of truth.
-      if(e.state === 2 && e.telegraph >= 46 && e.telegraph < 80 && invuln <= 0){
-        const d = Math.hypot(player.x-e.x, player.y-e.y);
+      // Same rule as fireEnemyBullet: the beam resolves directly against the
+      // player rather than as a projectile, so it needs the check of its own.
+      if(e.state === 2 && e.telegraph >= 46 && e.telegraph < 80 && invuln <= 0 &&
+         onScreen(e.x, e.y, 0)){
+        const d = hyp(player.x-e.x, player.y-e.y);
         const ad = angDiff(Math.atan2(player.y-e.y, player.x-e.x), e.ax);
         if(Math.abs(d*Math.sin(ad)) < 16 && Math.cos(ad) > 0.3){ damagePlayer(1); }
       }
 
-      // contact
+      // contact. Squared throughout: this runs for every live enemy every
+      // step, and none of the three tests below needs the actual distance.
       const contactR = e.r*0.85 + player.r*0.6;
-      const pd = Math.hypot(player.x-e.x, player.y-e.y);
-      if(pd < contactR){
+      const pdx = player.x-e.x, pdy = player.y-e.y;
+      const pd2 = pdx*pdx + pdy*pdy;
+      if(pd2 < contactR*contactR){
         if(invuln <= 0 && !stats.phaseThrough){
           let dmgAmt = def.contactDmg * e.dmgMul;
           if(def.edgeBonus && Math.abs(Math.cos(e.rot - Math.atan2(player.y-e.y, player.x-e.x))) > 0.7) dmgAmt *= 2;
@@ -4060,12 +4181,12 @@
         player.vx += Math.cos(a)*1.6*kb; player.vy += Math.sin(a)*1.6*kb;
         if(meleeDashTimer > 0){ hurtEnemy(e, stats.damage*6, 'shot', e.x, e.y); meleeDashTimer = 0; }
         if(!def.isMiniBoss && e.r < 14 && invuln > 0) hurtEnemy(e, 1, 'shot', e.x, e.y);
-      } else if(pd < contactR + 26 && runStats){
+      } else if(pd2 < (contactR+26)*(contactR+26) && runStats){
         // "Graze": a near-miss the player can feel, and Slipstream can spend.
         if(!e.grazed){ e.grazed = 1; runStats.grazes++; if(stats.nearmiss) nearMissBoost = 40; }
       }
-      if(pd > contactR + 60) e.grazed = 0;
-      if(dashTrailTimer > 0 && pd < 60) hurtEnemy(e, stats.damage*0.6, 'shot', e.x, e.y);
+      if(pd2 > (contactR+60)*(contactR+60)) e.grazed = 0;
+      if(dashTrailTimer > 0 && pd2 < 3600) hurtEnemy(e, stats.damage*0.6, 'shot', e.x, e.y);
     }
 
     // ---- enemy bullets ---------------------------------------------------
@@ -4075,12 +4196,12 @@
         const cur = Math.atan2(b.vy, b.vx);
         const tx = decoy ? decoy.x : player.x, ty = decoy ? decoy.y : player.y;
         const na = cur + clamp(angDiff(Math.atan2(ty-b.y, tx-b.x), cur), -b.homing*dt, b.homing*dt);
-        const s = Math.hypot(b.vx, b.vy);
+        const s = hyp(b.vx, b.vy);
         b.vx = Math.cos(na)*s; b.vy = Math.sin(na)*s;
       }
       b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt;
       if(b.life <= 0 || !onScreen(b.x, b.y, 40)){ enemyBullets.releaseAt(i); continue; }
-      const d = Math.hypot(player.x-b.x, player.y-b.y);
+      const d = hyp(player.x-b.x, player.y-b.y);
       if(d < b.r + player.r*0.55){
         if(invuln <= 0){
           enemyBullets.releaseAt(i);
@@ -4099,7 +4220,7 @@
       h.life -= dt;
       if(h.life <= 0){ hazards.releaseAt(i); continue; }
       h.tick -= dt;
-      if(h.tick <= 0 && invuln <= 0 && Math.hypot(player.x-h.x, player.y-h.y) < h.r + player.r*0.5){
+      if(h.tick <= 0 && invuln <= 0 && hyp(player.x-h.x, player.y-h.y) < h.r + player.r*0.5){
         h.tick = 40;
         if(damagePlayer(h.dmg)) return;
       }
@@ -4116,7 +4237,7 @@
         powerups.releaseAt(i);
         continue;
       }
-      const d = Math.hypot(player.x-p.x, player.y-p.y);
+      const d = hyp(player.x-p.x, player.y-p.y);
       if(d < p.r + player.r + magnetR + 40){
         // Magnet pulls rather than teleports, so the pickup still reads.
         const a = Math.atan2(player.y-p.y, player.x-p.x);
@@ -4179,7 +4300,7 @@
   function enemyBuffed(e){
     for(let i=0;i<buffSourceCount;i++){
       const o = buffSources[i];
-      if(o !== e && o.faction === e.faction && Math.hypot(o.x-e.x, o.y-e.y) < 200) return true;
+      if(o !== e && o.faction === e.faction && hyp(o.x-e.x, o.y-e.y) < 200) return true;
     }
     return false;
   }
@@ -4227,7 +4348,7 @@
     for(let i=0;i<near.length;i++){
       const e = near[i];
       if(!e.active || (e.cloak && e.alpha < 0.3)) continue;
-      const d = Math.hypot(e.x-x, e.y-y);
+      const d = hyp(e.x-x, e.y-y);
       if(d < bd){ bd = d; best = e; }
     }
     return best;
@@ -5055,7 +5176,7 @@ void main(){
     }
     if(running && player){
       const c = cssRGB(currentShip.color);
-      const stretch = 1 + Math.min(0.35, Math.hypot(player.vx, player.vy)*0.03);
+      const stretch = 1 + Math.min(0.35, hyp(player.vx, player.vy)*0.03);
       const rr = player.r + 5;
       const flick = (invuln > 0 && Math.floor(invuln/6)%2 === 0) ? 0.45 : 1.0;
       glPush(player.x+sx, player.y+sy, rr*stretch, rr/stretch, player.a,
@@ -5130,7 +5251,7 @@ void main(){
     }
     // Engine flare, scaled by actual thrust.
     if(running && player){
-      const thrust = Math.min(1, Math.hypot(player.vx, player.vy)/5);
+      const thrust = Math.min(1, hyp(player.vx, player.vy)/5);
       if(thrust > 0.08){
         const ex = player.x - Math.cos(player.a)*(player.r+6) + sx;
         const ey = player.y - Math.sin(player.a)*(player.r+6) + sy;
@@ -5452,7 +5573,7 @@ void main(){
     ctx.translate(player.x, player.y);
     ctx.rotate(player.a);
     // Squash & stretch: bank into the turn, stretch into the dash.
-    const stretch = 1 + Math.min(0.35, Math.hypot(player.vx, player.vy)*0.03);
+    const stretch = 1 + Math.min(0.35, hyp(player.vx, player.vy)*0.03);
     ctx.scale(stretch, 1/Math.sqrt(stretch));
     ctx.transform(1, player.bank*0.35, 0, 1, 0, 0);
 
@@ -5475,7 +5596,7 @@ void main(){
 
     emitBloom(player.x, player.y, player.r*1.6, shipDef.color, true);
     // Engine flare sits behind the hull and pulses with actual thrust.
-    const thrust = Math.min(1, Math.hypot(player.vx, player.vy)/5);
+    const thrust = Math.min(1, hyp(player.vx, player.vy)/5);
     if(thrust > 0.1){
       emitBloom(player.x - Math.cos(player.a)*(player.r+6),
                 player.y - Math.sin(player.a)*(player.r+6),
@@ -5936,7 +6057,7 @@ void main(){
   // HUD (4.1: glanceable — score, wave, combo, hull, shards, ultimate)
   // --------------------------------------------------------------------------
   let lastScoreShown = -1, lastWaveShown = -1, lastComboShown = -1;
-  let lastLivesShown = -1, lastMaxLivesShown = -1;
+  let lastLivesShown = -1, lastMaxLivesShown = -1, lastShardsShown = -1;
   function bump(el){
     el.classList.remove('bump');
     void el.offsetWidth;           // restart the animation
@@ -5951,7 +6072,10 @@ void main(){
       if(combo > lastComboShown && combo > 1) bump(comboVal);
       lastComboShown = combo;
     }
-    shardHudEl.textContent = runShards + ' ' + T('shardsShort');
+    if(runShards !== lastShardsShown){
+      shardHudEl.textContent = runShards + ' ' + T('shardsShort');
+      lastShardsShown = runShards;
+    }
     // 2.4: only touch the DOM when the value actually changed — this runs
     // every frame, and rebuilding the pips was pure layout churn.
     if(lives === lastLivesShown && maxLives === lastMaxLivesShown) return;
@@ -5970,25 +6094,37 @@ void main(){
       livesEl.appendChild(more);
     }
   }
+  // 2.4, continued. These three run inside update(), which the fixed-timestep
+  // loop can execute up to five times in a single frame — so an unconditional
+  // write here is up to five style invalidations per frame for a value that
+  // changed at most once. Each now compares first and writes only on a change.
+  let lastUltPct = -1, lastUltReady = null;
   function updateUltUI(){
-    ultFillEl.style.width = Math.round(ultCharge*100) + '%';
-    ultBarEl.classList.toggle('ready', ultReady);
-    ultBtn.classList.toggle('ready', ultReady);
-    ultBtn.classList.toggle('cooldown', !ultReady);
+    const pct = Math.round(ultCharge*100);
+    if(pct !== lastUltPct){ ultFillEl.style.width = pct + '%'; lastUltPct = pct; }
+    if(ultReady !== lastUltReady){
+      lastUltReady = ultReady;
+      ultBarEl.classList.toggle('ready', ultReady);
+      ultBtn.classList.toggle('ready', ultReady);
+      ultBtn.classList.toggle('cooldown', !ultReady);
+    }
   }
+  let lastBuffsShown = null;
   function updateBuffs(){
-    const arr = [];
-    if(rapidTimer > 0)  arr.push('R' + Math.ceil(rapidTimer/60));
-    if(shieldTimer > 0) arr.push('S' + Math.ceil(shieldTimer/60));
-    if(spreadTimer > 0) arr.push('M' + Math.ceil(spreadTimer/60));
-    if(homingTimer > 0) arr.push('H' + Math.ceil(homingTimer/60));
-    if(droneTimer > 0)  arr.push('D' + Math.ceil(droneTimer/60));
+    // Built as a string rather than an array + join: this is a per-step
+    // allocation otherwise, and the result is usually identical to last step's.
+    let s = '';
+    if(rapidTimer > 0)  s += 'R' + Math.ceil(rapidTimer/60) + ' ';
+    if(shieldTimer > 0) s += 'S' + Math.ceil(shieldTimer/60) + ' ';
+    if(spreadTimer > 0) s += 'M' + Math.ceil(spreadTimer/60) + ' ';
+    if(homingTimer > 0) s += 'H' + Math.ceil(homingTimer/60) + ' ';
+    if(droneTimer > 0)  s += 'D' + Math.ceil(droneTimer/60) + ' ';
     for(const k in runRelics){
       if(!runRelics[k]) continue;
-      const def = RELICS.find(r => r.id === k);
-      if(def) arr.push(def.icon + (runRelics[k] > 1 ? runRelics[k] : ''));
+      const def = RELIC_BY_ID[k];      // was a linear RELICS.find() per relic
+      if(def) s += def.icon + (runRelics[k] > 1 ? runRelics[k] : '') + ' ';
     }
-    buffsEl.textContent = arr.join(' ');
+    if(s !== lastBuffsShown){ buffsEl.textContent = s.trim(); lastBuffsShown = s; }
   }
   function updateDashBtnUI(){
     if(!running) return;
@@ -6526,6 +6662,10 @@ void main(){
     if(menuState === 'achievements') renderAchievementsUI();
     if(menuState === 'settings') renderSettingsUI();
     hintEl.textContent = primaryHintText();
+    // The HUD caches compare values, not rendered text, so a language flip
+    // leaves a correct number sitting next to a stale unit. Drop the caches
+    // first and let updateHUD() repaint from scratch.
+    lastShardsShown = -1; lastDashLabel = null; lastBuffsShown = null;
     updateHUD();
   }
 

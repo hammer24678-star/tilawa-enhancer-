@@ -48,6 +48,14 @@ jobs:
       - name: Nova Drift content + constraint check
         run: python3 test/nova_drift_check.py
 
+      # S254: a wave only ends when the last enemy dies, so an enemy that
+      # strands outside the arena hangs the run permanently — the wave-12/16
+      # freeze. Three movement entries shipped that bug simultaneously, which
+      # is why this simulates the real MOVEMENTS library (evaluated out of the
+      # HTML, so it cannot drift from what ships) rather than reading it.
+      - name: Nova Drift enemy reachability simulation
+        run: node test/nova_drift_reachability.js
+
       # S252: build_assets.sh hands Alpine a ~215-line script as one quoted
       # string. Nothing parsed it until Docker ran it, forty minutes in and
       # after QEMU, the image pull and the whole apk install. Same reasoning as
