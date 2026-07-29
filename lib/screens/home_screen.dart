@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:convert' show jsonDecode; // S65
 import '../services/local_engine_service.dart'; // S65
-import 'setup_screen.dart'; // S65
 import 'local_mode_info_screen.dart'; // S146
 
 import 'dart:async';
@@ -111,6 +110,20 @@ class _HomeScreenState extends State<HomeScreen>
   bool   _localMode  = false;  // S65: run via proot (offline)
   bool   _engineTintEnabled = true;  // S188-B: engine-color background tint intensity toggle
   bool   _localReady = false;  // S65: setup confirmed complete
+  // S256: the offline engine prepares itself on first launch. Python, numpy,
+  // scipy, the fourteen audio packages, ffmpeg and DeepFilter are all inside
+  // the APK already (S254) — but proot cannot execute them from inside an
+  // archive, so the bundle still has to be unpacked onto the filesystem once.
+  // That is a mechanical consequence of how proot works, not a decision the
+  // user should have to make, and it used to be gated behind a "Tap to set up
+  // (one-time ~200MB)" link and a dedicated screen. It now runs by itself in
+  // the background from the moment the app opens; these three fields are only
+  // so the UI can say what is happening.
+  bool   _prepping   = false;
+  int    _prepPct    = 0;
+  String _prepPhase  = '';
+  String? _prepError;
+  StreamSubscription<Map<String, dynamic>>? _prepSub;
   // S250 — engine ids with a runnable on-device script. Empty = not yet known
   // (setup not run / channel unavailable), which must NOT restrict the UI.
   List<String> _localEngines = const [];
@@ -243,7 +256,12 @@ class _HomeScreenState extends State<HomeScreen>
     _serverTimer = Timer.periodic(
         const Duration(seconds: 6), (_) => _checkServer());
     LocalEngineService.isSetupComplete() // S65
-        .then((r) { if (mounted) setState(() => _localReady = r); });
+        .then((r) {
+          if (!mounted) return;
+          setState(() => _localReady = r);
+          // S256: if it is not ready, get it ready. Nobody has to ask.
+          if (!r) _autoPrepareOfflineEngine();
+        });
     _refreshLocalEngines();  // S250: which engines can run offline at all
     // S65: pre-warm both servers on app init
     ApiService.preWarm();
@@ -273,6 +291,7 @@ class _HomeScreenState extends State<HomeScreen>
     _pollTimer?.cancel();
     _wakeTimer?.cancel();
     _exitArmTimer?.cancel();  // S250
+    _prepSub?.cancel();       // S256: the first-launch unpack outlives this screen otherwise
     _resultCtrl.dispose();
     _scrollCtrl.dispose(); // S92-SCROLL
     _particleCtrl.dispose(); // S58
@@ -1466,6 +1485,68 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  /// S256: a thin progress line for the unprompted first-launch unpack. It
+  /// reports rather than asks — there is no button, because there is no
+  /// decision: the engine is already in the APK either way.
+  Widget _prepStatus(S s) => Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Column(
+      crossAxisAlignment: s.ar
+        ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Text(
+          _prepping
+            ? (s.ar ? 'يُجهّز المحرك المحلي… $_prepPct٪'
+                    : 'Preparing the offline engine… $_prepPct%')
+            : (s.ar ? 'يبدأ التجهيز…' : 'Starting…'),
+          style: const TextStyle(color: Color(0xFFF0D882), fontSize: 10)),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: SizedBox(
+            width: 160, height: 3,
+            child: LinearProgressIndicator(
+              value: _prepping && _prepPct > 0 ? _prepPct / 100.0 : null,
+              backgroundColor: const Color(0xFF1A2E20),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD4AF37)))),
+        ),
+      ]));
+
+  /// S256: unpack the bundled offline engine, unprompted, in the background.
+  ///
+  /// Safe to call more than once — it no-ops while a run is in flight. A
+  /// failure is recorded but never blocks anything: server mode keeps working,
+  /// and the inline status offers a retry rather than a dead end.
+  void _autoPrepareOfflineEngine() {
+    if (_prepping || _localReady) return;
+    setState(() {
+      _prepping = true;
+      _prepPct = 0;
+      _prepError = null;
+      _prepPhase = '';
+    });
+    _prepSub?.cancel();
+    _prepSub = LocalEngineService.runSetup().listen(
+      (ev) {
+        if (!mounted) return;
+        setState(() {
+          _prepPct = (ev['pct'] as num?)?.toInt() ?? _prepPct;
+          _prepPhase = (ev['phase'] as String?) ?? _prepPhase;
+        });
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() { _prepping = false; _prepError = '$e'; });
+      },
+      onDone: () async {
+        final ready = await LocalEngineService.isSetupComplete();
+        if (!mounted) return;
+        setState(() { _prepping = false; _localReady = ready; });
+        if (ready) _refreshLocalEngines();
+      },
+    );
+  }
+
   /// S255: info / game / settings. These used to be Positioned inside the
   /// hero's Stack, which floated them over the hero artwork and left the app
   /// bar carrying nothing but the wordmark. They belong in the bar: it is
@@ -1734,36 +1815,21 @@ class _HomeScreenState extends State<HomeScreen>
               style: TextStyle(
                 color: _localMode ? gold : textB,
                 fontSize: 12, fontWeight: FontWeight.w700)),
-            if (_localMode && !_localReady)
+            // S256: this used to read "Tap to set up (one-time ~200MB)" and
+            // open a dedicated screen. The engine ships inside the app, so
+            // there was nothing to fetch and nothing to decide — the tap was
+            // ceremony in front of a file copy. It now unpacks itself on first
+            // launch and this just reports where it has got to.
+            if (_localMode && !_localReady && _prepError == null)
+              _prepStatus(s),
+            if (_localMode && !_localReady && _prepError != null)
               GestureDetector(
-                onTap: _busy ? null : () {
-                  // S78: re-check before pushing SetupScreen
-                  LocalEngineService.isSetupComplete().then((ready) {
-                    if (!mounted) return;
-                    setState(() => _localReady = ready); // S140: single setState
-                    if (ready) {
-                      // already set above
-                    } else {
-                      Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => SetupScreen(
-                          onDone: () {
-                            Navigator.of(context).pop();
-                            LocalEngineService.isSetupComplete()
-                              .then((r) { if (mounted) setState(() => _localReady = r); });
-                            _refreshLocalEngines();  // S250
-                          },
-                          onSkip: () {
-                            Navigator.of(context).pop();
-                            setState(() => _localMode = false);
-                          })));
-                    }
-                  });
-                },
-                child: Text(s.ar
-                  ? 'اضغط للإعداد (مرة واحدة ~٢٠٠ ميغابايت)'
-                  : 'Tap to set up (one-time ~200MB)', // S147
+                onTap: _busy ? null : _autoPrepareOfflineEngine,
+                child: Text(
+                  s.ar ? 'تعذّر التجهيز — اضغط للمحاولة مجدداً'
+                       : 'Preparation failed — tap to retry',
                   style: const TextStyle(
-                    color: Color(0xFFF0D882), fontSize: 10,
+                    color: Color(0xFFF85149), fontSize: 10,
                     decoration: TextDecoration.underline))),
             if (_localMode && _localReady)
               // S250 QoL — say how many engines are actually runnable offline.
@@ -1798,24 +1864,16 @@ class _HomeScreenState extends State<HomeScreen>
             onChanged: _busy ? null : (v) {
               setState(() => _localMode = v);
               SharedPreferences.getInstance().then((p)=>p.setBool("local_mode",v)); // S148
-              // S93: always re-check on toggle ON
+              // S93: always re-check on toggle ON.
+              // S256: and if it is not ready, just prepare it — in the
+              // background, where the user can keep using the app — instead of
+              // pushing a full-screen setup flow in front of them. The engine
+              // is already on the device; there is nothing to consent to.
               if (v) {
                 LocalEngineService.isSetupComplete().then((ready) {
                   if (!mounted) return;
                   setState(() => _localReady = ready);
-                  if (!ready) {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => SetupScreen(
-                        onDone: () {
-                          Navigator.of(context).pop();
-                          LocalEngineService.isSetupComplete()
-                            .then((r) { if (mounted) setState(() => _localReady = r); });
-                        },
-                        onSkip: () {
-                          Navigator.of(context).pop();
-                          setState(() => _localMode = false);
-                        })));
-                  }
+                  if (!ready) _autoPrepareOfflineEngine();
                 });
               }
             },

@@ -327,11 +327,46 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   static const _ch    = MethodChannel('com.tilawa.tilawa_enhancer/local_engine');
   static const _media = MethodChannel('com.tilawa.tilawa_enhancer/media');
 
+  /// S256: a placeholder waveform that looks like recitation, not like static.
+  ///
+  /// This used to be `0.1 + rng.nextDouble() * 0.9` per bar — independent
+  /// uniform noise, which draws as a barcode: no phrases, no breaths, every
+  /// bar unrelated to the one beside it. It is also the first thing you see
+  /// for every file, and on anything the analyzer cannot read it is the ONLY
+  /// thing you see.
+  ///
+  /// Recitation is breath groups separated by short pauses, each group with a
+  /// quick onset and a longer decay. That is what this draws, seeded from the
+  /// file name so a given file always shows the same shape rather than
+  /// reshuffling on every rebuild.
+  static List<double> _placeholderBars(int seed, int n) {
+    final rng = Random(seed);
+    final out = List<double>.filled(n, 0.0);
+    var i = 0;
+    while (i < n) {
+      final len = 6 + rng.nextInt(16);          // one breath group
+      final gap = 1 + rng.nextInt(3);           // the pause after it
+      final peak = 0.42 + rng.nextDouble() * 0.5;
+      for (var k = 0; k < len && i < n; k++, i++) {
+        final u = len > 1 ? k / (len - 1) : 0.0;
+        // quick onset, long decay — the envelope of a spoken phrase
+        final env = u < 0.18
+            ? u / 0.18
+            : pow(1.0 - (u - 0.18) / 0.82, 0.75).toDouble();
+        final grain = 0.70 + 0.30 * rng.nextDouble();
+        out[i] = (peak * env * grain).clamp(0.05, 1.0);
+      }
+      for (var k = 0; k < gap && i < n; k++, i++) {
+        out[i] = 0.03 + rng.nextDouble() * 0.04;
+      }
+    }
+    return out;
+  }
+
   @override
   void initState() {
     super.initState();
-    final rng = Random(42);
-    _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
+    _bars = _placeholderBars(42, _kBars);
     _waveCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat();
     _glowCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     // S236 — morphs the placeholder bars into the real analyzed waveform
@@ -341,14 +376,28 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     _barMorphCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))
       ..addListener(() {
         if (_barsTo.isEmpty) return;
-        final t = Curves.easeOutCubic.transform(_barMorphCtrl.value);
+        // S256: the real waveform sweeps in from the left instead of every bar
+        // crossfading in lockstep. All 96 changing at once read as "the picture
+        // was swapped"; staggered, it reads as the file being read — which is
+        // exactly what just happened. Each bar gets its own window inside the
+        // run, offset by its position.
+        const spread = 0.45;                 // share of the run spent staggering
+        final raw = _barMorphCtrl.value;
+        final nb = _barsTo.length;
+        double progressFor(int i) {
+          final start = (nb > 1 ? i / (nb - 1) : 0.0) * spread;
+          final local = ((raw - start) / (1.0 - spread)).clamp(0.0, 1.0);
+          return Curves.easeOutCubic.transform(local);
+        }
         setState(() {
-          _bars = List.generate(_barsTo.length, (i) {
+          _bars = List.generate(nb, (i) {
             final f = i < _barsFrom.length ? _barsFrom[i] : 0.0;
-            return f + (_barsTo[i] - f) * t;
+            return f + (_barsTo[i] - f) * progressFor(i);
           });
           final rt = _rmsTo;
-          if (rt != null) _rmsBars = List.generate(rt.length, (i) => rt[i] * t);
+          if (rt != null) {
+            _rmsBars = List.generate(rt.length, (i) => rt[i] * progressFor(i));
+          }
         });
       });
     _stateSub = _player.onPlayerStateChanged.listen((s) {
@@ -405,8 +454,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _outPath = null;
       _previewMode = false; _previewIsOriginalAb = false;
       _undo.clear(); _redo.clear();
-      final rng = Random(_fileName.hashCode);
-      _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
+      _bars = _placeholderBars(_fileName.hashCode, _kBars);
     });
     try {
       await _player.setSource(DeviceFileSource(path));
@@ -570,8 +618,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       _insF0 = null; _insNote = null; _insBrightness = null; _insOnsets = null;
       _insSpeechPct = null; _insLongPauses = null; _insStereoCorr = null; _insDc = null;
       _lastStages = const []; _lastRunMs = null;
-      final rng = Random(f.name.hashCode);
-      _bars = List.generate(_kBars, (_) => 0.1 + rng.nextDouble() * 0.9);
+      _bars = _placeholderBars(f.name.hashCode, _kBars);
     });
     try {
       await _player.setSource(DeviceFileSource(path));
@@ -5084,15 +5131,20 @@ class _WavePainter extends CustomPainter {
       // little wider when the audio is louder.
       if (playing) {
         final dist = (i - headF).abs();
-        final reach = 2.0 + 2.5 * level;                 // louder = wider
+        // Wider than before, and a smooth flat-topped falloff rather than a
+        // linear ramp to a hard cutoff — the old 2-4 bar window with a sharp
+        // edge looked like a cursor artefact rather than the wave responding.
+        final reach = 3.0 + 4.5 * level;                 // louder = wider
         if (dist < reach) {
-          final falloff = 1 - dist / reach;
-          final wob = 0.68 + 0.32 * sin(animT * 2 * pi * 4 + i * 0.5);
-          final bump = (0.05 + 0.28 * level) * falloff * wob;
+          final u = dist / reach;
+          final falloff = (1 - u * u) * (1 - u * u);
+          final wob = 0.72 + 0.28 * sin(animT * 2 * pi * 3 + i * 0.42);
+          final bump = (0.05 + 0.30 * level) * falloff * wob;
           amp += bump;
           rmsAmp += bump * 0.8;
         } else if (!analyzed) {
-          amp += 0.06 * sin(animT * 2 * pi + i * 0.28);  // placeholder liveliness
+          // Placeholder-only extra liveliness while waiting on the analyser.
+          amp += 0.14 * amp * sin(animT * 2 * pi + i * 0.28);
         }
       }
 
