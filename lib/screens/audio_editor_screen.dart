@@ -60,7 +60,7 @@ const _textB   = Color(0xFF8AACBA);
 const _textDim = Color(0xFF3D5A65);
 const _border  = Color(0xFF1A2E20);
 
-enum _Tab { trim, eq, effects, fx2, cleanup, studio, loudness, quality, merge, export_ }
+enum _Tab { trim, eq, effects, fx2, cleanup, studio, loudness, quality, compare, merge, export_ }
 
 /// S250 — one row of the scrollable tab strip.
 class _TabSpec {
@@ -79,6 +79,7 @@ const List<_TabSpec> _kTabs = [
   _TabSpec(_Tab.studio,   Icons.science_rounded,       'Studio',     'استوديو'),
   _TabSpec(_Tab.loudness, Icons.rule_rounded,          'Compliance', 'التوافق'),
   _TabSpec(_Tab.quality,  Icons.fact_check_rounded,    'Quality',    'الجودة'),
+  _TabSpec(_Tab.compare,  Icons.compare_arrows_rounded,'Compare',    'مقارنة'),
   _TabSpec(_Tab.merge,    Icons.merge_type_rounded,    'Merge',      'دمج'),
   _TabSpec(_Tab.export_,  Icons.ios_share_rounded,     'Export',     'تصدير'),
 ];
@@ -213,6 +214,15 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   double? _statEstoi;                // S250 — modulation-sensitive variant
   double? _statLufsDelta;            // S250 — loudness change of the render
   double? _statDriftSec;             // S250 — length mismatch (invalidates STOI)
+
+  // S255 — Compare tab: an A/B report against a reference recording. Distinct
+  // from Quality, which renders the CURRENT file with the CURRENT settings and
+  // scores that against itself. Here the reference is a second file the user
+  // picks, and nothing is rendered.
+  String? _cmpRefPath, _cmpRefName;
+  bool _cmpRunning = false;
+  String? _cmpError;
+  Map<String, dynamic>? _cmpResult;
   String? _qualityError;
 
   // S250h — real environment diagnosis (probes, not file checks)
@@ -840,6 +850,49 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
     'fx2': const <String, dynamic>{},
   };
 
+  // ── S255 COMPARE ──────────────────────────────────────────────────────────
+  Future<void> _pickCompareRef() async {
+    final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: false);
+    if (r == null || r.files.isEmpty || r.files.first.path == null) return;
+    if (!mounted) return;
+    setState(() {
+      _cmpRefPath = r.files.first.path;
+      _cmpRefName = r.files.first.name;
+      _cmpResult = null;
+      _cmpError = null;
+    });
+  }
+
+  Future<void> _runCompare() async {
+    if (_filePath == null || _cmpRefPath == null) return;
+    setState(() { _cmpRunning = true; _cmpError = null; _cmpResult = null; });
+    String? outJson;
+    try {
+      final tmp = await getTemporaryDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      outJson = '${tmp.path}/tl_compare_$stamp.json';
+      final script = await _ensureDspScript();
+      // The reference is the FIRST argument: every delta reads "subject
+      // relative to reference", which is the direction the wording assumes.
+      final r = await _proot(
+          'python3 "$script" --compare "$_cmpRefPath" "$_filePath" "$outJson"',
+          _cmpRefPath!, outJson, timeout: 10);
+      if (!File(outJson).existsSync()) {
+        throw Exception(r?['out'] ?? 'Comparison did not run');
+      }
+      final m = Map<String, dynamic>.from(
+          jsonDecode(await File(outJson).readAsString()));
+      if (m['ok'] != true) throw Exception(m['error'] ?? 'comparison failed');
+      if (!mounted) return;
+      setState(() => _cmpResult = m);
+    } catch (e) {
+      if (mounted) setState(() => _cmpError = '$e');
+    } finally {
+      _dropTemp(outJson);
+      if (mounted) setState(() => _cmpRunning = false);
+    }
+  }
+
   Future<void> _pickMerge() async {
     final r = await FilePicker.platform.pickFiles(type: FileType.audio, allowMultiple: false);
     if (r == null || r.files.isEmpty || r.files.first.path == null) return;
@@ -1412,12 +1465,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
   Future<String> _ensureDspScript() async {
     if (_dspScriptPath != null && File(_dspScriptPath!).existsSync()) return _dspScriptPath!;
     final dir  = await getTemporaryDirectory();
-    // S250: v4 — MUST change whenever the bundled script changes, because the
+    // S255: v5 — bumped for --compare. MUST change whenever the bundled
+    // script changes, because the
     // cached copy is reused as-is when it exists. A stale v3 copy would keep
     // running the old engine (no --libs mode, no dereverb/squeeze/harmonic
     // focus, no progress sidecar) even after the app updated, and the new
     // params would be silently ignored.
-    final dst  = File('${dir.path}/tilawa_dsp_studio_v4.py');
+    final dst  = File('${dir.path}/tilawa_dsp_studio_v5.py');
     final data = await rootBundle.load('assets/dsp/tilawa_dsp_studio.py');
     await dst.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), flush: true);
     _dspScriptPath = dst.path;
@@ -2467,8 +2521,13 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
             .where((b) => b).length;
       case _Tab.loudness:
       case _Tab.quality:
+        return 0;
+      case _Tab.compare:
+        // S255: badge when a reference is loaded, the same way Merge badges a
+        // picked file — it is the one setting this tab carries.
+        return _cmpRefPath != null ? 1 : 0;
       case _Tab.merge:
-        return _tab == _Tab.merge && _mergePath != null ? 1 : 0;
+        return _mergePath != null ? 1 : 0;
       case _Tab.export_:
         return _asRingtone ? 1 : 0;
     }
@@ -2567,6 +2626,7 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       case _Tab.studio:  child = _studioTab(); break;
       case _Tab.loudness: child = _loudnessTab(); break;
       case _Tab.quality: child = _qualityTab(); break;
+      case _Tab.compare: child = _compareTab(); break;
       case _Tab.merge:   child = _mergeTab(); break;
       case _Tab.export_: child = _exportTab(); break;
     }
@@ -3732,6 +3792,203 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
         ],
       ],
     ]);
+  }
+
+  // ── S255 COMPARE TAB ──────────────────────────────────────────────────────
+  /// Side-by-side against a reference recording.
+  ///
+  /// The engine aligns the two by envelope cross-correlation before measuring
+  /// (two takes of the same passage rarely start on the same sample) and
+  /// matches loudness before reading the bands (otherwise a quiet copy differs
+  /// everywhere by the same amount, which says nothing about tone). Both are
+  /// surfaced here rather than hidden, so the numbers can be trusted.
+  Widget _compareTab() {
+    final ar = LangProvider.strings(context).ar;
+    if (_filePath == null) {
+      return Center(child: Text(ar ? 'افتح ملفًا أولًا' : 'Open a file first',
+          style: const TextStyle(color: _textDim)));
+    }
+    final res = _cmpResult;
+    final ready = _cmpRefPath != null;
+
+    Widget pair(String label, Object? refV, Object? subV, {String unit = ''}) {
+      String f(Object? v) => v == null ? '—'
+          : (v is num ? '${v.toStringAsFixed(v is int ? 0 : 1)}$unit' : '$v');
+      return Padding(padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(children: [
+          Expanded(flex: 4, child: Text(label,
+              style: const TextStyle(color: _textDim, fontSize: 11.5))),
+          Expanded(flex: 3, child: Text(f(refV), textAlign: TextAlign.end,
+              style: const TextStyle(color: _textB, fontSize: 11.5,
+                  fontFamily: 'monospace'))),
+          Expanded(flex: 3, child: Text(f(subV), textAlign: TextAlign.end,
+              style: const TextStyle(color: _teal, fontSize: 11.5,
+                  fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+        ]));
+    }
+
+    return ListView(padding: const EdgeInsets.all(14), children: [
+      _card_(ar ? 'قارن بمرجع' : 'Compare with a Reference',
+          Icons.compare_arrows_rounded, [
+        Text(ar
+            ? 'اختر تسجيلًا مرجعيًا وقارن ملفك الحالي به: الجهارة، المدى الديناميكي، '
+              'الذروة الحقيقية، وتوازن النطاقات الترددية. يُحاذي المحرّك الملفين زمنيًا '
+              'أولًا ثم يوحّد الجهارة قبل قراءة النطاقات، حتى تعكس الأرقام الفرق في '
+              'النبرة لا في المستوى أو التوقيت.'
+            : 'Pick a reference recording and measure your current file against it: '
+              'loudness, dynamic range, true peak and the balance across frequency '
+              'bands. The engine time-aligns the two first and matches loudness before '
+              'reading the bands, so the numbers reflect a difference in tone rather '
+              'than in level or timing.',
+            style: const TextStyle(color: _textB, fontSize: 12, height: 1.5)),
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: _cmpRunning ? null : _pickCompareRef,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+            decoration: BoxDecoration(color: _surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _textDim.withValues(alpha: 0.35))),
+            child: Row(children: [
+              const Icon(Icons.library_music_rounded, color: _gold, size: 17),
+              const SizedBox(width: 9),
+              Expanded(child: Text(
+                  _cmpRefName ?? (ar ? 'اختر ملف المرجع…' : 'Choose reference file…'),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: _cmpRefName == null ? _textDim : _textB, fontSize: 12))),
+            ]))),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: (_cmpRunning || !ready) ? null : _runCompare,
+          child: Opacity(opacity: ready ? 1 : 0.45, child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            decoration: BoxDecoration(color: _tealDk,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _teal.withValues(alpha: 0.4))),
+            child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (_cmpRunning)
+                const SizedBox(width: 14, height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+              else
+                const Icon(Icons.compare_arrows_rounded, color: _teal, size: 17),
+              const SizedBox(width: 8),
+              Text(_cmpRunning
+                      ? (ar ? 'جارٍ المقارنة…' : 'Comparing…')
+                      : (ar ? 'قارن الآن' : 'Compare Now'),
+                  style: const TextStyle(color: _teal, fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+            ]))))),
+      ]),
+
+      if (_cmpError != null) ...[const SizedBox(height: 10),
+        _card_(ar ? 'تعذّرت المقارنة' : 'Comparison Unavailable',
+            Icons.warning_amber_rounded, [
+          Text(_cmpError!, style: const TextStyle(color: _red, fontSize: 11.5, height: 1.4)),
+        ])],
+
+      if (res != null) ...[
+        const SizedBox(height: 10),
+        _card_(ar ? 'القياسات' : 'Measurements', Icons.straighten_rounded, [
+          Row(children: [
+            const Expanded(flex: 4, child: SizedBox()),
+            Expanded(flex: 3, child: Text(ar ? 'المرجع' : 'Reference',
+                textAlign: TextAlign.end,
+                style: const TextStyle(color: _textDim, fontSize: 10,
+                    fontWeight: FontWeight.w700))),
+            Expanded(flex: 3, child: Text(ar ? 'ملفك' : 'Yours',
+                textAlign: TextAlign.end,
+                style: const TextStyle(color: _teal, fontSize: 10,
+                    fontWeight: FontWeight.w700))),
+          ]),
+          const Divider(color: _textDim, height: 14),
+          for (final e in [
+            [ar ? 'الجهارة' : 'Loudness', 'lufs', ' LUFS'],
+            [ar ? 'المدى الديناميكي' : 'Dynamic range', 'lra', ' LU'],
+            [ar ? 'الذروة الحقيقية' : 'True peak', 'true_peak_db', ' dBTP'],
+            [ar ? 'الذروة' : 'Peak', 'peak_db', ' dBFS'],
+            [ar ? 'المدة' : 'Duration', 'duration_sec', ' s'],
+          ])
+            pair(e[0],
+                 (res['reference'] as Map?)?[e[1]],
+                 (res['subject'] as Map?)?[e[1]], unit: e[2]),
+        ]),
+
+        if ((res['bands'] as List?)?.isNotEmpty ?? false) ...[
+          const SizedBox(height: 10),
+          _card_(ar ? 'توازن النطاقات (بعد توحيد الجهارة)'
+                    : 'Band Balance (loudness-matched)',
+              Icons.equalizer_rounded, [
+            for (final b in (res['bands'] as List).cast<Map>())
+              _bandBar(b['band'] as String,
+                       ((b['delta_db'] as num?) ?? 0).toDouble()),
+            const SizedBox(height: 6),
+            Text(ar
+                ? 'الأشرطة إلى اليمين تعني أن ملفك أعلى في ذلك النطاق من المرجع.'
+                : 'Bars to the right mean your file has more energy in that band '
+                  'than the reference.',
+                style: const TextStyle(color: _textDim, fontSize: 10.5, height: 1.4)),
+          ])],
+
+        const SizedBox(height: 10),
+        _card_(ar ? 'الخلاصة' : 'What This Means', Icons.lightbulb_outline_rounded, [
+          if (((res['notes'] as List?) ?? const []).isEmpty)
+            Text(ar
+                ? 'لا فروق ذات دلالة — الملفان متطابقان عمليًا في كل ما قيس.'
+                : 'No meaningful differences — the two files match on everything measured.',
+                style: const TextStyle(color: _teal, fontSize: 12, height: 1.5))
+          else
+            for (final n in (res['notes'] as List).cast<String>())
+              Padding(padding: const EdgeInsets.only(bottom: 6),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Padding(padding: EdgeInsets.only(top: 5, right: 7),
+                      child: Icon(Icons.circle, size: 5, color: _gold)),
+                  Expanded(child: Text(n,
+                      style: const TextStyle(color: _textB, fontSize: 12, height: 1.45))),
+                ])),
+          if (res['stoi'] != null) ...[
+            const Divider(color: _textDim, height: 20),
+            _row(ar ? 'تشابه الوضوح (STOI)' : 'Intelligibility match (STOI)',
+                '${(((res['stoi'] as num).toDouble()) * 100).toStringAsFixed(1)}%'),
+          ],
+          if ((res['alignment'] as Map?)?['correlation'] != null)
+            _row(ar ? 'الارتباط' : 'Correlation',
+                ((res['alignment'] as Map)['correlation'] as num)
+                    .toDouble().toStringAsFixed(2)),
+        ]),
+      ],
+    ]);
+  }
+
+  /// A signed dB bar for one frequency band, centred on zero.
+  Widget _bandBar(String name, double deltaDb) {
+    const maxDb = 12.0;
+    final t = (deltaDb.abs() / maxDb).clamp(0.0, 1.0);
+    final over = deltaDb.abs() >= 3.0;
+    return Padding(padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        SizedBox(width: 74, child: Text(name,
+            style: const TextStyle(color: _textDim, fontSize: 10.5))),
+        Expanded(child: LayoutBuilder(builder: (_, c) {
+          final half = c.maxWidth / 2;
+          return SizedBox(height: 12, child: Stack(children: [
+            Positioned(left: half - 0.5, top: 0, bottom: 0,
+                child: Container(width: 1, color: _textDim.withValues(alpha: 0.5))),
+            Positioned(
+              left: deltaDb >= 0 ? half : half - half * t,
+              width: (half * t).clamp(1.0, half),
+              top: 2, bottom: 2,
+              child: Container(decoration: BoxDecoration(
+                  color: (over ? _gold : _teal).withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(2)))),
+          ]));
+        })),
+        SizedBox(width: 52, child: Text(
+            '${deltaDb >= 0 ? '+' : ''}${deltaDb.toStringAsFixed(1)}',
+            textAlign: TextAlign.end,
+            style: TextStyle(color: over ? _gold : _textB, fontSize: 10.5,
+                fontFamily: 'monospace'))),
+      ]));
   }
 
   // ── MERGE TAB ─────────────────────────────────────────────────────────────

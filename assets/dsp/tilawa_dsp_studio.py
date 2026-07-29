@@ -2203,6 +2203,206 @@ def quality_check(orig_path: str, proc_path: str, out_json: str) -> int:
     return 0 if result.get('ok') else 1
 
 
+_COMPARE_SR = 22050          # same rate as analyze(); ample for every metric here
+# Octave-ish bands, named the way someone describing a recording would.
+_COMPARE_BANDS = (
+    ('sub',        20,    60),
+    ('low',        60,   250),
+    ('low-mid',   250,   800),
+    ('mid',       800,  2500),
+    ('high-mid', 2500,  6000),
+    ('presence', 6000, 10000),
+)
+
+
+def compare(ref_path: str, sub_path: str, out_json: str) -> int:
+    """S255 `--compare` — an A/B report on two arbitrary files.
+
+    quality_check() answers a narrow question: did MY processing damage
+    intelligibility, comparing a neutral cut of one file against a processed
+    cut of the same file. This answers the one people actually ask of a
+    reference recording — how does mine differ from that one, and where?
+
+    Two things make the difference between a useful answer and a misleading
+    one, and both are handled here:
+
+      * ALIGNMENT. Two recordings of the same passage rarely start on the same
+        sample. Comparing them head-to-head reports a difference that is
+        entirely an offset. This cross-correlates first, reports the lag it
+        found, and measures on the overlapping region.
+      * LEVEL. A quiet copy differs from its reference in every band by the
+        same amount, which says nothing about tone. Band deltas are therefore
+        reported after matching integrated loudness, with the raw loudness gap
+        called out separately as its own number.
+
+    Everything degrades softly: a missing pystoi costs the intelligibility
+    line, not the report.
+    """
+    result = {'ok': False}
+    try:
+        a = _decode(ref_path, _COMPARE_SR, 0.0, 0.0)
+        b = _decode(sub_path, _COMPARE_SR, 0.0, 0.0)
+        if a is None or b is None or a.shape[0] == 0 or b.shape[0] == 0:
+            raise RuntimeError('decode failed for one or both files')
+        sr = _COMPARE_SR
+        am = a.mean(axis=1).astype(np.float64)
+        bm = b.mean(axis=1).astype(np.float64)
+
+        # ---- per-file metrics, each measured on its own, untouched ---------
+        def stats(x2d, xm):
+            d = {
+                'duration_sec': round(len(xm) / float(sr), 3),
+                'peak_db':      round(float(20 * np.log10(np.max(np.abs(xm)) + 1e-9)), 1),
+                'rms_db':       round(float(20 * np.log10(np.sqrt(np.mean(xm ** 2)) + 1e-9)), 1),
+                'clip_pct':     round(float(100.0 * np.mean(np.abs(xm) >= 0.985)), 2),
+            }
+            try:
+                d['lufs'] = round(_integrated_loudness(x2d.astype(np.float64), sr), 1)
+            except Exception:
+                d['lufs'] = None
+            try:
+                lr = _loudness_range(x2d.astype(np.float64), sr)
+                d['lra'] = round(lr, 1) if lr is not None else None
+            except Exception:
+                d['lra'] = None
+            try:
+                d['true_peak_db'] = round(_true_peak_db(x2d.astype(np.float64), sr), 1)
+            except Exception:
+                d['true_peak_db'] = None
+            if x2d.shape[1] >= 2:
+                l, r = x2d[:, 0].astype(np.float64), x2d[:, 1].astype(np.float64)
+                den = (np.std(l) * np.std(r)) + 1e-12
+                d['stereo_corr'] = round(float(np.mean((l - l.mean()) * (r - r.mean())) / den), 3)
+            else:
+                d['stereo_corr'] = None
+            return d
+
+        result['reference'] = stats(a, am)
+        result['subject'] = stats(b, bm)
+
+        # ---- alignment ------------------------------------------------------
+        # Correlate envelopes rather than waveforms: two takes of the same
+        # passage are not phase-coherent, but their loudness contours line up.
+        def envelope(x):
+            k = max(1, int(0.02 * sr))
+            e = np.convolve(np.abs(x), np.ones(k) / k, mode='same')
+            return e - e.mean()
+        n = min(len(am), len(bm))
+        lag = 0
+        corr = None
+        try:
+            max_lag = int(min(10.0 * sr, n * 0.5))
+            ea, eb = envelope(am[:n]), envelope(bm[:n])
+            step = max(1, sr // 1000)                  # 1ms resolution is plenty
+            cc = signal.correlate(eb[::step], ea[::step], mode='full')
+            centre = len(ea[::step]) - 1
+            lo = max(0, centre - max_lag // step)
+            hi = min(len(cc), centre + max_lag // step + 1)
+            lag = int((int(np.argmax(cc[lo:hi])) + lo - centre) * step)
+        except Exception:
+            lag = 0
+        # Overlapping region after shifting the subject by the measured lag.
+        if lag >= 0:
+            aa, bb = am[:n - lag], bm[lag:n]
+        else:
+            aa, bb = am[-lag:n], bm[:n + lag]
+        m = min(len(aa), len(bb))
+        aa, bb = aa[:m], bb[:m]
+        if m < sr // 2:
+            raise RuntimeError('less than 0.5s of overlap after alignment')
+        try:
+            den = (np.std(aa) * np.std(bb)) + 1e-12
+            corr = round(float(np.mean((aa - aa.mean()) * (bb - bb.mean())) / den), 3)
+        except Exception:
+            corr = None
+        result['alignment'] = {
+            'offset_sec': round(lag / float(sr), 3),
+            'overlap_sec': round(m / float(sr), 2),
+            'correlation': corr,
+            'duration_delta_sec': round(result['subject']['duration_sec']
+                                        - result['reference']['duration_sec'], 3),
+        }
+
+        # ---- level-matched band deltas --------------------------------------
+        # Match loudness first, or every band just reports the level gap.
+        la, lb = result['reference'].get('lufs'), result['subject'].get('lufs')
+        gain = 1.0
+        if isinstance(la, (int, float)) and isinstance(lb, (int, float)):
+            gain = float(10 ** ((la - lb) / 20.0))
+        bands = []
+        if SCIPY_OK:
+            fa, pa = signal.welch(aa, fs=sr, nperseg=4096)
+            fb, pb = signal.welch(bb * gain, fs=sr, nperseg=4096)
+            for name, lo_hz, hi_hz in _COMPARE_BANDS:
+                if lo_hz >= sr * 0.5:
+                    continue
+                sel = (fa >= lo_hz) & (fa < min(hi_hz, sr * 0.5))
+                if not sel.any():
+                    continue
+                va = float(np.mean(pa[sel])) + 1e-20
+                vb = float(np.mean(pb[sel])) + 1e-20
+                bands.append({'band': name, 'from_hz': lo_hz, 'to_hz': hi_hz,
+                              'delta_db': round(float(10 * np.log10(vb / va)), 1)})
+        result['bands'] = bands
+        result['level_matched_by_db'] = (round(float(20 * np.log10(gain)), 1)
+                                         if gain != 1.0 else 0.0)
+
+        # ---- intelligibility, if pystoi is here -----------------------------
+        ps = _mod('pystoi')
+        result['stoi'] = result['estoi'] = None
+        if ps is not None:
+            try:
+                qa = _resample(aa[:, None], sr, _QUALITY_SR)[:, 0]
+                qb = _resample(bb[:, None], sr, _QUALITY_SR)[:, 0]
+                q = min(len(qa), len(qb))
+                if q >= _QUALITY_SR // 2:
+                    result['stoi'] = round(float(ps.stoi(qa[:q], qb[:q],
+                                                         _QUALITY_SR, extended=False)), 4)
+                    result['estoi'] = round(float(ps.stoi(qa[:q], qb[:q],
+                                                          _QUALITY_SR, extended=True)), 4)
+            except Exception:
+                pass
+
+        # ---- deltas + a plain-language read ---------------------------------
+        def d(key):
+            x, y = result['reference'].get(key), result['subject'].get(key)
+            return round(y - x, 1) if isinstance(x, (int, float)) and isinstance(y, (int, float)) else None
+        result['delta'] = {k: d(k) for k in
+                           ('lufs', 'lra', 'true_peak_db', 'peak_db', 'rms_db')}
+
+        notes = []
+        dl = result['delta'].get('lufs')
+        if isinstance(dl, (int, float)) and abs(dl) >= 1.0:
+            notes.append('%s is %.1f LU %s than the reference'
+                         % ('Yours', abs(dl), 'louder' if dl > 0 else 'quieter'))
+        dlra = result['delta'].get('lra')
+        if isinstance(dlra, (int, float)) and abs(dlra) >= 1.0:
+            notes.append('dynamic range is %.1f LU %s'
+                         % (abs(dlra), 'wider' if dlra > 0 else 'narrower'))
+        for bd in bands:
+            if abs(bd['delta_db']) >= 3.0:
+                notes.append('%s (%d-%d Hz) is %+.1f dB' %
+                             (bd['band'], bd['from_hz'], bd['to_hz'], bd['delta_db']))
+        tp = result['subject'].get('true_peak_db')
+        if isinstance(tp, (int, float)) and tp > -1.0:
+            notes.append('true peak %+.1f dBTP — above the -1 dBTP delivery ceiling' % tp)
+        if isinstance(corr, (int, float)) and corr < 0.5:
+            notes.append('waveforms correlate only %.2f — these may be different takes' % corr)
+        if abs(result['alignment']['offset_sec']) >= 0.05:
+            notes.append('aligned by %+.2fs before measuring'
+                         % result['alignment']['offset_sec'])
+        result['notes'] = notes
+        result['ok'] = True
+    except Exception as e:
+        result['error'] = str(e)
+    with open(out_json, 'w', encoding='utf-8') as fh:
+        json.dump(result, fh)
+    print(json.dumps({'ok': result.get('ok', False),
+                      'error': result.get('error')} if not result.get('ok')
+                     else {'ok': True, 'notes': len(result.get('notes', []))}))
+    return 0 if result.get('ok') else 1
+
+
 def _count_stages(p: dict, fx: dict) -> int:
     """How many @_stage-wrapped stages this run will actually execute — tqdm
     needs a total for the percentage to mean anything. Only the expensive,
@@ -2244,6 +2444,14 @@ def main():
         return quality_check(sys.argv[2], sys.argv[3], sys.argv[4])
 
     # S250 — package availability report for the Studio tab
+    if len(sys.argv) >= 2 and sys.argv[1] == '--compare':
+        if len(sys.argv) < 5:
+            print(json.dumps({'ok': False,
+                              'error': 'usage: tilawa_dsp_studio.py --compare '
+                                       '<reference> <subject> <out.json>'}))
+            return 1
+        return compare(sys.argv[2], sys.argv[3], sys.argv[4])
+
     if len(sys.argv) >= 2 and sys.argv[1] == '--libs':
         return libs_report(sys.argv[2] if len(sys.argv) >= 3 else '')
 
