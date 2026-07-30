@@ -3240,10 +3240,29 @@
   // --------------------------------------------------------------------------
   // Game state
   // --------------------------------------------------------------------------
+  /** S257: the whole ladder moved up.
+   *
+   *  The first named encounter had 32 effective HP against a starter ship
+   *  doing 6.67 dps — a five second boss fight. Every tier was calibrated
+   *  around that.
+   *
+   *  · EASY is now exactly what HARD used to be (1.3 / 1.2 / 1.25). Nothing
+   *    below that remains: the old easy and old normal are gone.
+   *  · NORMAL takes enemy health x20.
+   *  · Bosses take BOSS_HP_MULT on top, and deliberately do NOT also take
+   *    hpMult — 20 x 35 would be a 700x boss, which is not a fight, it is a
+   *    wall. They are scaled by their own per-tier factor instead, so the
+   *    ladder stays monotonic: 35x on easy, 49x on normal, 70x on hard.
+   *
+   *  shardMult rises with the tiers on purpose. Fights are much longer now, so
+   *  a flat payout would leave the ascension track and the upgrade economy
+   *  pegged to the old pace and make the whole game grindier rather than
+   *  harder — which is the opposite of the point. */
+  const BOSS_HP_MULT = 35;
   const DIFF = {
-    easy:  {spawnMult:0.75, speedMult:0.85, shardMult:0.8,  hpMult:0.85},
-    normal:{spawnMult:1,    speedMult:1,    shardMult:1,    hpMult:1},
-    hard:  {spawnMult:1.3,  speedMult:1.2,  shardMult:1.4,  hpMult:1.25}
+    easy:  {spawnMult:1.3, speedMult:1.20, shardMult:1.4, hpMult:1.25, bossHp:1.0},
+    normal:{spawnMult:1.7, speedMult:1.40, shardMult:3.0, hpMult:20,   bossHp:1.4},
+    hard:  {spawnMult:2.2, speedMult:1.65, shardMult:5.0, hpMult:32,   bossHp:2.0}
   };
   function diffCfg(){ return DIFF[save.difficulty] || DIFF.normal; }
 
@@ -3525,7 +3544,11 @@
     const e = spawnEnemy(def, W/2, -def.radius*1.6);
     if(!e){ bossActive = false; return; }
     const cfg = diffCfg();
-    e.maxHp = e.hp = Math.round(def.hp * (1 + (wave-1)*0.06) * cfg.hpMult);
+    // S257: bosses use BOSS_HP_MULT and their own per-tier factor rather than
+    // the regular-enemy hpMult, which on normal is 20 — compounding the two
+    // would give a 700x boss. See the note on DIFF.
+    e.maxHp = e.hp = Math.round(
+        def.hp * (1 + (wave-1)*0.06) * BOSS_HP_MULT * (cfg.bossHp || 1));
     e.isBoss = true;
     boss = e;
     if(runStats){ runStats.bossStartMs = performance.now(); runStats.bossDamage = 0; }
@@ -5483,7 +5506,27 @@ void main(){
 
       const sp = GLR.prog.sprite;
       gl.useProgram(sp.p);
-      gl.uniform2f(sp.u.u_res, GLR.w, GLR.h);
+      // S257: CSS pixels, NOT the device-pixel backing size.
+      //
+      // glPush() takes world coordinates — the same space the whole simulation
+      // and the Canvas2D path use — and the vertex shader turns them into clip
+      // space with `world / u_res`. Feeding it GLR.w/GLR.h (which are W*DPR)
+      // divided every position and every radius by DPR, so the entire scene
+      // rendered into the top-left 1/DPR of the canvas with dead space right
+      // and below: "the screen zooms out and there is a border". The HUD is DOM
+      // at CSS size, so it stayed put and stopped lining up with the arena.
+      //
+      // It only showed on the GL path with DPR > 1, which is the DEFAULT: perf
+      // 'balanced' and 'high' both set dprCap 2, and only 'low' pins it to 1.
+      // Measured at 412x892 — the player sits at x=206 with DPR 1 and at x=165
+      // with DPR 1.25, exactly 206/1.25.
+      //
+      // The other two programs are already consistent and must stay as they
+      // are: the background only uses u_res for its aspect ratio, and the
+      // composite divides warp centres (pushed in device px) by it to get UVs.
+      // Lights are pushed in world px and compared against v_world, also world
+      // px, so they were always right.
+      gl.uniform2f(sp.u.u_res, W, H);
       gl.uniform1i(sp.u.u_lightCount, GLR.lightCount);
       gl.uniform3f(sp.u.u_ambient, 0.62, 0.66, 0.80);
       if(GLR.lightCount > 0){
@@ -7324,6 +7367,25 @@ void main(){
           if(spawnEnemy(def, p.x, p.y)) made++;
         }
         return made;
+      },
+      /** S257: what the difficulty tables actually produce, so a rebalance can
+          be checked against the running game instead of against arithmetic.
+          Returns [{id, hp}] for everything alive, plus the boss if there is
+          one and the difficulty config in force. */
+      hpProbe: function(){
+        const out = [];
+        for(let i=0;i<enemies.n;i++){
+          const e = enemies.items[i];
+          out.push({id:e.def.id, hp:e.maxHp, boss:!!e.isBoss});
+        }
+        return {wave:wave, difficulty:save.difficulty, cfg:diffCfg(),
+                bossMult:BOSS_HP_MULT, enemies:out};
+      },
+      spawnBoss: function(id){
+        const def = ENEMY_BY_ID[id];
+        if(!def) return false;
+        spawnBossEncounter(def);
+        return true;
       },
       /** Live enemies currently outside the arena. A wave cannot end while any
           of these remain, so this is the number that decides whether the run

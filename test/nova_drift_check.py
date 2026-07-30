@@ -188,6 +188,31 @@ def main():
         if needle not in src:
             fail("missing %s (%s)" % (needle, why))
 
+    # S257: the GL coordinate spaces must not be mixed up again.
+    #
+    # glPush() takes WORLD pixels and the sprite vertex shader turns them into
+    # clip space with `world / u_res`, so the sprite program's u_res has to be
+    # the CSS size (W, H). It was being given GLR.w/GLR.h — the device-pixel
+    # backing size, i.e. W*DPR — which divided every position and radius by DPR
+    # and rendered the whole scene into the top-left 1/DPR of the canvas, with
+    # the DOM HUD left stranded against it. It only bit on the GL path with
+    # DPR > 1, which is the default (perf 'balanced' and 'high' both cap DPR at
+    # 2; only 'low' pins it to 1).
+    #
+    # The other two are correct as device pixels and must stay that way: the
+    # composite divides warp centres (pushed as *DPR) by u_res to get UVs, and
+    # the background only uses it for an aspect ratio.
+    sprite_res = re.search(r"gl\.uniform2f\(sp\.u\.u_res,\s*([^)]+)\)", src)
+    if not sprite_res:
+        fail("the sprite program's u_res upload is gone")
+    elif sprite_res.group(1).replace(" ", "") != "W,H":
+        fail("sprite u_res must be CSS pixels (W, H), got (%s) — glPush feeds it "
+             "world coordinates" % sprite_res.group(1).strip())
+    comp_res = re.search(r"gl\.uniform2f\(cp\.u\.u_res,\s*([^)]+)\)", src)
+    if comp_res and comp_res.group(1).replace(" ", "") != "GLR.w,GLR.h":
+        fail("composite u_res must stay device pixels (GLR.w, GLR.h), got (%s) — "
+             "warp centres are pushed pre-multiplied by DPR" % comp_res.group(1).strip())
+
     # No allocation inside the per-frame GL functions (2.8).
     for fn_name in ("glDrawFrame", "glCollect", "glDrawRange", "glPush"):
         m = re.search(r"function %s\([^)]*\)\{" % fn_name, src)
