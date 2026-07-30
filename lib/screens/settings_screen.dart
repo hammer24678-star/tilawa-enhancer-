@@ -491,7 +491,25 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
     _refresh();
   }
 
+  /// Deliberate re-extraction, for a rootfs that has gone bad. This is the one
+  /// place SetupScreen is still reachable from, and it stays: it is a repair
+  /// tool, not the ordinary path.
+  ///
+  /// S258: but it must not start a second extraction over a directory the
+  /// automatic first-launch run is still writing into. If preparation is in
+  /// flight, say so and leave it alone.
   Future<void> _repair() async {
+    if (LocalEngineService.preparationRunning) {
+      final ar = LangProvider.strings(context).ar;
+      final pct = (LocalEngineService.preparationProgress['pct'] as num?)?.toInt() ?? 0;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: _cCard, behavior: SnackBarBehavior.floating,
+        content: Text(
+            ar ? 'التجهيز جارٍ بالفعل… $pct٪' : 'Preparation is already running… $pct%',
+            style: const TextStyle(color: _gold, fontSize: 12))));
+      return;
+    }
     await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => SetupScreen(
             onDone: () => Navigator.of(context).pop(),

@@ -42,9 +42,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';  // S237: persist editor prefs
+import '../services/local_engine_service.dart';
 import '../state/lang_provider.dart';
 import '../widgets/anim.dart';   // S250g: shared PressScale / EntranceFade / ChangePulse
-import 'setup_screen.dart';  // S206: lets the setup-required snackbar launch setup directly
 
 // ── Sacred Cosmos palette (unchanged) ────────────────────────────────────────
 const _bg      = Color(0xFF020D17);
@@ -518,25 +518,44 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Future<bool> _checkSetup() async {
     final ok = await _ch.invokeMethod<bool>('isBasicSetupComplete') ?? false;
-    // S206: old message sent users to "Settings" to finish setup, but
-    // settings_screen.dart has no local-engine setup code at all — the only
-    // real entry point was buried in home_screen.dart's local-mode toggle.
-    // Launch SetupScreen directly instead of pointing at a dead end.
-    if (!ok && mounted) {
-      final ar = LangProvider.strings(context).ar;
+    if (ok || !mounted) return ok;
+    final ar = LangProvider.strings(context).ar;
+
+    // S258: "not set up" and "being set up right now" are different things, and
+    // since S256 started the unpack automatically at launch the second one is
+    // the common case — open the editor in the first minute after installing
+    // and every action used to report "Local engine setup is required first",
+    // with a button that would have kicked off a SECOND extraction over the
+    // same directory while the first was still running. Say what is actually
+    // happening, and offer no competing action.
+    if (LocalEngineService.preparationRunning) {
+      final pct = (LocalEngineService.preparationProgress['pct'] as num?)?.toInt() ?? 0;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: _card, behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
-            side: const BorderSide(color: _red, width: 0.7)),
-        content: Text(ar ? 'يلزم إعداد المحرك المحلي أولًا' : 'Local engine setup is required first.',
-            style: const TextStyle(color: _red, fontSize: 11)),
-        action: SnackBarAction(label: ar ? 'إعداد الآن' : 'Set Up Now', textColor: _gold,
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => SetupScreen(
-                    onDone: () { if (mounted) Navigator.of(context).pop(); },
-                    onSkip: () { if (mounted) Navigator.of(context).pop(); })))),
-        duration: const Duration(seconds: 6)));
+            side: const BorderSide(color: _gold, width: 0.7)),
+        content: Text(
+            ar ? 'يُجهَّز المحرك الآن… $pct٪ — أعد المحاولة بعد قليل'
+               : 'The offline engine is still unpacking… $pct% — try again in a moment.',
+            style: const TextStyle(color: _gold, fontSize: 11)),
+        duration: const Duration(seconds: 4)));
+      return false;
     }
+
+    // S206: old message sent users to "Settings" to finish setup, but
+    // settings_screen.dart has no local-engine setup code at all — the only
+    // real entry point was buried in home_screen.dart's local-mode toggle.
+    // S258: and now it is LocalEngineService, which owns the single run.
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: _card, behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: _red, width: 0.7)),
+      content: Text(ar ? 'يلزم تجهيز المحرك المحلي أولًا' : 'The offline engine is not ready yet.',
+          style: const TextStyle(color: _red, fontSize: 11)),
+      action: SnackBarAction(label: ar ? 'جهّز الآن' : 'Prepare Now', textColor: _gold,
+          onPressed: () => LocalEngineService.ensurePrepared().drain<void>()
+              .catchError((_) {})),
+      duration: const Duration(seconds: 6)));
     return ok;
   }
 
@@ -912,18 +931,29 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
 
   Future<void> _runCompare() async {
     if (_filePath == null || _cmpRefPath == null) return;
+    if (!await _checkSetup()) return;
     setState(() { _cmpRunning = true; _cmpError = null; _cmpResult = null; });
-    String? outJson;
+    String? outJson, refIn, subIn;
     try {
       final tmp = await getTemporaryDirectory();
       final stamp = DateTime.now().millisecondsSinceEpoch;
       outJson = '${tmp.path}/tl_compare_$stamp.json';
+      // S258: BOTH files have to be copied into the temp dir first.
+      //
+      // runProotCmd binds only the parent of the inputPath and outputPath it is
+      // handed, plus the cache dir. This passed the two picker paths straight
+      // through, so the second file — whichever one was not `inputPath` — sat
+      // in a directory proot never mounted and simply did not exist inside the
+      // sandbox. Every other operation in this screen goes through
+      // _safeInput() for exactly this reason; Compare was the one that did not.
+      refIn = await _safeInput(_cmpRefPath!);
+      subIn = await _safeInput(_filePath!);
       final script = await _ensureDspScript();
       // The reference is the FIRST argument: every delta reads "subject
       // relative to reference", which is the direction the wording assumes.
       final r = await _proot(
-          'python3 "$script" --compare "$_cmpRefPath" "$_filePath" "$outJson"',
-          _cmpRefPath!, outJson, timeout: 10);
+          'python3 "$script" --compare "$refIn" "$subIn" "$outJson"',
+          refIn, outJson, timeout: 10);
       if (!File(outJson).existsSync()) {
         throw Exception(r?['out'] ?? 'Comparison did not run');
       }
@@ -936,6 +966,8 @@ class _AudioEditorScreenState extends State<AudioEditorScreen>
       if (mounted) setState(() => _cmpError = '$e');
     } finally {
       _dropTemp(outJson);
+      _dropTemp(refIn);
+      _dropTemp(subIn);
       if (mounted) setState(() => _cmpRunning = false);
     }
   }

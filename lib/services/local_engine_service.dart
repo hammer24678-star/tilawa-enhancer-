@@ -126,6 +126,12 @@ class LocalEngineService {
   static Map<String, dynamic> get preparationProgress => _prepLast;
   static bool get preparationFinished => _prepDone;
 
+  /// True while the first-launch unpack is in flight. Screens that need the
+  /// engine use this to tell "not set up" apart from "being set up right now",
+  /// which are very different things to show someone — and to avoid offering a
+  /// button that would kick off a second, competing extraction.
+  static bool get preparationRunning => _prepStream != null && !_prepDone;
+
   /// Start the unpack if it is not already running or finished, and return a
   /// broadcast stream of its progress.
   ///

@@ -41,6 +41,13 @@ jobs:
       - name: Local engine wiring check
         run: python3 test/local_engines_test.py
 
+      # S258: runProotCmd mounts only the parent of its inputPath, the parent
+      # of its outputPath and the cache dir. A file passed to the Studio Engine
+      # from anywhere else does not exist inside the sandbox — which is how the
+      # Compare tab shipped handing proot two raw file-picker paths.
+      - name: Audio editor proot bind check
+        run: python3 test/proot_binds_check.py
+
       # S251: nova_drift.html is one self-contained file with no build step, so
       # nothing else here would catch a config entry naming a behaviour key
       # that does not exist, an external dependency creeping in, or a draw call
