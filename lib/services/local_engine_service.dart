@@ -106,6 +106,64 @@ class LocalEngineService {
     return ctrl.stream;
   }
 
+  // ── S256: unpack-on-launch ────────────────────────────────────────────────
+  // Everything the offline engine needs is inside the APK — Python, numpy,
+  // scipy, the fourteen audio packages, ffmpeg, DeepFilter, the engine scripts
+  // and the reference recordings. Nothing is fetched. But proot cannot execute
+  // a Python that lives inside an archive, so the bundle is unpacked onto the
+  // filesystem exactly once, and that unpack is the only thing standing between
+  // a fresh install and a working offline engine.
+  //
+  // So it starts the moment the app does, rather than when the home screen
+  // mounts or (worse) when someone finds a "Tap to set up" link. On a fresh
+  // install that means it runs underneath the welcome tour, which is dead time
+  // otherwise.
+  static Stream<Map<String, dynamic>>? _prepStream;
+  static bool _prepDone = false;
+  static Map<String, dynamic> _prepLast = const {'pct': 0, 'phase': ''};
+
+  /// The most recent progress event, for a screen that attaches mid-flight.
+  static Map<String, dynamic> get preparationProgress => _prepLast;
+  static bool get preparationFinished => _prepDone;
+
+  /// Start the unpack if it is not already running or finished, and return a
+  /// broadcast stream of its progress.
+  ///
+  /// Safe to call from anywhere, any number of times: the underlying
+  /// `startSetup` is invoked at most once per process, because invoking it
+  /// twice would run two extractions over the same directory.
+  static Stream<Map<String, dynamic>> ensurePrepared() {
+    if (_prepStream != null) return _prepStream!;
+    final out = StreamController<Map<String, dynamic>>.broadcast();
+    _prepStream = out.stream;
+    () async {
+      try {
+        if (await isSetupComplete()) {
+          _prepDone = true;
+          await out.close();
+          return;
+        }
+        runSetup().listen(
+          (ev) { _prepLast = ev; if (!out.isClosed) out.add(ev); },
+          onError: (e) {
+            // Let the next caller retry rather than latching the failure.
+            _prepStream = null;
+            if (!out.isClosed) { out.addError(e); out.close(); }
+          },
+          onDone: () async {
+            _prepDone = await isSetupComplete();
+            if (!_prepDone) _prepStream = null;
+            if (!out.isClosed) await out.close();
+          },
+        );
+      } catch (e) {
+        _prepStream = null;
+        if (!out.isClosed) { out.addError(e); await out.close(); }
+      }
+    }();
+    return _prepStream!;
+  }
+
   // ── Engine run ────────────────────────────────────────────────────────────
   /// Kotlin auto-generates the output path (app cacheDir).
   static Stream<Map<String, dynamic>> runEngine({  // S157

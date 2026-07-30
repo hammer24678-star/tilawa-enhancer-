@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'state/lang_provider.dart';
+import 'services/local_engine_service.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/home_screen.dart';
 
@@ -19,6 +21,23 @@ void main() async {
   final langAr      = prefs.getBool('lang_ar')      ?? true;
   final seenWelcome = prefs.getBool('seen_welcome_v5') ?? false; // S32
   final isDark      = prefs.getBool('is_dark')       ?? true; // S31-F4
+
+  // S256: start unpacking the offline engine now, before the first frame.
+  //
+  // Everything it needs already ships inside the APK — Python, numpy, scipy,
+  // the fourteen audio packages, ffmpeg, DeepFilter, the engine scripts and the
+  // reference recordings. Nothing is downloaded. proot simply cannot execute a
+  // Python that lives inside an archive, so the bundle is unpacked to the
+  // filesystem exactly once, and that unpack is the only thing between a fresh
+  // install and a working offline engine.
+  //
+  // Kicking it off here rather than when the home screen mounts means it runs
+  // underneath the welcome tour on a fresh install — time that was dead anyway.
+  // Deliberately not awaited: the UI must come up immediately, and every screen
+  // that cares can attach to the same broadcast stream.
+  unawaited(LocalEngineService.ensurePrepared().drain<void>().catchError((_) {
+    // Reported in the UI by whoever is listening; nothing to do here.
+  }));
 
   runApp(TilawaApp(
     langAr: langAr, seenWelcome: seenWelcome, isDark: isDark));

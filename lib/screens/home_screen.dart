@@ -1519,14 +1519,19 @@ class _HomeScreenState extends State<HomeScreen>
   /// and the inline status offers a retry rather than a dead end.
   void _autoPrepareOfflineEngine() {
     if (_prepping || _localReady) return;
+    final seen = LocalEngineService.preparationProgress;
     setState(() {
       _prepping = true;
-      _prepPct = 0;
+      // It has been running since app start, so pick up where it actually is
+      // instead of snapping the bar back to zero on arriving at this screen.
+      _prepPct = (seen['pct'] as num?)?.toInt() ?? 0;
+      _prepPhase = (seen['phase'] as String?) ?? '';
       _prepError = null;
-      _prepPhase = '';
     });
     _prepSub?.cancel();
-    _prepSub = LocalEngineService.runSetup().listen(
+    // S256: attach to the shared run started in main() rather than launching a
+    // second one — two extractions over the same directory would race.
+    _prepSub = LocalEngineService.ensurePrepared().listen(
       (ev) {
         if (!mounted) return;
         setState(() {
