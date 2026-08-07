@@ -44,11 +44,39 @@ def check(label, ok, detail=''):
     return ok
 
 
+SHIPPING = os.path.join(
+    ROOT, 'android', 'app', 'src', 'main', 'kotlin', 'com', 'tilawa',
+    'tilawa_enhancer', 'LocalEngineRunner.kt')
+
+
 def kotlin_source():
+    """The Kotlin that actually ships, and the text to search for channel cases.
+
+    S259: this used to read the template embedded in patch_android.py. That
+    template is not what builds — patch_android.py skips writing it whenever
+    android/.../LocalEngineRunner.kt already exists (S202), and that file is
+    committed, so on every checkout the committed file is what gets compiled
+    into the APK.
+
+    The two had drifted: the committed file still routed v9.0/v8.0 to
+    engine_v90.py/engine_v80.py (which exist nowhere in this project), had no
+    availableLocalEngines() at all, and handed --ref to ihyaa_ve.py, which
+    rejects it. Every check below passed the whole time, against a file no
+    build ever compiled.
+    """
+    if os.path.exists(SHIPPING):
+        kt = open(SHIPPING, encoding='utf-8').read()
+        return kt, kt
     src = open(PATCH, encoding='utf-8').read()
     i = src.index('class LocalEngineRunner')
     j = src.index('\n"""', i)
     return src[i:j], src
+
+
+def ref_scripts(kt):
+    """Parse the REF_SCRIPTS table — engines runEngine sends --ref to."""
+    m = re.search(r'val REF_SCRIPTS[^(]*\((.*?)\n        \)', kt, re.S)
+    return set(re.findall(r'"([^"]+\.py)"', m.group(1))) if m else set()
 
 
 def engine_scripts(kt):
@@ -159,6 +187,37 @@ def main():
               not unaccepted,
               'rejects ' + ' '.join(unaccepted) if unaccepted else ' '.join(flags))
 
+    # 4a: --ref is added in a separate block from the flags parsed above, so it
+    #     was invisible to check 4 — which is exactly how it shipped broken.
+    #
+    #     runEngine used to send --ref to every script not named engine_safaa*.
+    #     ihyaa_ve.py is not named engine_safaa* and does not declare --ref, so
+    #     argparse exited rc=2 before doing any work and v11.3 — the newest
+    #     engine — had never once run offline. A script's name is not evidence
+    #     of its CLI, so the two sides are now checked against each other: the
+    #     REF_SCRIPTS table has to be exactly the set of bundled engines whose
+    #     argparse really declares --ref.
+    refs = ref_scripts(kt)
+    check('REF_SCRIPTS table is present', bool(refs), ', '.join(sorted(refs)))
+    declares_ref = set()
+    for script in sorted(set(scripts.values())):
+        path = os.path.join(ASSETS, script)
+        if not os.path.exists(path):
+            continue
+        src = open(path, encoding='utf-8', errors='replace').read()
+        if re.search(r"add_argument\([^)]*['\"]--ref['\"]", src):
+            declares_ref.add(script)
+
+    sent_but_rejected = sorted(refs - declares_ref)
+    check('every engine sent --ref actually declares it', not sent_but_rejected,
+          'argparse exits 2 on: ' + ', '.join(sent_but_rejected)
+          if sent_but_rejected else 'all accept --ref')
+
+    accepts_but_denied = sorted(declares_ref - refs)
+    check('every engine that accepts --ref is given one', not accepts_but_denied,
+          'runs without a reference: ' + ', '.join(accepts_but_denied)
+          if accepts_but_denied else 'none left out')
+
     # 4b: an engine that needs the bundled reference recordings must look where
     #     the app actually puts them. LocalEngineRunner binds them at
     #     /reference_audio inside proot; engine_v70 had only the developer's
@@ -208,6 +267,31 @@ def main():
           'availableLocalEngines' in svc)
     check('home screen blocks engines with no offline script',
           '_engineBlocked' in home and '_refreshLocalEngines' in home)
+
+    # S259: the committed file and the patch_android.py template are two copies
+    # of the same class, and only one of them builds. They are allowed to
+    # differ — the committed one carries S229/S237 work the template never got
+    # — but not about which engine runs which script, or which engines are
+    # handed --ref. That specific disagreement is what shipped v9.0/v8.0
+    # pointing at non-existent files and v11.3 dying on an unrecognised flag,
+    # for nine sessions, with this test reporting PASS against the copy that
+    # was never compiled.
+    if os.path.exists(SHIPPING):
+        tpl_src = open(PATCH, encoding='utf-8').read()
+        i = tpl_src.index('class LocalEngineRunner')
+        tpl = tpl_src[i:tpl_src.index('\n"""', i)]
+        tpl_scripts, tpl_refs = engine_scripts(tpl), ref_scripts(tpl)
+        if tpl_scripts:
+            check('both Kotlin copies agree on ENGINE_SCRIPTS',
+                  tpl_scripts == scripts,
+                  'template=%s committed=%s' % (
+                      sorted(tpl_scripts.items()), sorted(scripts.items()))
+                  if tpl_scripts != scripts else 'identical')
+            check('both Kotlin copies agree on REF_SCRIPTS',
+                  tpl_refs == refs,
+                  'template=%s committed=%s' % (
+                      sorted(tpl_refs), sorted(refs))
+                  if tpl_refs != refs else 'identical')
 
     # a bundled script nothing routes to is dead weight in the APK
     routed = set(scripts.values()) | set(support)

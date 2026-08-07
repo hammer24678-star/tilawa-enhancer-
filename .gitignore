@@ -16,3 +16,8 @@ test/.screenshots/
 
 # S255: byte-compiled cache from running the engines locally under test
 assets/engines/__pycache__/
+
+# S259: reference fingerprints the engines write next to their own script the
+# first time they are run against assets/reference_audio/. Derived data from a
+# local test run, not source — and they would otherwise be bundled into the APK.
+assets/engines/ref_cache_*.json

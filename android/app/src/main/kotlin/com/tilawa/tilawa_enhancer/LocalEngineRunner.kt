@@ -27,6 +27,49 @@ class LocalEngineRunner(
         // force one clean wipe so upgrading the app actually fixes a
         // phone that already hit the ffmpeg "symbol not found" bug.
         private const val PYENV_BUILD_ID = "s229-alpine3213-unified"
+
+        // S259: one table for engine id -> script, used by BOTH runEngine()
+        // and extractEngines().
+        //
+        // Those were two independent literal lists and they had drifted:
+        // extraction asked the APK for engine_v90.py and engine_v80.py, which
+        // exist nowhere in this project, while runEngine() pointed v9.0/v8.0
+        // at them. Every extraction failure was swallowed, setup still
+        // reported success, and picking either engine died inside proot with
+        // "can't open file" and no explanation. v9.0 and v8.0 are gone from
+        // here because they have no script anywhere — availableLocalEngines()
+        // now tells the UI that, instead of offering a guaranteed failure.
+        val ENGINE_SCRIPTS: Map<String, String> = mapOf(
+            "v11.0" to "engine_safaa_v4.py",           // S199-BUG-2: tajalli file never existed
+            "v11.1" to "engine_itiqan_v6_official.py", // S199-BUG-3: ditto
+            "v11.2" to "engine_isteidad_v21.py",
+            "v11.3" to "ihyaa_ve.py",                  // S199-BUG-4: real bundled filename
+            "v10.0" to "engine_v100.py",
+            "v8.5"  to "engine_v85.py",
+            "v7.0"  to "engine_v70.py",
+        )
+
+        // Helper scripts the engines above import or shell out to.
+        val SUPPORT_SCRIPTS = listOf(
+            "idrak_text_v2.py", "miraat_ref_v2.py", "hakim_gen_v2.py",
+            "naqaa_v1_tested.py", "bayan_ve_v2fix.py", "noor_v5.py",
+        )
+
+        // S259: engines whose argparse actually declares --ref.
+        //
+        // argparse exits 2 on an unrecognised flag before doing any work, so
+        // handing --ref to an engine that does not declare it means that
+        // engine can never run offline — it dies with "unrecognized
+        // arguments" and writes no output at all.
+        //
+        // This used to be inferred from the script name (everything not named
+        // engine_safaa* got --ref). ihyaa_ve.py is not named engine_safaa* and
+        // does not declare --ref, so v11.3 — the newest engine — was handed
+        // three --ref flags on every run and had never once worked offline.
+        val REF_SCRIPTS = setOf(
+            "engine_itiqan_v6_official.py", "engine_isteidad_v21.py",
+            "engine_v100.py", "engine_v85.py", "engine_v70.py",
+        )
     }
 
     private val dataDir     = context.filesDir
@@ -84,12 +127,25 @@ class LocalEngineRunner(
                     result.success(null)
                 }
                 "isBasicSetupComplete" -> result.success(isBasicSetupComplete()) // S193
+                // S259: the Dart side has called this since S250 and it was
+                // never registered here, so every call threw
+                // MissingPluginException, was caught, and came back as an
+                // empty list — which callers read as "unknown, don't restrict
+                // anything". That is how local mode kept offering engines
+                // whose script is not in the APK.
+                "availableLocalEngines" -> result.success(availableLocalEngines())
                 // S237: component-level diagnostics for the Settings health panel —
                 // shows the user exactly WHICH piece of local mode is missing/broken
                 // instead of a single opaque "setup required" boolean.
                 "getSetupStatus" -> scope.launch {
                     val st = computeSetupStatus()
                     ui { result.success(st) }
+                }
+                // S259: probes the environment by running it — see diagnose().
+                // Off the main thread: it starts two proot processes.
+                "diagnose" -> scope.launch {
+                    val d = diagnose()
+                    ui { result.success(d) }
                 }
                 // S237: frees tilawa_* work files (engine inputs/outputs, editor
                 // temp exports) that used to accumulate in cacheDir forever.
@@ -205,6 +261,53 @@ class LocalEngineRunner(
             "cacheFiles"   to cacheFiles.size,
             "runtimeBytes" to dirSizeBytes(alpineDir),
             "freeBytes"    to dataDir.usableSpace,
+        )
+    }
+
+    /** S259: what actually WORKS, probed by running it.
+     *
+     *  computeSetupStatus() above answers with File.exists() only, which is
+     *  why a rootfs that extracted but cannot execute anything presented as
+     *  "everything fine" while every operation failed. The Dart side has
+     *  asked for this map since S250h — the audio editor uses it to tell
+     *  "not set up" apart from "set up but broken", and to show the
+     *  "ffmpeg is installed but cannot start" message — but the method was
+     *  never registered on the channel, so the call always threw
+     *  MissingPluginException and the diagnostics panel stayed empty.
+     *
+     *  Runs two short commands inside proot, so call it off the main thread.
+     */
+    fun diagnose(): Map<String, Any> {
+        val pythonFile = File(alpineDir, "usr/bin/python3").exists()
+        val ffmpegFile = File(alpineDir, "usr/bin/ffmpeg").exists()
+        val filesOk    = prootBin.exists() && pythonFile && ffmpegFile
+
+        var ffOk = false; var ffErr = ""
+        var npOk = false; var npErr = ""
+        if (filesOk) {
+            try {
+                val (rc, out) = runProot(
+                    listOf("/usr/bin/ffmpeg", "-hide_banner", "-version"), 2)
+                ffOk = rc == 0; ffErr = if (rc == 0) "" else out
+            } catch (e: Exception) { ffErr = e.message ?: "ffmpeg probe failed" }
+            try {
+                val (rc, out) = runProot(listOf("/usr/bin/python3", "-c",
+                    "import numpy; print(numpy.__version__)"), 3)
+                npOk = rc == 0; npErr = if (rc == 0) "" else out
+            } catch (e: Exception) { npErr = e.message ?: "numpy probe failed" }
+        }
+
+        val stamp = File(alpineDir, ".pyenv_build_id")
+        return mapOf(
+            "proot"         to prootBin.exists(),
+            "python_file"   to pythonFile,
+            "ffmpeg_file"   to ffmpegFile,
+            "ffmpeg_runs"   to ffOk,
+            "numpy_imports" to npOk,
+            "env_stamp_ok"  to (stamp.exists() &&
+                                stamp.readText().trim() == PYENV_BUILD_ID),
+            "ffmpeg_error"  to ffErr.takeLast(400),
+            "numpy_error"   to npErr.takeLast(400),
         )
     }
 
@@ -584,17 +687,17 @@ class LocalEngineRunner(
             // older than 24h is safely stale (results are re-downloaded/saved
             // by the Dart side right after each run finishes).
             try { clearEngineCache(24L * 60 * 60 * 1000) } catch (_: Exception) {}
-            val script = mapOf(
-                "v11.0" to "engine_safaa_v4.py",  // S199-BUG-2: tajalli file never existed
-                "v11.1" to "engine_itiqan_v6_official.py",  // S199-BUG-3: ditto
-                "v11.2" to "engine_isteidad_v21.py",
-                "v11.3" to "ihyaa_ve.py",  // S199-BUG-4: real bundled filename
-                "v10.0" to "engine_v100.py",
-                "v9.0"  to "engine_v90.py",
-                "v8.5"  to "engine_v85.py",
-                "v8.0"  to "engine_v80.py",
-                "v7.0"  to "engine_v70.py",
-            )[engineId] ?: "engine_safaa_v4.py"  // S199: match BUG-2 fix
+            val script = ENGINE_SCRIPTS[engineId] ?: "engine_safaa_v4.py"
+
+            // S259: fail with something the user can act on. Falling through
+            // to a missing script meant proot printed "can't open file" and
+            // the app showed that raw, with no hint that this engine simply
+            // is not available offline.
+            if (!File(enginesDir, script).exists()) {
+                throw Exception(
+                    "Engine $engineId is not available offline (missing $script). " +
+                    "Use one of: " + availableLocalEngines().joinToString(", "))
+            }
 
             // v11.0 (tajalli) outputs WAV; v11.1/v11.2 output MP3
             val outExt = if (engineId == "v11.0") "wav" else "mp3"
@@ -649,8 +752,9 @@ class LocalEngineRunner(
                 else
                     arrayOf("-i", actualInput, "-o", outputPath, "--iterations", "3")),
             )
-            // S118/S213: safaa has no --ref flag — skip for safaa engines
-            if (!script.startsWith("engine_safaa")) {
+            // S118/S213/S259: only engines that declare --ref get one. See
+            // REF_SCRIPTS above — a script name is not evidence of its CLI.
+            if (script in REF_SCRIPTS) {
                 listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
                     val refFile = File(refAudioDir, rf)
                     if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
@@ -976,12 +1080,22 @@ class LocalEngineRunner(
         }
     }
 
+    // S259: engine ids that can actually run offline — i.e. whose script is
+    // present on disk after extraction. The Dart side uses this to stop
+    // offering an engine that cannot possibly work.
+    fun availableLocalEngines(): List<String> =
+        ENGINE_SCRIPTS.filter { (_, script) ->
+            File(enginesDir, script).let { it.exists() && it.length() > 1024 }
+        }.keys.toList()
+
     private fun extractEngines() {
         enginesDir.mkdirs()
-        listOf("engine_safaa_v4.py","engine_itiqan_v6_official.py",  // S199-BUG-1/2/3: fixed names + missing comma
-               "engine_isteidad_v21.py","idrak_text_v2.py","miraat_ref_v2.py","hakim_gen_v2.py","naqaa_v1_tested.py","bayan_ve_v2fix.py",
-               "noor_v5.py","ihyaa_ve.py","engine_v100.py","engine_v90.py",  // S199-BUG-4: ihya real filename
-               "engine_v85.py","engine_v80.py","engine_v70.py").forEach { name ->
+        // S259: derived from the one table above rather than a second literal
+        // list. The two had drifted — this list used to name engine_v90.py and
+        // engine_v80.py, which are in no APK because they exist nowhere in the
+        // project, while runEngine() happily routed v9.0/v8.0 to them.
+        val failed = mutableListOf<String>()
+        (ENGINE_SCRIPTS.values.distinct() + SUPPORT_SCRIPTS).forEach { name ->
             val dest = File(enginesDir, name)
             if (dest.exists() && dest.length() > 1024) return@forEach  // S88
             try { context.assets.open("flutter_assets/assets/engines/$name").use { inp ->
@@ -989,8 +1103,20 @@ class LocalEngineRunner(
             } catch (_: Exception) {
                 try { context.assets.open("engines/$name").use { inp ->
                     FileOutputStream(dest).use { inp.copyTo(it) } }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    // S259: this pair of empty catches is how the drift above
+                    // stayed invisible — a script that was not in the APK
+                    // failed silently and setup still reported success.
+                    failed += name
+                    android.util.Log.w("LocalEngineRunner",
+                        "extractEngines: could not extract $name from assets " +
+                        "(${e.message})")
+                }
             }
+        }
+        if (failed.isNotEmpty()) {
+            android.util.Log.w("LocalEngineRunner",
+                "engines unavailable offline: ${failed.joinToString(", ")}")
         }
     }
 

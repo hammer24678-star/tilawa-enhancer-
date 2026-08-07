@@ -48,6 +48,35 @@ jobs:
       - name: Audio editor proot bind check
         run: python3 test/proot_binds_check.py
 
+      # S259: the editor's second processing path. Export falls back to a plain
+      # ffmpeg -af chain whenever the Studio Engine is unavailable or returns
+      # non-zero — i.e. exactly when the user is already having trouble — and
+      # nothing had ever run those filters. Every one of them is a string built
+      # by interpolating slider values into ffmpeg syntax, so a wrong option
+      # name or an out-of-range value fails at export time on the phone and
+      # nowhere else. This runs each filter, at both ends of its own slider's
+      # range, against a real WAV.
+      - name: Audio editor ffmpeg filter check
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 test/ffmpeg_filters_check.py
+
+      # S259: the Studio Engine itself — process/analyze/split/quality/libs,
+      # once with all 14 bundled packages present and once with them hidden to
+      # prove the numpy/scipy fallbacks still produce valid audio. This test
+      # has existed since S250 and was never wired into CI.
+      - name: Studio Engine smoke test
+        run: |
+          pip install --quiet numpy scipy --break-system-packages
+          for p in nara_wpe noisereduce pystoi pyloudnorm soundfile soxr \
+                   audioread joblib decorator tqdm msgpack pooch lazy_loader \
+                   webrtcvad-wheels; do
+            pip install --quiet --break-system-packages "$p" || \
+              echo "::warning::optional package $p unavailable — its checks will be skipped"
+          done
+          python3 test/dsp_studio_smoke.py
+
       # S251: nova_drift.html is one self-contained file with no build step, so
       # nothing else here would catch a config entry naming a behaviour key
       # that does not exist, an external dependency creeping in, or a draw call
@@ -98,6 +127,20 @@ jobs:
 
       - name: Flutter pub get
         run: flutter pub get
+
+      # S259: the Dart side had no gate at all — a compile error surfaced only
+      # when `flutter build apk` reached it, about an hour into the job and
+      # after the whole Alpine/Python asset stage. These take under a minute.
+      - name: Flutter analyze
+        run: flutter analyze
+
+      # Layout overflow has shipped from this app twice (S244: a 135 px clip
+      # that made the transport controls invisible AND untappable in release).
+      # flutter_test reports an overflow as a test exception, so pumping every
+      # screen at the four phone widths this app targets, at both text scales,
+      # in both languages and both themes, is a real regression gate.
+      - name: Flutter widget + render tests
+        run: flutter test
 
       - name: Regenerate android/
         run: flutter create --platforms=android --project-name tilawa_enhancer .

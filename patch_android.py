@@ -459,6 +459,24 @@ class LocalEngineRunner(
             "idrak_text_v2.py", "miraat_ref_v2.py", "hakim_gen_v2.py",
             "naqaa_v1_tested.py", "bayan_ve_v2fix.py", "noor_v5.py",
         )
+        // S259: engines whose argparse actually declares --ref.
+        //
+        // argparse exits 2 on an unrecognised flag before doing any work, so
+        // handing --ref to an engine that does not declare it means that
+        // engine can never run offline — it dies with "unrecognized
+        // arguments" and writes no output at all.
+        //
+        // This used to be inferred from the script name (everything that was
+        // not engine_safaa* got --ref). ihyaa_ve.py is not named engine_safaa*
+        // and does not declare --ref, so v11.3 — the newest engine, and the
+        // default pick in local mode — was handed three --ref flags on every
+        // run and had never once worked offline. A declared table cannot
+        // drift that way, and test/local_engines_test.py now checks it against
+        // what the scripts really parse.
+        val REF_SCRIPTS = setOf(
+            "engine_itiqan_v6_official.py", "engine_isteidad_v21.py",
+            "engine_v100.py", "engine_v85.py", "engine_v70.py",
+        )
     }
 
     private val dataDir     = context.filesDir
@@ -1019,8 +1037,9 @@ class LocalEngineRunner(
                 else
                     arrayOf("-i", actualInput, "-o", outputPath, "--iterations", "3")),
             )
-            // S118/S213: safaa has no --ref flag — skip for safaa engines
-            if (!script.startsWith("engine_safaa")) {
+            // S118/S213/S259: only engines that declare --ref get one. See
+            // REF_SCRIPTS above — a script name is not evidence of its CLI.
+            if (script in REF_SCRIPTS) {
                 listOf("ref_araf_1425h.mp3", "ref_fath_1425h.mp3", "ref_fatir_1425h.mp3").forEach { rf ->
                     val refFile = File(refAudioDir, rf)
                     if (refFile.exists()) cmd += listOf("--ref", "/reference_audio/$rf")
