@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../design/nur.dart';
 import '../services/local_engine_service.dart';
 
 /// S65 — First-run screen: downloads Alpine + Python + ffmpeg + DeepFilter.
@@ -24,23 +25,12 @@ class _SetupScreenState extends State<SetupScreen>
   bool   _running = false;
   StreamSubscription<Map<String, dynamic>>? _sub;
 
-  static const _void   = Color(0xFF020D0C);
-  static const _gold   = Color(0xFFC8A048);
-  static const _sunlit = Color(0xFFF0D882);
-  static const _teal   = Color(0xFF1DB898);
-  static const _textB  = Color(0xFF8AACBA);
-  static const _jade   = Color(0xFF0D2B22);
-  static const _red    = Color(0xFFD94040);
 
-  late final AnimationController _pulseCtrl;
   late final AnimationController _shimCtrl;
 
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 2000))
-      ..repeat(reverse: true);
     _shimCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1400))
       ..repeat();
@@ -50,7 +40,6 @@ class _SetupScreenState extends State<SetupScreen>
   @override
   void dispose() {
     _sub?.cancel();
-    _pulseCtrl.dispose();
     _shimCtrl.dispose();
     super.dispose();
   }
@@ -85,151 +74,138 @@ class _SetupScreenState extends State<SetupScreen>
 
   @override
   Widget build(BuildContext context) {
+    final p = NurPalette.of(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
+      value: p.dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: _void,
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            child: Column(children: [
-              const SizedBox(height: 32),
-              _logo(),
-              const SizedBox(height: 24),
-              _title(),
-              const SizedBox(height: 44),
-              _error ? _errorCard() : _progressCard(),
-              const SizedBox(height: 28),
-              _infoCard(),
-              const SizedBox(height: 20),
-              TextButton(
-                onPressed: widget.onSkip,
-                child: Text('Use server mode instead',
-                  style: TextStyle(
-                    color: _textB.withValues(alpha: 0.55), fontSize: 12))),
-              const SizedBox(height: 16),
-            ]),
+        backgroundColor: p.bg,
+        body: NurBackdrop(
+          accent: _error ? p.err : p.teal,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: Column(children: [
+                const SizedBox(height: 12),
+                EntranceFade(index: 0, child: _hero(p)),
+                const SizedBox(height: 28),
+                EntranceFade(index: 1, child: _title(p)),
+                const SizedBox(height: 32),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: _error ? _errorCard(p) : _progressCard(p)),
+                const SizedBox(height: 24),
+                EntranceFade(index: 2, child: _infoCard(p)),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: widget.onSkip,
+                  child: Text('Use server mode instead',
+                    style: TextStyle(color: p.textSub, fontSize: 13))),
+                const SizedBox(height: 16),
+              ]),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _logo() => AnimatedBuilder(
-    animation: _pulseCtrl,
-    builder: (_, __) {
-      final g = _pulseCtrl.value;
-      return Container(
-        width: 96, height: 96,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle, color: _jade,
-          border: Border.all(
-            color: _gold.withValues(alpha: 0.28 + 0.45 * g), width: 2.0),
-          boxShadow: [
-            BoxShadow(color: _gold.withValues(alpha: 0.08 + 0.16 * g),
-              blurRadius: 28 + 20 * g, spreadRadius: 2),
-            BoxShadow(color: _teal.withValues(alpha: 0.04 + 0.08 * g),
-              blurRadius: 48 + 28 * g),
-          ]),
-        child: ClipOval(child: Image.asset('assets/images/logo.png',
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) =>
-            const Icon(Icons.menu_book_rounded, color: _gold, size: 50))));
-    });
-
-  Widget _title() => const Column(children: [
-    Text('محسِّن التلاوة',
-      style: TextStyle(color: _gold, fontSize: 26, fontWeight: FontWeight.w900)),
-    SizedBox(height: 6),
-    Text('Local Engine Setup',
-      style: TextStyle(color: _textB, fontSize: 13, letterSpacing: 0.6)),
-  ]);
-
-  Widget _progressCard() => Column(children: [
-    AnimatedBuilder(
-      animation: _pulseCtrl,
-      builder: (_, __) => ShaderMask(
-        shaderCallback: (b) => const LinearGradient(
-          colors: [_sunlit, _gold],
-          begin: Alignment.topCenter, end: Alignment.bottomCenter,
-        ).createShader(b),
-        child: Text('$_pct%',
-          style: const TextStyle(
-            color: Colors.white, fontSize: 56, fontWeight: FontWeight.w900,
-            height: 1.0, letterSpacing: -2)))),
-    const SizedBox(height: 16),
-    Container(
-      height: 10,
+  Widget _hero(NurPalette p) => NurOrb(
+    animation: _shimCtrl,
+    size: 220,
+    energy: _error ? 0.1 : 0.35 + 0.65 * (_pct / 100.0),
+    progress: _error ? -1 : _pct / 100.0,
+    a: _error ? p.err : null,
+    child: Container(
+      width: 92, height: 92,
       decoration: BoxDecoration(
-        color: _jade, borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: _teal.withValues(alpha: 0.18))),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(7),
-        child: LinearProgressIndicator(
-          value: _pct / 100.0,
-          backgroundColor: Colors.transparent,
-          valueColor: AlwaysStoppedAnimation<Color>(
-            _pct < 36 ? _teal : _pct < 80 ? _gold : _sunlit)))),
-    const SizedBox(height: 12),
-    AnimatedSwitcher(
-      duration: const Duration(milliseconds: 250),
-      child: Text(_phase,
-        key: ValueKey(_phase),
-        textAlign: TextAlign.center,
-        style: const TextStyle(color: _textB, fontSize: 12, letterSpacing: 0.3))),
+        shape: BoxShape.circle,
+        color: p.surface,
+        border: Border.all(color: p.gold.withValues(alpha: 0.55), width: 1.6)),
+      child: ClipOval(child: Image.asset('assets/images/logo.png',
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+          Icon(Icons.menu_book_rounded, color: p.gold, size: 44)))));
+
+  Widget _title(NurPalette p) => Column(children: [
+    GradientText('محسِّن التلاوة',
+      gradient: p.goldGradient,
+      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+    const SizedBox(height: 6),
+    Text('Local Engine Setup',
+      style: TextStyle(color: p.textSub, fontSize: 13, letterSpacing: 0.8)),
   ]);
 
-  Widget _errorCard() => Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: const Color(0xFF2A0A0A),
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _red.withValues(alpha: 0.45))),
+  Widget _progressCard(NurPalette p) => NurCard(
+    key: const ValueKey('progress'),
+    radius: 24,
+    glow: true,
+    padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
     child: Column(children: [
-      const Icon(Icons.error_outline_rounded, color: _red, size: 40),
+      AnimatedCount(
+        value: _pct.toDouble(),
+        suffix: '%',
+        style: TextStyle(
+          color: p.gold, fontSize: 52, fontWeight: FontWeight.w900,
+          height: 1.0, letterSpacing: -1.5)),
+      const SizedBox(height: 18),
+      NurProgressBar(value: _pct / 100.0, height: 10),
+      const SizedBox(height: 14),
+      AnimatedSwitcher(
+        duration: const Duration(milliseconds: 250),
+        child: Text(_phase,
+          key: ValueKey(_phase),
+          textAlign: TextAlign.center,
+          style: TextStyle(color: p.textSub, fontSize: 12.5, letterSpacing: 0.2))),
+    ]));
+
+  Widget _errorCard(NurPalette p) => NurCard(
+    key: const ValueKey('error'),
+    radius: 24,
+    accent: p.err,
+    selected: true,
+    padding: const EdgeInsets.all(22),
+    child: Column(children: [
+      Icon(Icons.error_outline_rounded, color: p.err, size: 42),
       const SizedBox(height: 12),
-      const Text('Setup Failed',
-        style: TextStyle(color: _red, fontSize: 16, fontWeight: FontWeight.bold)),
+      Text('Setup Failed',
+        style: TextStyle(color: p.err, fontSize: 17, fontWeight: FontWeight.w800)),
       const SizedBox(height: 8),
       Text(_errMsg,
         textAlign: TextAlign.center,
-        style: const TextStyle(color: _textB, fontSize: 11, height: 1.5)),
+        style: TextStyle(color: p.textSub, fontSize: 12, height: 1.5)),
       const SizedBox(height: 20),
-      SizedBox(width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: () { setState(() { _running = false; }); _startSetup(); },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _gold, foregroundColor: _void,
-            padding: const EdgeInsets.symmetric(vertical: 13),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-          icon: const Icon(Icons.refresh_rounded, size: 18),
-          label: const Text('Retry',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)))),
+      NurButton(
+        label: 'Retry',
+        icon: Icons.refresh_rounded,
+        onTap: () { setState(() { _running = false; }); _startSetup(); }),
     ]));
 
-  Widget _infoCard() => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    decoration: BoxDecoration(
-      color: _jade.withValues(alpha: 0.6),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: _teal.withValues(alpha: 0.18))),
+  Widget _infoCard(NurPalette p) => NurCard(
+    radius: 20,
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
     child: Column(children: [
-      _row(Icons.wifi_off_rounded,        'Works fully offline after setup'),
-      const SizedBox(height: 8),
-      _row(Icons.lock_outline_rounded,    'Your audio never leaves your phone'),
-      const SizedBox(height: 8),
-      _row(Icons.download_rounded,        'One-time download  ~200 MB'),
-      const SizedBox(height: 8),
-      _row(Icons.storage_rounded,         'Uses ~300 MB of storage'),
-      const SizedBox(height: 8),
+      _row(p, Icons.wifi_off_rounded,        'Works fully offline after setup'),
+      const SizedBox(height: 10),
+      _row(p, Icons.lock_outline_rounded,    'Your audio never leaves your phone'),
+      const SizedBox(height: 10),
+      _row(p, Icons.download_rounded,        'One-time download  ~200 MB'),
+      const SizedBox(height: 10),
+      _row(p, Icons.storage_rounded,         'Uses ~300 MB of storage'),
+      const SizedBox(height: 10),
       // S237: download() now retries with HTTP-Range resume
-      _row(Icons.sync_rounded,            'Interrupted downloads resume automatically'),
+      _row(p, Icons.sync_rounded,            'Interrupted downloads resume automatically'),
     ]));
 
-  Widget _row(IconData ic, String txt) => Row(children: [
-    Icon(ic, color: _teal, size: 16),
-    const SizedBox(width: 10),
+  Widget _row(NurPalette p, IconData ic, String txt) => Row(children: [
+    Container(
+      width: 30, height: 30,
+      decoration: BoxDecoration(
+        color: p.teal.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10)),
+      child: Icon(ic, color: p.teal, size: 16)),
+    const SizedBox(width: 12),
     Expanded(child: Text(txt,
-      style: const TextStyle(color: _textB, fontSize: 11, height: 1.4))),
+      style: TextStyle(color: p.textSub, fontSize: 12, height: 1.4))),
   ]);
 }
