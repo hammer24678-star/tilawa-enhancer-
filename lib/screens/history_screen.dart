@@ -29,10 +29,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
 
   // S32: theme cache (see home_screen.dart for rationale)
-  Color _tBg     = const Color(0xFF020D0C); // S46-HIST
-  Color _tCard   = const Color(0xFF0F2420);
-  Color _tBorder = const Color(0xFF1A4035);
-  Color _tText   = const Color(0xFFC9D1D9);
+  Color _tBg     = const Color(0xFF03100E); // S46-HIST
+  Color _tCard   = const Color(0xFF0F2623);
+  Color _tBorder = const Color(0xFF1D3F39);
+  Color _tText   = const Color(0xFFF0E6C8);
   Color _tGold   = const Color(0xFFD4AF37);
   @override
   void initState() {
@@ -68,7 +68,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: s.ar ? 'حسناً' : 'OK',
-          textColor: const Color(0xFF3FB950),
+          textColor: const Color(0xFF2ABF6E),
           onPressed: () {},
         ),
       ));
@@ -81,7 +81,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         duration: const Duration(seconds: 5),
         action: SnackBarAction(
           label: s.ar ? 'حذف' : 'Remove',
-          textColor: const Color(0xFFF85149),
+          textColor: const Color(0xFFE0524A),
           onPressed: () => _removeJob(jobId),
         ),
       ));
@@ -107,10 +107,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
   bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S46-HIST-M
-  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
-  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
+  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF03100E) : const Color(0xFFFAF7EE); // S46-HIST-M
+  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2623) : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1D3F39) : const Color(0xFFD4C99A);
+  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFF0E6C8) : const Color(0xFF1A1400);
   Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
   // S32-COLORS-APPLIED
 
@@ -122,18 +122,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: Text(s.clearAll,
           style: const TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
         content: Text(s.clearAllConfirm,
-          style: const TextStyle(color: Color(0xFFE2CFA0))),
-        backgroundColor: const Color(0xFF0C1E28),
+          style: const TextStyle(color: Color(0xFFF0E6C8))),
+        backgroundColor: const Color(0xFF0A1C1A),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: const Color(0xFF1B6B80).withValues(alpha: 0.3))),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false),
             child: Text(s.ar ? 'إلغاء' : 'Cancel',
-              style: const TextStyle(color: Color(0xFF8AACBA)))),
+              style: const TextStyle(color: Color(0xFF9DB8B3)))),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD94040)),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE0524A)),
             child: Text(s.clearAll,
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
         ]));
@@ -168,10 +168,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
             TextButton.icon(
               onPressed: _clearAll,
               icon: const Icon(Icons.delete_sweep_outlined,
-                color: Color(0xFFD94040), size: 16),
+                color: Color(0xFFE0524A), size: 16),
               label: Text(s.clearAll,
                 style: const TextStyle(
-                  color: Color(0xFFD94040), fontSize: 12))),
+                  color: Color(0xFFE0524A), fontSize: 12))),
         ]),
       body: _loading
         ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37)))
@@ -183,13 +183,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   color: Color(0xFF30363D), size: 56),
                 const SizedBox(height: 12),
                 Text(s.noHistory,
-                  style: const TextStyle(color: Color(0xFF8B949E), fontSize: 16)),
+                  style: const TextStyle(color: Color(0xFF9DB8B3), fontSize: 16)),
                 const SizedBox(height: 6),
                 Text(
                   s.ar
                     ? 'الملفات المعالجة ستظهر هنا'
                     : 'Processed files will appear here',
-                  style: const TextStyle(color: Color(0xFF484F58), fontSize: 12)),
+                  style: const TextStyle(color: Color(0xFF5C7873), fontSize: 12)),
               ]))
           : RefreshIndicator(
               onRefresh: _load,
@@ -238,9 +238,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         : score >= 78 ? s.decent
         : s.fair;
 
-    final scoreColor = score >= 90 ? const Color(0xFF3FB950)
+    final scoreColor = score >= 90 ? const Color(0xFF2ABF6E)
         : score >= 80 ? _tGold
-        : const Color(0xFFF85149);
+        : const Color(0xFFE0524A);
 
     return Dismissible(
       key: Key(jobId),
@@ -252,7 +252,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         decoration: BoxDecoration(
           color: const Color(0xFF200D0D),
           borderRadius: BorderRadius.circular(12)),
-        child: const Icon(Icons.delete_outline, color: Color(0xFFF85149))),
+        child: const Icon(Icons.delete_outline, color: Color(0xFFE0524A))),
       onDismissed: (_) => _removeJob(jobId),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -261,7 +261,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           color: isExpired ? const Color(0xFF1A0808) : _tCard,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isExpired ? const Color(0xFFF85149).withValues(alpha: 0.3) : _tBorder)),
+            color: isExpired ? const Color(0xFFE0524A).withValues(alpha: 0.3) : _tBorder)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             // Score circle
@@ -310,7 +310,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     fontWeight: FontWeight.bold))),
                 const SizedBox(width: 6),
                 Text(displayTs, style: const TextStyle(
-                  color: Color(0xFF8B949E), fontSize: 10)),
+                  color: Color(0xFF9DB8B3), fontSize: 10)),
               ]),
 
               // Metrics if available
@@ -324,7 +324,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       if (job['lra']   != null) 'LRA ${job['lra']}',
                     ].join('  ·  '),
                     style: const TextStyle(
-                      color: Color(0xFF484F58), fontSize: 10))),
+                      color: Color(0xFF5C7873), fontSize: 10))),
             ])),
           ]),
 
@@ -340,22 +340,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 borderRadius: BorderRadius.circular(8)),
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Icon(Icons.warning_amber_rounded,
-                  color: Color(0xFFF85149), size: 14),
+                  color: Color(0xFFE0524A), size: 14),
                 const SizedBox(width: 6),
                 Flexible(child: Text(s.jobExpired,
                   style: const TextStyle(
-                    color: Color(0xFFF85149), fontSize: 11))),
+                    color: Color(0xFFE0524A), fontSize: 11))),
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => _removeJob(jobId),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFF85149).withValues(alpha: 0.5)),
+                      border: Border.all(color: const Color(0xFFE0524A).withValues(alpha: 0.5)),
                       borderRadius: BorderRadius.circular(6)),
                     child: Text(s.ar ? 'حذف' : 'Remove',
                       style: const TextStyle(
-                        color: Color(0xFFF85149), fontSize: 10)))),
+                        color: Color(0xFFE0524A), fontSize: 10)))),
               ]))
           else
             SizedBox(width: double.infinity,
@@ -363,9 +363,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 onPressed: isLoading ? null : () => _reDownload(job),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _tCard,
-                  foregroundColor: const Color(0xFF3FB950),
+                  foregroundColor: const Color(0xFF2ABF6E),
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  side: const BorderSide(color: Color(0xFF3FB950), width: 0.8),
+                  side: const BorderSide(color: Color(0xFF2ABF6E), width: 0.8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
                   elevation: 0),
@@ -373,7 +373,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ? const SizedBox(width: 14, height: 14,
                       child: CircularProgressIndicator(
                         strokeWidth: 1.5,
-                        color: Color(0xFF3FB950)))
+                        color: Color(0xFF2ABF6E)))
                   : const Icon(Icons.download_rounded, size: 16),
                 label: Text(isLoading
                   ? (s.ar ? 'جارٍ التحميل...' : 'Downloading...')

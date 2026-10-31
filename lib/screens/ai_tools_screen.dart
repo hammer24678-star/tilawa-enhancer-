@@ -11,17 +11,17 @@ import '../state/lang_provider.dart'; // S196-BUG-I (S198-BUG-1: fixed path)
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const _bg      = Color(0xFF020D0C);
-const _card    = Color(0xFF0F2420);
+const _bg      = Color(0xFF03100E);
+const _card    = Color(0xFF0F2623);
 const _gold    = Color(0xFFD4AF37);
 const _teal    = Color(0xFF1DB898);
 const _violet  = Color(0xFFB88CFF);
-const _textA   = Color(0xFFE2CFA0);
-const _textB   = Color(0xFF8AACBA);
-const _border  = Color(0xFF1B3A35);
+const _textA   = Color(0xFFF0E6C8);
+const _textB   = Color(0xFF9DB8B3);
+const _border  = Color(0xFF1D3F39);
 const _amber   = Color(0xFFE8A020);
 const _amberDk = Color(0xFF2A1800);
-const _red     = Color(0xFFD94040);
+const _red     = Color(0xFFE0524A);
 const _redDk   = Color(0xFF3D0808);
 
 class AiToolsScreen extends StatelessWidget {

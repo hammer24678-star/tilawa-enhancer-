@@ -79,12 +79,12 @@ class SettingsScreen extends StatelessWidget {
 
   // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
   bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S46-SET
-  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
-  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
-  Color _cDim(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
+  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF03100E) : const Color(0xFFFAF7EE); // S46-SET
+  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2623) : const Color(0xFFF3EED9);
+  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1D3F39) : const Color(0xFFD4C99A);
+  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFF0E6C8) : const Color(0xFF1A1400);
+  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF9DB8B3) : const Color(0xFF5E5338);
+  Color _cDim(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF5C7873) : const Color(0xFF786A49);
   Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
 
   @override
@@ -240,14 +240,14 @@ class SettingsScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Icon(Icons.privacy_tip_outlined,
-                  color: Color(0xFF484F58), size: 14),
+                  color: Color(0xFF5C7873), size: 14),
                 const SizedBox(width: 6),
                 Text(s.privacyPolicy,
                   style: const TextStyle(
-                    color: Color(0xFF484F58),
+                    color: Color(0xFF5C7873),
                     fontSize: 12,
                     decoration: TextDecoration.underline,
-                    decorationColor: Color(0xFF484F58))),
+                    decorationColor: Color(0xFF5C7873))),
               ]))),
           const SizedBox(height: 40),
         ],
@@ -307,7 +307,7 @@ class SettingsScreen extends StatelessWidget {
         s.ar ? 'عرض دليل البداية مرة أخرى' : 'Re-show the onboarding guide',
         style: TextStyle(color: _cSub(context), fontSize: 11)),
       trailing: const Icon(Icons.arrow_forward_ios_rounded,
-        size: 14, color: Color(0xFF484F58)),
+        size: 14, color: Color(0xFF5C7873)),
       onTap: () async {
         final prefs = await SharedPreferences.getInstance();
         // S251: this cleared seen_welcome_v3, but main.dart has read
@@ -345,13 +345,13 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _eCard(BuildContext ctx, _EHist e, bool isAr) {
     Color bc() => e.bc == 'gold' ? const Color(0xFFD4AF37)
-        : e.bc == 'green' ? const Color(0xFF3FB950)
-        : e.bc == 'blue'  ? const Color(0xFF58A6FF)
-        : const Color(0xFF484F58);
+        : e.bc == 'green' ? const Color(0xFF2ABF6E)
+        : e.bc == 'blue'  ? const Color(0xFF5BB0E0)
+        : const Color(0xFF5C7873);
     Color bg() => e.bc == 'gold' ? const Color(0xFF1A1200)
         : e.bc == 'green' ? const Color(0xFF0D2015)
         : e.bc == 'blue'  ? const Color(0xFF0D1B2E)
-        : const Color(0xFF161B22);
+        : const Color(0xFF0F2623);
 
     final isLatest = e.badge == 'LATEST';
     final desc = isAr ? e.ar : e.en;
@@ -372,7 +372,7 @@ class SettingsScreen extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Text(e.v, style: TextStyle(
-            color: isLatest ? const Color(0xFFD4AF37) : const Color(0xFFC9D1D9),
+            color: isLatest ? const Color(0xFFD4AF37) : const Color(0xFFF0E6C8),
             fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(width: 8),
           Expanded(child: Text(e.name,
@@ -388,7 +388,7 @@ class SettingsScreen extends StatelessWidget {
                 color: bc(), fontSize: 9, fontWeight: FontWeight.bold))),
           const SizedBox(width: 8),
           Text(e.score, style: TextStyle(
-            color: isLatest ? const Color(0xFFD4AF37) : const Color(0xFF8B949E),
+            color: isLatest ? const Color(0xFFD4AF37) : const Color(0xFF9DB8B3),
             fontSize: 11, fontWeight: FontWeight.bold)),
         ]),
         const SizedBox(height: 8),
@@ -401,7 +401,7 @@ class SettingsScreen extends StatelessWidget {
           Row(children: [
             Text(isAr ? 'تقييم المطوِّر:' : 'Dev Rating:',
               style: const TextStyle(
-                color: Color(0xFF484F58), fontSize: 9,
+                color: Color(0xFF5C7873), fontSize: 9,
                 letterSpacing: 0.5)),
             const SizedBox(width: 6),
             Container(
@@ -423,11 +423,11 @@ class SettingsScreen extends StatelessWidget {
 
   Color _ratingColor(String r) {
     if (r.startsWith('S')) return const Color(0xFFD4AF37);
-    if (r == 'A+' || r == 'A') return const Color(0xFF3FB950);
+    if (r == 'A+' || r == 'A') return const Color(0xFF2ABF6E);
     if (r == 'A-') return const Color(0xFF1DB898);
-    if (r.startsWith('B')) return const Color(0xFF58A6FF);
-    if (r.startsWith('C')) return const Color(0xFF8B949E);
-    return const Color(0xFFF85149);
+    if (r.startsWith('B')) return const Color(0xFF5BB0E0);
+    if (r.startsWith('C')) return const Color(0xFF9DB8B3);
+    return const Color(0xFFE0524A);
   }
 }
 
@@ -454,13 +454,13 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
 
   static const _gold = Color(0xFFD4AF37);
   static const _teal = Color(0xFF1DB898);
-  static const _red  = Color(0xFFD94040);
+  static const _red  = Color(0xFFE0524A);
 
   bool get _dark => ThemeProvider.isDark(context);
-  Color get _cCard   => _dark ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color get _cBorder => _dark ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
-  Color get _cText   => _dark ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-  Color get _cSub    => _dark ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
+  Color get _cCard   => _dark ? const Color(0xFF0F2623) : const Color(0xFFF3EED9);
+  Color get _cBorder => _dark ? const Color(0xFF1D3F39) : const Color(0xFFD4C99A);
+  Color get _cText   => _dark ? const Color(0xFFF0E6C8) : const Color(0xFF1A1400);
+  Color get _cSub    => _dark ? const Color(0xFF9DB8B3) : const Color(0xFF5E5338);
 
   @override
   void initState() {

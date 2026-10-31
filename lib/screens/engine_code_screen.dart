@@ -12,17 +12,17 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../state/lang_provider.dart';
 
-const _bg      = Color(0xFF020D17);
-const _surface = Color(0xFF0C1E28);
-const _card    = Color(0xFF0F2420);
+const _bg      = Color(0xFF03100E);
+const _surface = Color(0xFF0A1C1A);
+const _card    = Color(0xFF0F2623);
 const _gold    = Color(0xFFD4AF37);
 const _goldDim = Color(0xFF3A2B08);
 const _teal    = Color(0xFF1DB898);
-const _red     = Color(0xFFD94040);
-const _textA   = Color(0xFFE2CFA0);
-const _textB   = Color(0xFF8AACBA);
-const _textDim = Color(0xFF3D5A65);
-const _border  = Color(0xFF1A2E20);
+const _red     = Color(0xFFE0524A);
+const _textA   = Color(0xFFF0E6C8);
+const _textB   = Color(0xFF9DB8B3);
+const _textDim = Color(0xFF5C7873);
+const _border  = Color(0xFF1D3F39);
 
 class _EngineFile {
   final String asset;   // full rootBundle path

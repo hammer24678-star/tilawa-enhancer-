@@ -24,15 +24,15 @@ import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
 
 // ── Sacred Cosmos tokens ─────────────────────────────────────────────────────
-const _bgSurface = Color(0xFF0C1E28);
-const _bgCard    = Color(0xFF0F2420);
+const _bgSurface = Color(0xFF0A1C1A);
+const _bgCard    = Color(0xFF0F2623);
 const _gold      = Color(0xFFD4AF37);
 const _goldLight = Color(0xFFF0CF60);
 const _goldMuted = Color(0xFF3A2B08);
 const _teal      = Color(0xFF1DB898); // S40-TEAL
-const _textB     = Color(0xFF8AACBA);
+const _textB     = Color(0xFF9DB8B3);
 const _ok        = Color(0xFF2ABF6E);
-const _err       = Color(0xFFD94040);
+const _err       = Color(0xFFE0524A);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -82,12 +82,12 @@ class _HomeScreenState extends State<HomeScreen>
   // S32: theme cache — updated at top of every build() so ALL sub-methods
   // (which are instance methods) can read current theme colors directly.
   // Initialized to dark-mode defaults; updated before any widget is built.
-  Color _tBg     = const Color(0xFF080A0E);
-  Color _tCard   = const Color(0xFF161B22);
-  Color _tBorder = const Color(0xFF21262D);
-  Color _tText   = const Color(0xFFC9D1D9);
-  Color _tSub    = const Color(0xFF8B949E);
-  Color _tDim    = const Color(0xFF484F58);
+  Color _tBg     = const Color(0xFF03100E);
+  Color _tCard   = const Color(0xFF0F2623);
+  Color _tBorder = const Color(0xFF1D3F39);
+  Color _tText   = const Color(0xFFF0E6C8);
+  Color _tSub    = const Color(0xFF9DB8B3);
+  Color _tDim    = const Color(0xFF5C7873);
   Color _tGold   = const Color(0xFFD4AF37);
   bool  _tDark   = true;
   // S19: Wake server state
@@ -445,7 +445,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('☁ SERVER engine redirected to 🏠 v11.0 (local mode)'),
-          backgroundColor: Color(0xFF0F2420),
+          backgroundColor: Color(0xFF0F2623),
           duration: Duration(seconds: 3)));
         }
       }
@@ -681,7 +681,7 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: s.ar ? 'حسناً' : 'OK',
-          textColor: const Color(0xFF3FB950),
+          textColor: const Color(0xFF2ABF6E),
           onPressed: () {},
         ),
       ));
@@ -933,7 +933,7 @@ class _HomeScreenState extends State<HomeScreen>
           duration: const Duration(seconds: 8),
           action: SnackBarAction(
             label: s.ar ? 'حسناً' : 'OK',
-            textColor: const Color(0xFF3FB950),
+            textColor: const Color(0xFF2ABF6E),
             onPressed: () {})));
       } catch (e) {
         if (!mounted) return;
@@ -970,7 +970,7 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: s.ar ? 'حسناً' : 'OK',
-          textColor: const Color(0xFF3FB950),
+          textColor: const Color(0xFF2ABF6E),
           onPressed: () {},
         ),
       ));
@@ -1081,8 +1081,8 @@ class _HomeScreenState extends State<HomeScreen>
   Color _cCard(BuildContext ctx)    => _isDark(ctx) ? _tCard : const Color(0xFFF3EED9);
   Color _cBorder(BuildContext ctx)  => _isDark(ctx) ? _tBorder : const Color(0xFFD4C99A);
   Color _cText(BuildContext ctx)    => _isDark(ctx) ? _tText : const Color(0xFF1A1400);
-  Color _cSub(BuildContext ctx)     => _isDark(ctx) ? _tSub : const Color(0xFF6B5E40);
-  Color _cDim(BuildContext ctx)     => _isDark(ctx) ? _tDim : const Color(0xFF8B7B5A);
+  Color _cSub(BuildContext ctx)     => _isDark(ctx) ? _tSub : const Color(0xFF5E5338);
+  Color _cDim(BuildContext ctx)     => _isDark(ctx) ? _tDim : const Color(0xFF786A49);
   Color _cGold(BuildContext ctx)    => _isDark(ctx) ? _tGold : const Color(0xFFB8941F);
 
   // ── BUILD ──────────────────────────────────────────────────────────────────
@@ -1136,11 +1136,11 @@ class _HomeScreenState extends State<HomeScreen>
             // and forced flat-dark while processing regardless of the toggle
             colors: dark
               ? (_busy
-                  ? [const Color(0xFF020D0C), const Color(0xFF030C0B)]
+                  ? [const Color(0xFF03100E), const Color(0xFF030C0B)]
                   : (_engineTintEnabled
-                      ? [Color.lerp(const Color(0xFF020D0C), _engineColor, 0.10)!,
-                         Color.lerp(const Color(0xFF020D0C), _engineColor, 0.055)!]
-                      : [const Color(0xFF020D0C), const Color(0xFF050F0E)]))
+                      ? [Color.lerp(const Color(0xFF03100E), _engineColor, 0.10)!,
+                         Color.lerp(const Color(0xFF03100E), _engineColor, 0.055)!]
+                      : [const Color(0xFF03100E), const Color(0xFF050F0E)]))
               : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
         // S29: Sacred Cosmos painters Stack
         child: Stack(children: [
@@ -1176,7 +1176,7 @@ class _HomeScreenState extends State<HomeScreen>
             SliverAppBar( // S61-APPBAR
               pinned: true,
               floating: false,
-              backgroundColor: const Color(0xFF020D0C),
+              backgroundColor: const Color(0xFF03100E),
               elevation: 0,
               expandedHeight: 72,
               automaticallyImplyLeading: false,
@@ -1209,7 +1209,7 @@ class _HomeScreenState extends State<HomeScreen>
                       radius: 1.8,
                       colors: [
                         Color(0xFF0D2E1F),
-                        Color(0xFF020D0C)]))),
+                        Color(0xFF03100E)]))),
                 // S255: the brand lockup is a fixed-width logo plus two runs of
                 // 19px text, and nothing bounded it. FlexibleSpaceBar hands its
                 // title a constrained box, so on a 360px screen it overflowed by
@@ -1507,7 +1507,7 @@ class _HomeScreenState extends State<HomeScreen>
             width: 160, height: 3,
             child: LinearProgressIndicator(
               value: _prepping && _prepPct > 0 ? _prepPct / 100.0 : null,
-              backgroundColor: const Color(0xFF1A2E20),
+              backgroundColor: const Color(0xFF1D3F39),
               valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD4AF37)))),
         ),
       ]));
@@ -1627,7 +1627,7 @@ class _HomeScreenState extends State<HomeScreen>
           // reader reads backwards as "التلاوة محسِّن".
           const Text(' محسِّن',
             style: TextStyle(
-              color: Color(0xFFE2CFA0), fontSize: 18,
+              color: Color(0xFFF0E6C8), fontSize: 18,
               fontWeight: FontWeight.w800, letterSpacing: 0.5)),
         ])));
 
@@ -1781,7 +1781,7 @@ class _HomeScreenState extends State<HomeScreen>
     const gold  = Color(0xFFC8A048);
     const teal  = Color(0xFF1DB898);
     const jade  = Color(0xFF0D2B22);
-    const textB = Color(0xFF8AACBA);
+    const textB = Color(0xFF9DB8B3);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
       child: AnimatedContainer(
@@ -1834,7 +1834,7 @@ class _HomeScreenState extends State<HomeScreen>
                   s.ar ? 'تعذّر التجهيز — اضغط للمحاولة مجدداً'
                        : 'Preparation failed — tap to retry',
                   style: const TextStyle(
-                    color: Color(0xFFF85149), fontSize: 10,
+                    color: Color(0xFFE0524A), fontSize: 10,
                     decoration: TextDecoration.underline))),
             if (_localMode && _localReady)
               // S250 QoL — say how many engines are actually runnable offline.
@@ -1850,7 +1850,7 @@ class _HomeScreenState extends State<HomeScreen>
                 style: const TextStyle(color: teal, fontSize: 10)),
             if (!_localMode)
               Text(s.ar ? 'فعِّل للمعالجة خارج الإنترنت' : 'Switch for offline, private processing', // S147
-                style: const TextStyle(color: Color(0xFF3D5A65), fontSize: 10)),
+                style: const TextStyle(color: Color(0xFF5C7873), fontSize: 10)),
           ])),
           GestureDetector( // S146: info button
             onTap: () => Navigator.push(context,
@@ -1893,7 +1893,7 @@ class _HomeScreenState extends State<HomeScreen>
   // S188-B: engine-color background tint intensity toggle
   Widget _engineTintToggle(S s) {
     const gold  = Color(0xFFC8A048);
-    const textB = Color(0xFF8AACBA);
+    const textB = Color(0xFF9DB8B3);
     const jade  = Color(0xFF0D2B22);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
@@ -1940,7 +1940,7 @@ class _HomeScreenState extends State<HomeScreen>
   // S173/S174-hotfix: aggressive dereverberation toggle (الصفاء v11.0 only)
   Widget _aggressiveModeToggle(S s) {
     const amber  = Color(0xFFE8943A);
-    const textB  = Color(0xFF8AACBA);
+    const textB  = Color(0xFF9DB8B3);
     const darkBg = Color(0xFF1A0E05);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
@@ -1977,7 +1977,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ? (s.ar ? 'لتسجيلات شديدة الصدى' : 'Best for heavily reverberant recordings')
                 : (s.ar ? 'موصى به للتسجيلات العادية' : 'Recommended for most recordings'),
               style: const TextStyle(
-                color: Color(0xFF3D5A65), fontSize: 10)),
+                color: Color(0xFF5C7873), fontSize: 10)),
           ])),
           Switch(
             value: _aggressive,
@@ -2010,10 +2010,10 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _serverUp
-            ? const Color(0xFF3FB950)
+            ? const Color(0xFF2ABF6E)
             : _waking
               ? _tGold
-              : const Color(0xFFF85149),
+              : const Color(0xFFE0524A),
           width: 0.8)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2060,10 +2060,10 @@ class _HomeScreenState extends State<HomeScreen>
                     : s.serverOffline,
                 style: TextStyle(
                   color: _serverUp
-                    ? const Color(0xFF3FB950)
+                    ? const Color(0xFF2ABF6E)
                     : _waking
                       ? _tGold
-                      : const Color(0xFFF85149),
+                      : const Color(0xFFE0524A),
                   fontSize: 12)),
             ),
             // S19: Wake button — shown when server is offline and not already waking
@@ -2089,7 +2089,7 @@ class _HomeScreenState extends State<HomeScreen>
             Text(s.wakeHint,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF8B949E), fontSize: 10)),
+                color: Color(0xFF9DB8B3), fontSize: 10)),
           ],
         ],
       ),
@@ -2110,7 +2110,7 @@ class _HomeScreenState extends State<HomeScreen>
       Padding(
         padding: const EdgeInsets.fromLTRB(18,16,18,14),
         child: Row(children: [
-          const Icon(Icons.tune_rounded, color: Color(0xFF484F58), size: 13),
+          const Icon(Icons.tune_rounded, color: Color(0xFF5C7873), size: 13),
           const SizedBox(width: 7),
           Text(s.chooseEngine, style: const TextStyle(
             color: _textB, fontSize: 11, letterSpacing: 1.8,
@@ -2224,7 +2224,7 @@ class _HomeScreenState extends State<HomeScreen>
               s.ar
                 ? '${e.nameAr} غير متوفر بدون إنترنت — أوقف الوضع المحلي لاستخدامه'
                 : '${e.nameEn} isn\'t available offline — turn off local mode to use it',
-              style: const TextStyle(color: Color(0xFFF85149), fontSize: 12)),
+              style: const TextStyle(color: Color(0xFFE0524A), fontSize: 12)),
             action: SnackBarAction(
               label: s.ar ? 'أوقف' : 'Turn off',
               textColor: _gold,
@@ -2246,7 +2246,7 @@ class _HomeScreenState extends State<HomeScreen>
         // constraint is visible before it is tapped.
         foregroundDecoration: blocked
           ? BoxDecoration(
-              color: const Color(0xFF020D0C).withValues(alpha: 0.45),
+              color: const Color(0xFF03100E).withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(14))
           : null,
         decoration: BoxDecoration(
@@ -2256,7 +2256,7 @@ class _HomeScreenState extends State<HomeScreen>
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: blocked
-              ? const Color(0xFFF85149).withValues(alpha: 0.35)
+              ? const Color(0xFFE0524A).withValues(alpha: 0.35)
               : sel
                 ? col.withValues(alpha: 0.70)
                 : const Color(0xFF1DB898).withValues(alpha: 0.22),
@@ -2306,7 +2306,7 @@ class _HomeScreenState extends State<HomeScreen>
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [col.withValues(alpha: 0.25),
-                                     const Color(0xFF020D0C)])))),
+                                     const Color(0xFF03100E)])))),
                     if (sel) Positioned.fill(child: Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -2322,7 +2322,7 @@ class _HomeScreenState extends State<HomeScreen>
                           end: Alignment.bottomCenter,
                           stops: const [0.35, 1.0],
                           colors: [Colors.transparent,
-                                   const Color(0xFF020D0C).withValues(alpha: 0.92)])))),
+                                   const Color(0xFF03100E).withValues(alpha: 0.92)])))),
                   ])),
                 // Khatam badge top-right
                 Positioned(top: 8, right: 10,
@@ -2510,7 +2510,7 @@ class _HomeScreenState extends State<HomeScreen>
           Text(s.ar ? e.whatsNewAr : e.whatsNewEn,
             textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
             style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 10, height: 1.55)),
+              color: Color(0xFF9DB8B3), fontSize: 10, height: 1.55)),
         ])),
     ]),
   );
@@ -2551,8 +2551,8 @@ class _HomeScreenState extends State<HomeScreen>
           color: _engineColor.withValues(alpha: 0.50), blurRadius: 5)])));
 
   Color _badgeColor(String bc) => bc == 'gold' ? _tGold
-      : bc == 'green' ? const Color(0xFF3FB950)
-      : bc == 'blue'  ? const Color(0xFF58A6FF)
+      : bc == 'green' ? const Color(0xFF2ABF6E)
+      : bc == 'blue'  ? const Color(0xFF5BB0E0)
       : _tDim;
 
   Color _badgeBg(String bc) => bc == 'gold' ? const Color(0xFF1A1200)
@@ -2664,8 +2664,8 @@ class _HomeScreenState extends State<HomeScreen>
               maxLines: 2, overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: hasFile
-                  ? const Color(0xFFE2CFA0)
-                  : const Color(0xFF8AACBA),
+                  ? const Color(0xFFF0E6C8)
+                  : const Color(0xFF9DB8B3),
                 fontSize: hasFile ? 13 : 15,
                 fontWeight: hasFile ? FontWeight.w500 : FontWeight.w600,
                 letterSpacing: hasFile ? 0 : 0.4)),
@@ -2674,7 +2674,7 @@ class _HomeScreenState extends State<HomeScreen>
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Text(_sizeLabel,
                   style: const TextStyle(
-                    color: Color(0xFF8B949E), fontSize: 11)),
+                    color: Color(0xFF9DB8B3), fontSize: 11)),
                 if (_isLarge) ...[
                   const SizedBox(width: 8),
                   _badge(s.chunkedBadge, 'gold'),
@@ -2684,11 +2684,11 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 3),
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   const Icon(Icons.timer_outlined,
-                    size: 10, color: Color(0xFF3D5A65)),
+                    size: 10, color: Color(0xFF5C7873)),
                   const SizedBox(width: 3),
                   Text('${s.estTime}: ${_estimatedTime()}',
                     style: const TextStyle(
-                      color: Color(0xFF3D5A65), fontSize: 10)),
+                      color: Color(0xFF5C7873), fontSize: 10)),
                 ]),
               ],
             ],
@@ -2701,7 +2701,7 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(height: 3),
             Text(s.sizeLimit,
               style: const TextStyle(
-                color: Color(0xFF3D5A65), fontSize: 10,
+                color: Color(0xFF5C7873), fontSize: 10,
                 letterSpacing: 0.4)),
             if (hasFile) ...[
               const SizedBox(height: 18),
@@ -2746,11 +2746,11 @@ class _HomeScreenState extends State<HomeScreen>
                           const SizedBox(width: 16, height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Color(0xFF020D0C))),
+                              color: Color(0xFF03100E))),
                           const SizedBox(width: 10),
                           Text(s.processing,
                             style: const TextStyle(
-                              color: Color(0xFF020D0C),
+                              color: Color(0xFF03100E),
                               fontWeight: FontWeight.w900, fontSize: 14,
                               letterSpacing: 0.5)),
                         ])
@@ -2759,8 +2759,8 @@ class _HomeScreenState extends State<HomeScreen>
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: _busy  // S95
-                            ? const Color(0xFF3D5A65)
-                            : const Color(0xFF020D0C),
+                            ? const Color(0xFF5C7873)
+                            : const Color(0xFF03100E),
                           fontWeight: FontWeight.w900, fontSize: 14,
                           letterSpacing: 0.8)))),
             ],
@@ -2834,15 +2834,15 @@ class _HomeScreenState extends State<HomeScreen>
                         children: [
                         Text(s.ar ? 'قناة يوتيوب' : 'YouTube Channel',
                           style: const TextStyle(
-                            color: Color(0xFFC9D1D9),
+                            color: Color(0xFFF0E6C8),
                             fontWeight: FontWeight.bold, fontSize: 13)),
                         const SizedBox(height: 2),
                         const Text('@carm-tv2hv',
                           style: TextStyle(
-                            color: Color(0xFF8B949E), fontSize: 11)),
+                            color: Color(0xFF9DB8B3), fontSize: 11)),
                       ])),
                       const Icon(Icons.open_in_new_rounded,
-                        color: Color(0xFF484F58), size: 16),
+                        color: Color(0xFF5C7873), size: 16),
                     ]))),
                 _infoSectionLabel(s.ar ? '💬 قناة تيليغرام' : '💬 Telegram Channel'),
                 GestureDetector(
@@ -2872,15 +2872,15 @@ class _HomeScreenState extends State<HomeScreen>
                         children: [
                         Text(s.ar ? 'قناة التيليغرام' : 'Telegram Channel',
                           style: const TextStyle(
-                            color: Color(0xFFC9D1D9),
+                            color: Color(0xFFF0E6C8),
                             fontWeight: FontWeight.bold, fontSize: 13)),
                         const SizedBox(height: 2),
                         const Text('@TilawaEhnacher',
                           style: TextStyle(
-                            color: Color(0xFF8B949E), fontSize: 11)),
+                            color: Color(0xFF9DB8B3), fontSize: 11)),
                       ])),
                       const Icon(Icons.open_in_new_rounded,
-                        color: Color(0xFF484F58), size: 16),
+                        color: Color(0xFF5C7873), size: 16),
                     ]))),
                 _infoSectionLabel(s.ar ? '🌐 الموقع الإلكتروني' : '🌐 Website'),
                 GestureDetector(
@@ -2910,15 +2910,15 @@ class _HomeScreenState extends State<HomeScreen>
                         children: [
                         Text(s.ar ? 'الموقع الإلكتروني الرسمي' : 'Official Website',
                           style: const TextStyle(
-                            color: Color(0xFFC9D1D9),
+                            color: Color(0xFFF0E6C8),
                             fontWeight: FontWeight.bold, fontSize: 13)),
                         const SizedBox(height: 2),
                         const Text('hammer24678-star.github.io/tilawa-enhancer-',
                           style: TextStyle(
-                            color: Color(0xFF8B949E), fontSize: 11)),
+                            color: Color(0xFF9DB8B3), fontSize: 11)),
                       ])),
                       const Icon(Icons.open_in_new_rounded,
-                        color: Color(0xFF484F58), size: 16),
+                        color: Color(0xFF5C7873), size: 16),
                     ]))),
                 _infoSectionLabel(s.ar ? '🎯 المرجع الصوتي' : '🎯 Reference Standard'),
                 Container(
@@ -2928,20 +2928,20 @@ class _HomeScreenState extends State<HomeScreen>
                     color: const Color(0xFF0A1A0F),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: const Color(0xFF3FB950).withValues(alpha: 0.3))),
+                      color: const Color(0xFF2ABF6E).withValues(alpha: 0.3))),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                     Text(
                       s.ar ? 'الشيخ ياسر الدوسري — 1425هـ'
                            : 'Sheikh Yasser Al-Dossari — 1425H',
                       style: const TextStyle(
-                        color: Color(0xFF3FB950),
+                        color: Color(0xFF2ABF6E),
                         fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 8),
                     const Text(
                       'LUFS=-6.29  ·  RMS=-10.01  ·  Crest=10.25  ·  LRA=4.19',
                       style: TextStyle(
-                        color: Color(0xFF8B949E),
+                        color: Color(0xFF9DB8B3),
                         fontSize: 11, height: 1.7)),
                     const SizedBox(height: 8),
                     Text(
@@ -2949,7 +2949,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ? 'ثلاثة ملفات مرجعية: الأعراف · الفتح · فاطر'
                         : 'Three reference files: Al-Araf · Al-Fath · Fatir',
                       style: const TextStyle(
-                        color: Color(0xFF484F58), fontSize: 10)),
+                        color: Color(0xFF5C7873), fontSize: 10)),
                   ])),
                 _infoSectionLabel(s.ar ? '📊 مقارنة المحركات' : '📊 Engine Comparison'),
                 Container(
@@ -2978,7 +2978,7 @@ class _HomeScreenState extends State<HomeScreen>
                             const SizedBox(width: 6),
                             Expanded(child: Text(s.ar ? e.nameAr : e.nameEn,
                               style: const TextStyle(
-                                color: Color(0xFF8B949E), fontSize: 10))),
+                                color: Color(0xFF9DB8B3), fontSize: 10))),
                             Text('≥${e.score.toInt()}', style: TextStyle(
                               color: col,
                               fontWeight: FontWeight.bold, fontSize: 12)),
@@ -3087,7 +3087,7 @@ class _HomeScreenState extends State<HomeScreen>
                           color: Color(0xFFD4AF37),
                           fontWeight: FontWeight.bold, fontSize: 14)),
                       Text(s.version, style: const TextStyle(
-                        color: Color(0xFF8B949E), fontSize: 11)),
+                        color: Color(0xFF9DB8B3), fontSize: 11)),
                     ]),
                   ])),
               ],
@@ -3101,7 +3101,7 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _infoSectionLabel(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 8, top: 4),
     child: Text(text, style: const TextStyle(
-      color: Color(0xFF8B949E), fontSize: 11,
+      color: Color(0xFF9DB8B3), fontSize: 11,
       fontWeight: FontWeight.bold, letterSpacing: 0.5)));
 
     Widget _badge(String text, String bc) => Container(
@@ -3242,9 +3242,9 @@ class _HomeScreenState extends State<HomeScreen>
         : score >= 78 ? s.decent      // Good
         : s.fair;                     // Fair — covers the 75 fallback case
 
-    final scoreColor = score >= 90 ? const Color(0xFF3FB950)
+    final scoreColor = score >= 90 ? const Color(0xFF2ABF6E)
         : score >= 80 ? _tGold
-        : const Color(0xFFF85149); // red for scores below 80
+        : const Color(0xFFE0524A); // red for scores below 80
 
     const engineNames = { // S141: added v11.x, removed dead v8.4/v8.9
       'v11.0': 'الصفاء — Purity', // S149
@@ -3273,8 +3273,8 @@ class _HomeScreenState extends State<HomeScreen>
           width: 1.2),
         boxShadow: [BoxShadow(
           color: (score < 80
-              ? const Color(0xFFF85149)
-              : const Color(0xFF3FB950)).withValues(alpha: 0.12),
+              ? const Color(0xFFE0524A)
+              : const Color(0xFF2ABF6E)).withValues(alpha: 0.12),
           blurRadius: 24, offset: const Offset(0, 6))]),
       child: Column(children: [
         // S30-R1: score arc gauge
@@ -3376,11 +3376,11 @@ class _HomeScreenState extends State<HomeScreen>
               color: const Color(0xFF200D0D),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: const Color(0xFFF85149).withValues(alpha: 0.4))),
+                color: const Color(0xFFE0524A).withValues(alpha: 0.4))),
             child: Text(s.fallbackWarning,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFFF85149),
+                color: Color(0xFFE0524A),
                 fontSize: 11, height: 1.5))),
         ],
 
@@ -3389,7 +3389,7 @@ class _HomeScreenState extends State<HomeScreen>
           child: ElevatedButton.icon(
             onPressed: _reDownload,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3FB950),
+              backgroundColor: const Color(0xFF2ABF6E),
               foregroundColor: const Color(0xFF000000),
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
@@ -3418,8 +3418,8 @@ class _HomeScreenState extends State<HomeScreen>
               child: OutlinedButton.icon(
                 onPressed: _openInPlayer,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF58A6FF),
-                  side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
+                  foregroundColor: const Color(0xFF5BB0E0),
+                  side: const BorderSide(color: Color(0xFF5BB0E0), width: 0.8),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12))),
@@ -3473,11 +3473,11 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(height: 8),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.check_circle_outline,
-              color: Color(0xFF3FB950), size: 14),
+              color: Color(0xFF2ABF6E), size: 14),
             const SizedBox(width: 4),
             Text(s.savedTo,
               style: const TextStyle(
-                color: Color(0xFF3FB950), fontSize: 11)),
+                color: Color(0xFF2ABF6E), fontSize: 11)),
           ]),
         ],
         // S28: Process Another File button
@@ -3486,8 +3486,8 @@ class _HomeScreenState extends State<HomeScreen>
           child: OutlinedButton.icon(
             onPressed: _resetForNewFile,
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF58A6FF),
-              side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
+              foregroundColor: const Color(0xFF5BB0E0),
+              side: const BorderSide(color: Color(0xFF5BB0E0), width: 0.8),
               padding: const EdgeInsets.symmetric(vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12))),
@@ -3511,15 +3511,15 @@ class _HomeScreenState extends State<HomeScreen>
         IntrinsicHeight(child: Row(children: [
           Expanded(child: _metricTile(
             'LUFS',  _result?['lufs']?.toString()  ?? '—', -6.29)),
-          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
+          const VerticalDivider(width: 1, color: Color(0xFF1D3F39)),
           Expanded(child: _metricTile(
             'RMS',   _result?['rms']?.toString()   ?? '—', -10.01)),
         ])),
-        const Divider(height: 1, color: Color(0xFF21262D)),
+        const Divider(height: 1, color: Color(0xFF1D3F39)),
         IntrinsicHeight(child: Row(children: [
           Expanded(child: _metricTile(
             'Crest', _result?['crest']?.toString() ?? '—', 10.25)),
-          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
+          const VerticalDivider(width: 1, color: Color(0xFF1D3F39)),
           Expanded(child: _metricTile(
             'LRA',   _result?['lra']?.toString()   ?? '—', 4.19)),
         ])),
@@ -3527,10 +3527,10 @@ class _HomeScreenState extends State<HomeScreen>
           padding: EdgeInsets.symmetric(vertical: 5),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(Icons.copy_rounded, size: 10,
-              color: Color(0xFF484F58)),
+              color: Color(0xFF5C7873)),
             SizedBox(width: 4),
             Text('tap to copy',
-              style: TextStyle(color: Color(0xFF484F58), fontSize: 9)),
+              style: TextStyle(color: Color(0xFF5C7873), fontSize: 9)),
           ])),
       ]),
     ),
@@ -3545,11 +3545,11 @@ class _HomeScreenState extends State<HomeScreen>
       final diff = num - target;
       delta = '${diff >= 0 ? "+" : ""}${diff.toStringAsFixed(2)}';
       if (diff.abs() <= 0.5) {
-        arrow = '✓'; tileColor = const Color(0xFF3FB950);
+        arrow = '✓'; tileColor = const Color(0xFF2ABF6E);
       } else if (diff > 0) {
         arrow = '▲'; tileColor = _tGold;
       } else {
-        arrow = '▼'; tileColor = const Color(0xFF58A6FF);
+        arrow = '▼'; tileColor = const Color(0xFF5BB0E0);
       }
     }
     return Padding(
@@ -3558,7 +3558,7 @@ class _HomeScreenState extends State<HomeScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(label, style: const TextStyle(
-            color: Color(0xFF8B949E),
+            color: Color(0xFF9DB8B3),
             fontSize: 10, letterSpacing: 0.5)),
           const SizedBox(height: 5),
           Text(value, style: const TextStyle(
@@ -3599,24 +3599,24 @@ class _HomeScreenState extends State<HomeScreen>
 
     // Loudness
     if (dLufs.abs() <= 1.0) {
-      items.add({'icon': Icons.check_circle_outline, 'color': const Color(0xFF3FB950),
+      items.add({'icon': Icons.check_circle_outline, 'color': const Color(0xFF2ABF6E),
         'ar': 'مستوى الصوت مطابق للمرجع ١٤٢٥هـ', 'en': 'Loudness matches 1425H reference'});
     } else if (dLufs < -1.0) {
       items.add({'icon': Icons.volume_up_rounded, 'color': const Color(0xFFD4AF37),
         'ar': 'رُفع مستوى الصوت ${dLufs.abs().toStringAsFixed(1)} وحدة نحو الهدف',
         'en': 'Loudness boosted ${dLufs.abs().toStringAsFixed(1)} LU toward target'});
     } else {
-      items.add({'icon': Icons.volume_down_rounded, 'color': const Color(0xFF58A6FF),
+      items.add({'icon': Icons.volume_down_rounded, 'color': const Color(0xFF5BB0E0),
         'ar': 'خُفّض مستوى الصوت ${dLufs.abs().toStringAsFixed(1)} وحدة نحو الهدف',
         'en': 'Loudness reduced ${dLufs.abs().toStringAsFixed(1)} LU toward target'});
     }
 
     // Dynamics / Crest
     if (dCrest.abs() <= 1.0) {
-      items.add({'icon': Icons.equalizer_rounded, 'color': const Color(0xFF3FB950),
+      items.add({'icon': Icons.equalizer_rounded, 'color': const Color(0xFF2ABF6E),
         'ar': 'الديناميكية متوازنة ومطابقة للمرجع', 'en': 'Dynamics balanced and on target'});
     } else if (dCrest > 1.0) {
-      items.add({'icon': Icons.trending_up_rounded, 'color': const Color(0xFF3FB950),
+      items.add({'icon': Icons.trending_up_rounded, 'color': const Color(0xFF2ABF6E),
         'ar': 'تحسّنت الديناميكية — الصوت أكثر حيوية', 'en': 'Dynamics improved — audio more vibrant'});
     } else {
       items.add({'icon': Icons.compress_rounded, 'color': const Color(0xFFD4AF37),
@@ -3625,10 +3625,10 @@ class _HomeScreenState extends State<HomeScreen>
 
     // Loudness range
     if (dLra.abs() <= 0.8) {
-      items.add({'icon': Icons.graphic_eq_rounded, 'color': const Color(0xFF3FB950),
+      items.add({'icon': Icons.graphic_eq_rounded, 'color': const Color(0xFF2ABF6E),
         'ar': 'نطاق الصوت مثالي ومتوازن', 'en': 'Loudness range ideal and balanced'});
     } else if (dLra > 0.8) {
-      items.add({'icon': Icons.unfold_more_rounded, 'color': const Color(0xFF58A6FF),
+      items.add({'icon': Icons.unfold_more_rounded, 'color': const Color(0xFF5BB0E0),
         'ar': 'توسّع النطاق الصوتي — التباين بين الهادئ والقوي أكبر',
         'en': 'Loudness range expanded — more contrast between soft and loud'});
     } else {
@@ -3638,13 +3638,13 @@ class _HomeScreenState extends State<HomeScreen>
 
     // RMS / Overall energy
     if (dRms.abs() <= 1.5) {
-      items.add({'icon': Icons.sensors_rounded, 'color': const Color(0xFF3FB950),
+      items.add({'icon': Icons.sensors_rounded, 'color': const Color(0xFF2ABF6E),
         'ar': 'طاقة الصوت الكلية مطابقة للمرجع', 'en': 'Overall energy matches reference'});
     } else if (dRms < -1.5) {
       items.add({'icon': Icons.bolt_rounded, 'color': const Color(0xFFD4AF37),
         'ar': 'طاقة الصوت أقل من المرجع — التسجيل خافت', 'en': 'Energy below reference — recording was quiet'});
     } else {
-      items.add({'icon': Icons.flash_on_rounded, 'color': const Color(0xFF58A6FF),
+      items.add({'icon': Icons.flash_on_rounded, 'color': const Color(0xFF5BB0E0),
         'ar': 'طاقة الصوت فوق المرجع — التسجيل قوي', 'en': 'Energy above reference — recording was loud'});
     }
 
@@ -3653,16 +3653,16 @@ class _HomeScreenState extends State<HomeScreen>
     final Color vColor;
     if (score >= 90) {
       verdict = s.ar ? '✨ جودة استثنائية — يُضاهي مستوى الإذاعة' : '✨ Exceptional — broadcast quality';
-      vColor = const Color(0xFF3FB950);
+      vColor = const Color(0xFF2ABF6E);
     } else if (score >= 80) {
       verdict = s.ar ? '🌟 جيد جداً — مناسب للنشر والمشاركة' : '🌟 Very good — suitable for sharing';
       vColor = const Color(0xFFD4AF37);
     } else if (score >= 70) {
       verdict = s.ar ? '👍 جيد — تحسّن ملموس عن الأصل' : '👍 Good — noticeable improvement';
-      vColor = const Color(0xFF58A6FF);
+      vColor = const Color(0xFF5BB0E0);
     } else {
       verdict = s.ar ? '⚠️ التسجيل صعب — جرّب محرك مختلف' : '⚠️ Difficult recording — try a different engine';
-      vColor = const Color(0xFFF85149);
+      vColor = const Color(0xFFE0524A);
     }
 
     return Container(
@@ -3671,14 +3671,14 @@ class _HomeScreenState extends State<HomeScreen>
       decoration: BoxDecoration(
         color: const Color(0xFF070F0C),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF21262D))),
+        border: Border.all(color: const Color(0xFF1D3F39))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Header
         Row(children: [
-          const Icon(Icons.analytics_outlined, color: Color(0xFF8B949E), size: 13),
+          const Icon(Icons.analytics_outlined, color: Color(0xFF9DB8B3), size: 13),
           const SizedBox(width: 6),
           Text(s.ar ? 'تقرير التحسين' : 'Enhancement Report',
-            style: const TextStyle(color: Color(0xFF8B949E),
+            style: const TextStyle(color: Color(0xFF9DB8B3),
               fontSize: 10, letterSpacing: 1.4, fontWeight: FontWeight.w600)),
         ]),
         const SizedBox(height: 10),
@@ -3734,7 +3734,7 @@ class _HomeScreenState extends State<HomeScreen>
             const Icon(Icons.history_rounded, color: _textB, size: 18),
             const SizedBox(width: 8),
             Text(s.history, style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 13)),
+              color: Color(0xFF9DB8B3), fontSize: 13)),
           ]),
         ),
       ),
@@ -3768,10 +3768,10 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(width: 8),
             // S241: was hardcoded Arabic — leaked محرر الصوت into English mode
             Text(s.ar ? 'محرر الصوت' : 'Audio Editor',
-                style: const TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
+                style: const TextStyle(color: Color(0xFF9DB8B3), fontSize: 13)),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
-                color: Color(0xFF484F58), size: 18),
+                color: Color(0xFF5C7873), size: 18),
           ]),
         ),
       ),
@@ -3803,10 +3803,10 @@ class _HomeScreenState extends State<HomeScreen>
             const Icon(Icons.code_rounded, color: _gold, size: 18),
             const SizedBox(width: 8),
             Text(LangProvider.strings(context).ar ? 'كود محركات المعالجة' : 'Engine Source Code',
-                style: const TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
+                style: const TextStyle(color: Color(0xFF9DB8B3), fontSize: 13)),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
-                color: Color(0xFF484F58), size: 18),
+                color: Color(0xFF5C7873), size: 18),
           ]),
         ),
       ),
@@ -3848,7 +3848,7 @@ class _HomeScreenState extends State<HomeScreen>
             ]),
             const Spacer(),
             const Icon(Icons.chevron_left_rounded,
-                color: Color(0xFF484F58), size: 18),
+                color: Color(0xFF5C7873), size: 18),
           ]),
         ),
       ),
@@ -3885,7 +3885,7 @@ class _HomeScreenState extends State<HomeScreen>
               color: Color(0xFFD4AF37),
               fontWeight: FontWeight.bold, fontSize: 13)),
             Text(s.donationDesc, style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 10)),
+              color: Color(0xFF9DB8B3), fontSize: 10)),
           ]),
         ]),
       ),

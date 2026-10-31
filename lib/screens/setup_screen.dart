@@ -24,13 +24,13 @@ class _SetupScreenState extends State<SetupScreen>
   bool   _running = false;
   StreamSubscription<Map<String, dynamic>>? _sub;
 
-  static const _void   = Color(0xFF020D0C);
+  static const _void   = Color(0xFF03100E);
   static const _gold   = Color(0xFFC8A048);
   static const _sunlit = Color(0xFFF0D882);
   static const _teal   = Color(0xFF1DB898);
-  static const _textB  = Color(0xFF8AACBA);
+  static const _textB  = Color(0xFF9DB8B3);
   static const _jade   = Color(0xFF0D2B22);
-  static const _red    = Color(0xFFD94040);
+  static const _red    = Color(0xFFE0524A);
 
   late final AnimationController _pulseCtrl;
   late final AnimationController _shimCtrl;

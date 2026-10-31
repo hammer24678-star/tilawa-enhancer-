@@ -8,17 +8,17 @@ import 'package:flutter/services.dart';
 import '../state/lang_provider.dart';
 
 // ── Sacred Cosmos tokens ──────────────────────────────────────────────────────
-const _bgDeep    = Color(0xFF020D17);
-const _bgCard    = Color(0xFF0F2420);
+const _bgDeep    = Color(0xFF03100E);
+const _bgCard    = Color(0xFF0F2623);
 const _gold      = Color(0xFFD4AF37);
 const _goldLight = Color(0xFFF0CF60);
 const _goldMuted = Color(0xFF3A2B08);
 const _teal      = Color(0xFF1DB898);
-const _textA     = Color(0xFFE2CFA0);
-const _textB     = Color(0xFF8AACBA);
-const _textC     = Color(0xFF3D5A65);
+const _textA     = Color(0xFFF0E6C8);
+const _textB     = Color(0xFF9DB8B3);
+const _textC     = Color(0xFF5C7873);
 const _ok        = Color(0xFF2ABF6E);
-const _err       = Color(0xFFD94040);
+const _err       = Color(0xFFE0524A);
 const _jade      = Color(0xFF0D2B22);
 
 // ── Screen ────────────────────────────────────────────────────────────────────

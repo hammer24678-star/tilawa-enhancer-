@@ -80,8 +80,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
   bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
-  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8AAABB) : const Color(0xFF6B5E40);
+  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2623) : const Color(0xFFF3EED9);
+  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF9DB8B3) : const Color(0xFF5E5338);
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +95,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         if (!didPop) _goPage(_page - 1);
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFF020D0C), // S45-WEL
+        backgroundColor: const Color(0xFF03100E), // S45-WEL
         body: Stack(children: [
           // Rotating geo background
           Positioned.fill(child: AnimatedBuilder(
@@ -191,7 +191,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         const SizedBox(height: 8),
         Text(s.subtitle,
           style: const TextStyle(
-            color: Color(0xFF8AAABB), fontSize: 11,
+            color: Color(0xFF9DB8B3), fontSize: 11,
             letterSpacing: 3.0)),
         const SizedBox(height: 36),
         Text(s.welcomeDesc,
@@ -218,7 +218,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               titleColor: const Color(0xFFD4AF37),
               titleSize: 13,
               body: s.localModeDesc,
-              bodyColor: const Color(0xFF8AACBA),
+              bodyColor: const Color(0xFF9DB8B3),
               ar: s.ar),
             const SizedBox(height: 14),
             const Divider(color: Colors.white10, height: 1),
@@ -226,14 +226,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             _modeRow(
               badgeIcon: Icons.cloud_outlined,
               badge: 'SERVER',
-              badgeColor: const Color(0xFF8AACBA),
+              badgeColor: const Color(0xFF9DB8B3),
               badgeBg: Colors.white.withValues(alpha: 0.06),
               badgeBorder: Colors.white24,
               title: 'v10.0 · v9.0 · v8.5 · v8.0',
-              titleColor: const Color(0xFF8AACBA),
+              titleColor: const Color(0xFF9DB8B3),
               titleSize: 12,
               body: s.serverModeDesc,
-              bodyColor: const Color(0xFF3D5A65),
+              bodyColor: const Color(0xFF5C7873),
               ar: s.ar),
           ])),
         const SizedBox(height: 20),
@@ -243,7 +243,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           onPressed: _finish,
           child: Text(s.welcomeStart,
             style: const TextStyle(
-              color: Color(0xFF8AAABB), fontSize: 13))),
+              color: Color(0xFF9DB8B3), fontSize: 13))),
         const SizedBox(height: 14),
         _langToggle(context),
         const SizedBox(height: 8),
@@ -354,7 +354,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                       s.stepLabel(entry.key + 1),
                       textDirection: dir,
                       style: const TextStyle(
-                        color: Color(0xFF484F58),
+                        color: Color(0xFF5C7873),
                         fontSize: 9, letterSpacing: 0.5)),
                     const SizedBox(height: 2),
                     Text(entry.value.$2,
@@ -396,7 +396,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       ('v7.0',  s.ar ? 'كلاسيكي' : 'Classic',
         s.ar ? 'البنية المُثبَّتة الأساس — STABLE'
               : 'Proven foundational architecture — STABLE',
-        const Color(0xFF8AAABB)),
+        const Color(0xFF9DB8B3)),
     ];
     return _shell(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -437,7 +437,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     color: t.$4, fontSize: 12,
                     fontWeight: FontWeight.w600)),
                   Text(t.$3, style: const TextStyle(
-                    color: Color(0xFF8AAABB), fontSize: 10,
+                    color: Color(0xFF9DB8B3), fontSize: 10,
                     height: 1.4)),
                 ])),
             ]))),
@@ -457,9 +457,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     onPressed: () => _goPage(target),
     icon: Icon(
       s.ar ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
-      size: 15, color: const Color(0xFF8AAABB)),
+      size: 15, color: const Color(0xFF9DB8B3)),
     label: Text(s.welcomeBack,
-      style: const TextStyle(color: Color(0xFF8AAABB), fontSize: 13)));
+      style: const TextStyle(color: Color(0xFF9DB8B3), fontSize: 13)));
 
   Widget _dots(int active) => Row(
     mainAxisAlignment: MainAxisAlignment.center,
@@ -500,7 +500,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               padding: const EdgeInsets.symmetric(vertical: 17),
               child: Text(label, textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: Color(0xFF020D17),
+                  color: Color(0xFF03100E),
                   fontWeight: FontWeight.w900, fontSize: 17,
                   letterSpacing: 0.3)))))));
 
@@ -513,9 +513,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(0xFF0F2420), // S46-WEL-LANG
+            color: const Color(0xFF0F2623), // S46-WEL-LANG
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF1A4035))),
+            border: Border.all(color: const Color(0xFF1D3F39))),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Text(isAr ? 'EN' : 'ع',
               style: const TextStyle(
@@ -523,7 +523,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                 fontWeight: FontWeight.bold, fontSize: 14)),
             const SizedBox(width: 6),
             const Icon(Icons.language,
-              color: Color(0xFF8AAABB), size: 16),
+              color: Color(0xFF9DB8B3), size: 16),
           ]))));
   }
 }
