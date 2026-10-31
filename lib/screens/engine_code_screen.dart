@@ -10,19 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import '../design/nur.dart';
 import '../state/lang_provider.dart';
-
-const _bg      = Color(0xFF020D17);
-const _surface = Color(0xFF0C1E28);
-const _card    = Color(0xFF0F2420);
-const _gold    = Color(0xFFD4AF37);
-const _goldDim = Color(0xFF3A2B08);
-const _teal    = Color(0xFF1DB898);
-const _red     = Color(0xFFD94040);
-const _textA   = Color(0xFFE2CFA0);
-const _textB   = Color(0xFF8AACBA);
-const _textDim = Color(0xFF3D5A65);
-const _border  = Color(0xFF1A2E20);
 
 class _EngineFile {
   final String asset;   // full rootBundle path
@@ -83,12 +72,17 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
   Future<String> _load(_EngineFile f) async =>
       _cache[f.asset] ??= await rootBundle.loadString(f.asset);
 
-  void _snack(String msg, {Color color = _gold}) {
+  void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
+    final p = NurPalette.of(context);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: TextStyle(color: color == _gold ? _bg : Colors.white)),
-      backgroundColor: color == _gold ? _gold : color,
+      content: Text(msg, style: TextStyle(
+          color: error ? p.err : p.text, fontWeight: FontWeight.w600)),
+      backgroundColor: p.surfaceHi,
       behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: error ? p.err : p.gold, width: 0.8)),
       duration: const Duration(seconds: 2)));
   }
 
@@ -100,7 +94,7 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
       if (!mounted) return;
       _snack(ar ? '✓ تم نسخ ${_sel.fileName}' : '✓ ${_sel.fileName} copied');
     } catch (e) {
-      _snack('Error: $e', color: _red);
+      _snack('Error: $e', error: true);
     }
   }
 
@@ -119,24 +113,11 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
       _snack(ar ? '✓ تم الحفظ في التنزيلات' : '✓ Saved to Downloads');
     } catch (e) {
       if (!mounted) return;
-      _snack('Error: $e', color: _red);
+      _snack('Error: $e', error: true);
     }
   }
 
-  Widget _pill(String label, IconData icon, VoidCallback onTap, {bool gold = false}) =>
-    GestureDetector(onTap: onTap,
-      child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: gold ? _goldDim.withValues(alpha: 0.35) : _surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: gold ? _gold.withValues(alpha: 0.6) : _border)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: gold ? _gold : _textB, size: 14),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: gold ? _gold : _textB, fontSize: 11.5,
-              fontWeight: FontWeight.w700)),
-        ])));
-
-  Widget _fileChip(_EngineFile f, bool ar) {
+  Widget _fileChip(_EngineFile f, bool ar, NurPalette p) {
     final sel = f.asset == _sel.asset;
     return GestureDetector(
       onTap: () {
@@ -144,25 +125,31 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
         HapticFeedback.selectionClick();
         setState(() { _sel = f; _query = ''; });
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
         margin: const EdgeInsetsDirectional.only(end: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
         decoration: BoxDecoration(
-          color: sel ? _goldDim.withValues(alpha: 0.45) : _card,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: sel ? _gold : _border, width: sel ? 1.4 : 1)),
+          color: sel ? p.gold.withValues(alpha: 0.16) : p.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: sel ? p.gold : p.border, width: sel ? 1.4 : 1),
+          boxShadow: sel
+              ? [BoxShadow(color: p.gold.withValues(alpha: 0.22), blurRadius: 14)]
+              : null),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(ar ? f.nameAr : f.nameEn,
-              style: TextStyle(color: sel ? _gold : _textB, fontSize: 11.5,
+              style: TextStyle(color: sel ? p.gold : p.textSub, fontSize: 12,
                   fontWeight: sel ? FontWeight.w800 : FontWeight.w500)),
-          const SizedBox(width: 6),
+          const SizedBox(width: 7),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
             decoration: BoxDecoration(
-              color: sel ? _gold.withValues(alpha: 0.14) : _surface,
+              color: sel ? p.gold.withValues(alpha: 0.18) : p.surfaceHi,
               borderRadius: BorderRadius.circular(6)),
             child: Text(f.tag, style: TextStyle(
-                color: sel ? _gold : _textDim, fontSize: 8.5,
+                color: sel ? p.gold : p.textDim, fontSize: 9,
                 fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
         ])));
   }
@@ -183,104 +170,106 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
   @override
   Widget build(BuildContext context) {
     final ar = LangProvider.strings(context).ar;
-    return Directionality(
-      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: _bg,
-        appBar: AppBar(
-          backgroundColor: _bg,
-          foregroundColor: _textA,
-          elevation: 0,
-          title: Text(ar ? 'كود محركات المعالجة' : 'Engine Source Code',
-              style: const TextStyle(color: _textA, fontSize: 15, fontWeight: FontWeight.w700)),
-        ),
-        body: Column(children: [
-          // ── engine picker ────────────────────────────────────────────────
-          SizedBox(height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              children: _files.map((f) => Center(child: _fileChip(f, ar))).toList())),
-          const SizedBox(height: 8),
-          // ── actions + search ─────────────────────────────────────────────
-          Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-            child: Row(children: [
-              _pill(ar ? 'نسخ' : 'Copy', Icons.copy_rounded, _copySrc),
-              const SizedBox(width: 8),
-              _pill(ar ? 'تنزيل' : 'Download', Icons.download_rounded, _downloadSrc, gold: true),
-              const SizedBox(width: 10),
-              Expanded(child: SizedBox(height: 34,
-                child: TextField(
-                  onChanged: (v) => setState(() => _query = v),
-                  style: const TextStyle(color: _textA, fontSize: 12),
-                  decoration: InputDecoration(
-                    hintText: ar ? 'ابحث في الكود…' : 'Search in code…',
-                    hintStyle: const TextStyle(color: _textDim, fontSize: 11),
-                    prefixIcon: const Icon(Icons.search_rounded, color: _textDim, size: 16),
-                    filled: true, fillColor: _card, isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                    enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(17),
-                        borderSide: const BorderSide(color: _border)),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(17),
-                        borderSide: const BorderSide(color: _gold)),
-                  )))),
-            ])),
-          // ── code view ────────────────────────────────────────────────────
-          Expanded(child: FutureBuilder<String>(
-            future: _load(_sel),
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done) {
-                return const Center(
-                    child: CircularProgressIndicator(color: _gold, strokeWidth: 2.4));
-              }
-              if (snap.hasError) {
-                return Center(child: Text(
-                    ar ? 'تعذر تحميل الكود' : 'Could not load source',
-                    style: const TextStyle(color: _red)));
-              }
-              final src = snap.data ?? '';
-              final lines = src.split('\n');
-              final kb = (src.length / 1024).toStringAsFixed(0);
-              final searching = _query.trim().isNotEmpty;
-              final matches = searching ? _matches(lines) : const <MapEntry<int, String>>[];
-              return Column(children: [
-                // stats strip
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                  child: Row(children: [
-                    Expanded(child: Text(_sel.fileName,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: _textDim, fontSize: 10.5,
-                            fontFamily: 'monospace'))),
-                    Text(searching
-                        ? (ar ? '${matches.length} نتيجة' : '${matches.length} matches')
-                        : '${lines.length} ${ar ? "سطر" : "lines"} · $kb KB',
-                        style: const TextStyle(color: _teal, fontSize: 10.5,
-                            fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-                  ])),
-                Expanded(child: Container(
-                  margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: _card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _border)),
-                  // Code is always LTR regardless of app language.
-                  child: Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: searching
-                        ? _searchResultsView(matches, ar)
-                        : _chunkedCodeView(lines)))),
-              ]);
-            })),
-        ]),
-      ));
+    final p = NurPalette.of(context);
+    return NurScaffold(
+      title: ar ? 'كود محركات المعالجة' : 'Engine Source Code',
+      icon: Icons.code_rounded,
+      accent: p.teal,
+      intensity: 0.6,
+      body: Column(children: [
+        // ── engine picker ──────────────────────────────────────────────────
+        SizedBox(height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: _files.map((f) => Center(child: _fileChip(f, ar, p))).toList())),
+        const SizedBox(height: 10),
+        // ── actions + search ───────────────────────────────────────────────
+        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Row(children: [
+            NurIconButton(
+                icon: Icons.copy_rounded, size: 40,
+                tooltip: ar ? 'نسخ' : 'Copy', onTap: _copySrc),
+            const SizedBox(width: 8),
+            NurIconButton(
+                icon: Icons.download_rounded, size: 40, color: p.gold,
+                tooltip: ar ? 'تنزيل' : 'Download', onTap: _downloadSrc),
+            const SizedBox(width: 10),
+            Expanded(child: SizedBox(height: 40,
+              child: TextField(
+                onChanged: (v) => setState(() => _query = v),
+                style: TextStyle(color: p.text, fontSize: 12.5),
+                cursorColor: p.gold,
+                decoration: InputDecoration(
+                  hintText: ar ? 'ابحث في الكود…' : 'Search in code…',
+                  hintStyle: TextStyle(color: p.textDim, fontSize: 12),
+                  prefixIcon: Icon(Icons.search_rounded, color: p.textDim, size: 18),
+                  filled: true, fillColor: p.surface, isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(color: p.border)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(color: p.gold)),
+                )))),
+          ])),
+        // ── code view ──────────────────────────────────────────────────────
+        Expanded(child: FutureBuilder<String>(
+          future: _load(_sel),
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return Center(
+                  child: CircularProgressIndicator(color: p.gold, strokeWidth: 2.4));
+            }
+            if (snap.hasError) {
+              return Center(child: Text(
+                  ar ? 'تعذر تحميل الكود' : 'Could not load source',
+                  style: TextStyle(color: p.err)));
+            }
+            final src = snap.data ?? '';
+            final lines = src.split('\n');
+            final kb = (src.length / 1024).toStringAsFixed(0);
+            final searching = _query.trim().isNotEmpty;
+            final matches = searching ? _matches(lines) : const <MapEntry<int, String>>[];
+            return Column(children: [
+              // stats strip
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                child: Row(children: [
+                  Expanded(child: Text(_sel.fileName,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: p.textDim, fontSize: 11,
+                          fontFamily: 'monospace'))),
+                  NurChip(
+                      label: searching
+                          ? (ar ? '${matches.length} نتيجة' : '${matches.length} matches')
+                          : '${lines.length} ${ar ? "سطر" : "lines"} · $kb KB',
+                      color: p.teal, fontSize: 10.5),
+                ])),
+              Expanded(child: Container(
+                margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                    color: p.dark ? p.bgDeep.withValues(alpha: 0.85) : p.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: p.border)),
+                // Code is always LTR regardless of app language.
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: searching
+                      ? _searchResultsView(matches, ar, p)
+                      : _chunkedCodeView(lines, p)))),
+            ]);
+          })),
+      ]),
+    );
   }
 
   // Chunked virtualized rendering — one SelectableText per ~200 lines keeps
   // even the 15k-line الاسترداد source smooth on mid-range phones.
-  Widget _chunkedCodeView(List<String> lines) {
+  Widget _chunkedCodeView(List<String> lines, NurPalette p) {
     final chunks = (lines.length / _chunkLines).ceil().clamp(1, 1 << 20);
     return Scrollbar(thumbVisibility: true,
       child: ListView.builder(
@@ -292,15 +281,15 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
             scrollDirection: Axis.horizontal,
             child: SelectableText(
               lines.sublist(start, end).join('\n'),
-              style: const TextStyle(color: _textB, fontSize: 11.5,
+              style: TextStyle(color: p.textSub, fontSize: 11.5,
                   fontFamily: 'monospace', height: 1.5)));
         }));
   }
 
-  Widget _searchResultsView(List<MapEntry<int, String>> matches, bool ar) {
+  Widget _searchResultsView(List<MapEntry<int, String>> matches, bool ar, NurPalette p) {
     if (matches.isEmpty) {
       return Center(child: Text(ar ? 'لا نتائج' : 'No matches',
-          style: const TextStyle(color: _textDim, fontSize: 12)));
+          style: TextStyle(color: p.textDim, fontSize: 12)));
     }
     return ListView.builder(
       itemCount: matches.length,
@@ -312,10 +301,10 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               SizedBox(width: 48, child: Text('${m.key}',
-                  style: const TextStyle(color: _gold, fontSize: 10.5,
+                  style: TextStyle(color: p.gold, fontSize: 10.5,
                       fontFamily: 'monospace'))),
               SelectableText(m.value,
-                  style: const TextStyle(color: _textB, fontSize: 11.5,
+                  style: TextStyle(color: p.textSub, fontSize: 11.5,
                       fontFamily: 'monospace', height: 1.4)),
             ])));
       });

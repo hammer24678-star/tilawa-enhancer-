@@ -10,19 +10,12 @@ import 'package:flutter/material.dart';
 import '../state/lang_provider.dart'; // S196-BUG-I (S198-BUG-1: fixed path)
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../design/nur.dart';
 
-const _bg      = Color(0xFF020D0C);
-const _card    = Color(0xFF0F2420);
-const _gold    = Color(0xFFD4AF37);
-const _teal    = Color(0xFF1DB898);
-const _violet  = Color(0xFFB88CFF);
-const _textA   = Color(0xFFE2CFA0);
-const _textB   = Color(0xFF8AACBA);
-const _border  = Color(0xFF1B3A35);
-const _amber   = Color(0xFFE8A020);
-const _amberDk = Color(0xFF2A1800);
-const _red     = Color(0xFFD94040);
-const _redDk   = Color(0xFF3D0808);
+// Tool accent colours (static const list below needs compile-time colours).
+const _teal   = Color(0xFF2FD4B0);
+const _violet = Color(0xFFB88CFF);
+const _amber  = Color(0xFFF0A23B);
 
 class AiToolsScreen extends StatelessWidget {
   const AiToolsScreen({super.key});
@@ -82,147 +75,116 @@ class AiToolsScreen extends StatelessWidget {
             mode: LaunchMode.externalApplication) &&
         ctx.mounted) {
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-        backgroundColor: _redDk,
+        backgroundColor: NurPalette.of(ctx).surfaceHi,
+        behavior: SnackBarBehavior.floating,
         content: Text(ar ? 'تعذّر فتح الرابط' : 'Could not open the link',
-            style: const TextStyle(color: _red, fontSize: 12))));
+            style: TextStyle(color: NurPalette.of(ctx).err, fontSize: 12))));
     }
   }
 
   @override
   Widget build(BuildContext ctx) {
     final ar = LangProvider.strings(ctx).ar;
-    return Directionality(
-      // S196-BUG-I: derive direction from app language (not hardcoded RTL)
-      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: _bg,
-        body: SafeArea(child: Column(children: [
+    final p = NurPalette.of(ctx);
+    // NurScaffold mirrors itself for Arabic (S196-BUG-I: direction follows
+    // the app language), so rows here must not flip on their own.
+    return NurScaffold(
+      title: ar ? 'أدوات الذكاء الاصطناعي' : 'AI Tools',
+      icon: Icons.auto_fix_high_rounded,
+      accent: p.warn,
+      body: ListView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
 
-          // ── App bar ──────────────────────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: _border, width: 0.8))),
-            child: Row(children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    size: 18, color: _textB),
-                onPressed: () => Navigator.pop(ctx)),
-              const SizedBox(width: 4),
-              const Icon(Icons.auto_fix_high_rounded, color: _amber, size: 18),
-              const SizedBox(width: 8),
-              Text(ar ? 'أدوات الذكاء الاصطناعي' : 'AI Tools',
-                  style: const TextStyle(color: _textA,
-                      fontSize: 16, fontWeight: FontWeight.w700)),
-            ])),
-
-          Expanded(child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+          // ── Warning banner ────────────────────────────────────────────────
+          EntranceFade(index: 0, child: NurCard(
+            radius: 22,
+            accent: p.warn,
+            glow: true,
+            padding: const EdgeInsets.all(18),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(children: [
+                  Icon(Icons.warning_amber_rounded, color: p.warn, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(
+                    ar ? 'الذكاء الاصطناعي — الخيار الأخير'
+                       : 'AI — the last resort',
+                    style: TextStyle(color: p.warn,
+                        fontSize: 16, fontWeight: FontWeight.w800))),
+                ]),
+                const SizedBox(height: 12),
+                Text(
+                  ar
+                    ? 'هذه الأدوات مخصصة فقط للتسجيلات البالغة التلف '
+                      'التي فشلت فيها كل محركات محسِّن التلاوة.\n\n'
+                      '⚠️  مخاطر الاستخدام:\n'
+                      '  • ابتلاع الكلمات — يختفي حرف أو كلمة كاملة\n'
+                      '  • تغيير صوت الشيخ — يصبح اصطناعياً\n'
+                      '  • فقدان التجويد الدقيق والغنة والمدود\n\n'
+                      '✅  إذا اضطررت للاستخدام:\n'
+                      '  راجع الملف الناتج كلمةً كلمة وأضف يدوياً '
+                      'أي كلمة مبتلوعة في الملفات التالفة جداً.'
+                    : 'These tools are only for severely damaged '
+                      'recordings where every Tilawa Enhancer engine '
+                      'has already failed.\n\n'
+                      '⚠️  Risks of using them:\n'
+                      '  • Swallowed words — a letter or whole word disappears\n'
+                      '  • The Sheikh\'s voice changes — sounds synthetic\n'
+                      '  • Fine Tajweed detail (ghunnah, madd) gets lost\n\n'
+                      '✅  If you must use them:\n'
+                      '  Review the output word by word, and manually '
+                      'restore any swallowed word from the damaged original.',
+                  style: TextStyle(color: p.text, fontSize: 13, height: 1.65)),
+              ]))),
 
-                // ── Warning banner ──────────────────────────────────────────
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _amberDk,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                        color: _amber.withValues(alpha: 0.55), width: 1.2),
-                    boxShadow: [BoxShadow(
-                        color: _amber.withValues(alpha: 0.12), blurRadius: 24)]),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        const Icon(Icons.warning_amber_rounded,
-                            color: _amber, size: 22),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(
-                          ar ? 'الذكاء الاصطناعي — الخيار الأخير'
-                             : 'AI — the last resort',
-                          style: const TextStyle(color: _amber,
-                              fontSize: 15, fontWeight: FontWeight.w800))),
-                      ]),
-                      const SizedBox(height: 12),
-                      Text(
-                        ar
-                          ? 'هذه الأدوات مخصصة فقط للتسجيلات البالغة التلف '
-                            'التي فشلت فيها كل محركات محسِّن التلاوة.\n\n'
-                            '⚠️  مخاطر الاستخدام:\n'
-                            '  • ابتلاع الكلمات — يختفي حرف أو كلمة كاملة\n'
-                            '  • تغيير صوت الشيخ — يصبح اصطناعياً\n'
-                            '  • فقدان التجويد الدقيق والغنة والمدود\n\n'
-                            '✅  إذا اضطررت للاستخدام:\n'
-                            '  راجع الملف الناتج كلمةً كلمة وأضف يدوياً '
-                            'أي كلمة مبتلوعة في الملفات التالفة جداً.'
-                          : 'These tools are only for severely damaged '
-                            'recordings where every Tilawa Enhancer engine '
-                            'has already failed.\n\n'
-                            '⚠️  Risks of using them:\n'
-                            '  • Swallowed words — a letter or whole word disappears\n'
-                            '  • The Sheikh\'s voice changes — sounds synthetic\n'
-                            '  • Fine Tajweed detail (ghunnah, madd) gets lost\n\n'
-                            '✅  If you must use them:\n'
-                            '  Review the output word by word, and manually '
-                            'restore any swallowed word from the damaged original.',
-                        style: const TextStyle(
-                            color: _textA, fontSize: 13, height: 1.65)),
-                    ])),
+          const SizedBox(height: 14),
 
-                const SizedBox(height: 14),
+          // ── Note from us ──────────────────────────────────────────────────
+          EntranceFade(index: 1, child: NurCard(
+            radius: 18,
+            accent: p.gold,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.edit_note_rounded, color: p.gold, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text(
+                  ar
+                    ? 'ملاحظة من الفريق: لا توجد أداة ذكاء اصطناعي تفهم '
+                      'مقامات التلاوة أو أحكام التجويد. محركات محسِّن '
+                      'التلاوة مُصممة خصيصاً لهذا. استخدم هذه الأدوات '
+                      'فقط حين يكون الصوت بالغ التلف لدرجة أن النتيجة '
+                      '"الاصطناعية" أفضل من الصمت.'
+                    : 'A note from the team: no AI tool understands '
+                      'recitation maqamat or Tajweed rules. The Tilawa '
+                      'Enhancer engines were purpose-built for that. '
+                      'Reach for these tools only when the audio is so '
+                      'damaged that a "synthetic" result beats silence.',
+                  style: TextStyle(
+                      color: p.textSub, fontSize: 12.5, height: 1.6))),
+              ]))),
 
-                // ── Note from us ──────────────────────────────────────────
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF06101A),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: _gold.withValues(alpha: 0.20), width: 0.8)),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('📝  ', style: TextStyle(fontSize: 14)),
-                      Expanded(child: Text(
-                        ar
-                          ? 'ملاحظة من الفريق: لا توجد أداة ذكاء اصطناعي تفهم '
-                            'مقامات التلاوة أو أحكام التجويد. محركات محسِّن '
-                            'التلاوة مُصممة خصيصاً لهذا. استخدم هذه الأدوات '
-                            'فقط حين يكون الصوت بالغ التلف لدرجة أن النتيجة '
-                            '"الاصطناعية" أفضل من الصمت.'
-                          : 'A note from the team: no AI tool understands '
-                            'recitation maqamat or Tajweed rules. The Tilawa '
-                            'Enhancer engines were purpose-built for that. '
-                            'Reach for these tools only when the audio is so '
-                            'damaged that a "synthetic" result beats silence.',
-                        style: const TextStyle(
-                            color: _textB, fontSize: 12, height: 1.6))),
-                    ])),
+          NurSectionHeader(ar ? 'الأدوات المتاحة' : 'Available tools',
+              padding: const EdgeInsets.fromLTRB(4, 24, 4, 12)),
 
-                const SizedBox(height: 20),
-                Text(ar ? 'الأدوات المتاحة' : 'Available tools',
-                    style: const TextStyle(color: _textB,
-                        fontSize: 12, letterSpacing: 0.5)),
-                const SizedBox(height: 10),
+          // ── Tool cards ────────────────────────────────────────────────────
+          ..._tools.asMap().entries.map((e) => EntranceFade(
+              index: 2 + e.key,
+              child: _ToolCard(
+                  tool: e.value, ar: ar,
+                  onTap: () => _open(ctx, e.value.url, ar)))),
 
-                // ── Tool cards ─────────────────────────────────────────────
-                ..._tools.map((t) => _ToolCard(
-                    tool: t, ar: ar, onTap: () => _open(ctx, t.url, ar))),
-
-                const SizedBox(height: 24),
-                Center(child: Text(
-                    ar ? 'استخدم بحذر شديد ⚠️' : 'Use with extreme care ⚠️',
-                    style: TextStyle(
-                        color: _amber.withValues(alpha: 0.50),
-                        fontSize: 11, letterSpacing: 0.8))),
-                const SizedBox(height: 8),
-              ]),
-          )),
-        ])),
-      ),
+          const SizedBox(height: 20),
+          Center(child: Text(
+              ar ? 'استخدم بحذر شديد ⚠️' : 'Use with extreme care ⚠️',
+              style: TextStyle(
+                  color: p.warn.withValues(alpha: 0.6),
+                  fontSize: 11, letterSpacing: 0.8))),
+        ]),
     );
   }
 }
@@ -234,63 +196,58 @@ class _ToolCard extends StatelessWidget {
   const _ToolCard({required this.tool, required this.ar, required this.onTap});
 
   @override
-  Widget build(BuildContext ctx) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Material(
-      color: _card,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        splashColor: tool.color.withValues(alpha: 0.12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(
-                color: tool.color.withValues(alpha: 0.28))),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: tool.color.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(8)),
-                  child: Icon(tool.icon, color: tool.color, size: 20)),
-                const SizedBox(width: 12),
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(ar ? tool.nameAr : tool.nameEn,
-                        style: TextStyle(color: tool.color,
-                            fontSize: 14, fontWeight: FontWeight.w700)),
-                    Text(ar ? tool.nameEn : tool.subEn,
-                        style: const TextStyle(
-                            color: _textB, fontSize: 10)),
-                  ])),
-                // S239 — risk badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: tool.color.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: tool.color.withValues(alpha: 0.4))),
-                  child: Text(ar ? tool.riskAr : tool.riskEn,
-                      style: TextStyle(color: tool.color, fontSize: 9,
-                          fontWeight: FontWeight.w800))),
-                const SizedBox(width: 8),
-                Icon(Icons.open_in_new_rounded,
-                    color: tool.color.withValues(alpha: 0.55), size: 16),
-              ]),
-              const SizedBox(height: 10),
-              Text(ar ? tool.descAr : tool.descEn,
-                  style: const TextStyle(
-                      color: _textA, fontSize: 12, height: 1.55)),
-            ])),
-      ),
-    ),
-  );
+  Widget build(BuildContext ctx) {
+    final p = NurPalette.of(ctx);
+    return NurCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      radius: 20,
+      accent: tool.color,
+      onTap: onTap,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              width: 42, height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(13),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  colors: [tool.color.withValues(alpha: 0.30),
+                           tool.color.withValues(alpha: 0.10)]),
+                border: Border.all(color: tool.color.withValues(alpha: 0.45))),
+              child: Icon(tool.icon, color: tool.color, size: 21)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(ar ? tool.nameAr : tool.nameEn,
+                    style: TextStyle(color: tool.color,
+                        fontSize: 14, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(ar ? tool.nameEn : tool.subEn,
+                    style: TextStyle(color: p.textDim, fontSize: 11)),
+              ])),
+            const SizedBox(width: 8),
+            // S239 — risk badge
+            NurChip(label: ar ? tool.riskAr : tool.riskEn,
+                color: tool.color, fontSize: 10),
+          ]),
+          const SizedBox(height: 12),
+          Text(ar ? tool.descAr : tool.descEn,
+              style: TextStyle(color: p.textSub, fontSize: 12.5, height: 1.6)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Icon(Icons.open_in_new_rounded,
+                color: tool.color.withValues(alpha: 0.7), size: 14),
+            const SizedBox(width: 6),
+            Text(ar ? 'فتح في المتصفح' : 'Open in browser',
+                style: TextStyle(color: tool.color.withValues(alpha: 0.8),
+                    fontSize: 11, fontWeight: FontWeight.w700)),
+          ]),
+        ]));
+  }
 }
 
 class _AiTool {
