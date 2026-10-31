@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart' show ThemeProvider; // S31-F2c
+import '../design/nur.dart';
 import 'package:flutter/services.dart'; // S30-P8
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
@@ -28,12 +28,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final Set<String> _expired = {};
 
 
-  // S32: theme cache (see home_screen.dart for rationale)
-  Color _tBg     = const Color(0xFF020D0C); // S46-HIST
-  Color _tCard   = const Color(0xFF0F2420);
-  Color _tBorder = const Color(0xFF1A4035);
-  Color _tText   = const Color(0xFFC9D1D9);
-  Color _tGold   = const Color(0xFFD4AF37);
   @override
   void initState() {
     super.initState();
@@ -105,37 +99,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
 
-  // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
-  bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S46-HIST-M
-  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
-  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-  Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
-  // S32-COLORS-APPLIED
-
   Future<void> _clearAll() async {
     final s = LangProvider.strings(context);
+    final p = NurPalette.of(context);
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(s.clearAll,
-          style: const TextStyle(color: Color(0xFFD4AF37), fontWeight: FontWeight.bold)),
-        content: Text(s.clearAllConfirm,
-          style: const TextStyle(color: Color(0xFFE2CFA0))),
-        backgroundColor: const Color(0xFF0C1E28),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: p.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: const Color(0xFF1B6B80).withValues(alpha: 0.3))),
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: p.border)),
+        title: Text(s.clearAll,
+          style: TextStyle(color: p.gold, fontWeight: FontWeight.w800)),
+        content: Text(s.clearAllConfirm,
+          style: TextStyle(color: p.textSub, height: 1.4)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
             child: Text(s.ar ? 'إلغاء' : 'Cancel',
-              style: const TextStyle(color: Color(0xFF8AACBA)))),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD94040)),
+              style: TextStyle(color: p.textSub))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
             child: Text(s.clearAll,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+              style: TextStyle(color: p.err, fontWeight: FontWeight.w800))),
         ]));
     if (ok == true && mounted) {
       await ApiService.clearAllJobRecords();
@@ -147,74 +133,58 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
-    // S32: update theme cache
-    _tBg = _cBg(context); _tCard = _cCard(context);
-    _tBorder = _cBorder(context); _tText = _cText(context);
-    _tGold = _cGold(context);
-    final cBg = _tBg; final cGold = _tGold;
-    return Scaffold(
-      backgroundColor: cBg,
-      appBar: AppBar(
-        title: ShaderMask(
-          shaderCallback: (b) => const LinearGradient(
-            colors: [Color(0xFFD4AF37), Color(0xFFF0CF60)]).createShader(b),
-          child: Text(s.historyTitle, style: const TextStyle(
-            color: Colors.white, fontWeight: FontWeight.bold))),
-        backgroundColor: cBg,
-        iconTheme: IconThemeData(color: cGold),
-        elevation: 0,
-        actions: [
-          if (_jobs.isNotEmpty)
-            TextButton.icon(
-              onPressed: _clearAll,
-              icon: const Icon(Icons.delete_sweep_outlined,
-                color: Color(0xFFD94040), size: 16),
-              label: Text(s.clearAll,
-                style: const TextStyle(
-                  color: Color(0xFFD94040), fontSize: 12))),
-        ]),
+    final p = NurPalette.of(context);
+    return NurScaffold(
+      title: s.historyTitle,
+      icon: Icons.history_rounded,
+      actions: [
+        if (_jobs.isNotEmpty)
+          NurIconButton(
+            icon: Icons.delete_sweep_outlined,
+            color: p.err,
+            tooltip: s.clearAll,
+            onTap: _clearAll),
+      ],
       body: _loading
-        ? const Center(child: CircularProgressIndicator(color: Color(0xFFD4AF37)))
+        ? Center(child: CircularProgressIndicator(color: p.gold))
         : _jobs.isEmpty
-          ? Center(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.history_rounded,
-                  color: Color(0xFF30363D), size: 56),
-                const SizedBox(height: 12),
-                Text(s.noHistory,
-                  style: const TextStyle(color: Color(0xFF8B949E), fontSize: 16)),
-                const SizedBox(height: 6),
-                Text(
-                  s.ar
-                    ? 'الملفات المعالجة ستظهر هنا'
-                    : 'Processed files will appear here',
-                  style: const TextStyle(color: Color(0xFF484F58), fontSize: 12)),
-              ]))
+          ? _empty(s, p)
           : RefreshIndicator(
               onRefresh: _load,
-              color: _tGold,
+              color: p.gold,
+              backgroundColor: p.surface,
               child: ListView.builder(
-                padding: const EdgeInsets.all(16),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 itemCount: _jobs.length,
-                itemBuilder: (_, i) {
-                  return TweenAnimationBuilder<double>(
-                    key: ValueKey(_jobs[i]['job_id']),
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: Duration(
-                      milliseconds: 280 + 55 * (i < 8 ? i : 8)),
-                    curve: Curves.easeOutCubic,
-                    builder: (_, val, child) => Opacity(
-                      opacity: val,
-                      child: Transform.translate(
-                        offset: Offset(0, 16 * (1 - val)),
-                        child: child)),
-                    child: _jobCard(_jobs[i], s),
-                  );
-                })));
+                itemBuilder: (_, i) => EntranceFade(
+                  key: ValueKey(_jobs[i]['job_id']),
+                  index: i < 8 ? i : 8,
+                  child: _jobCard(_jobs[i], s, p)))));
   }
 
-  Widget _jobCard(Map<String, dynamic> job, S s) {
+  Widget _empty(S s, NurPalette p) => Center(
+    child: EntranceFade(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 96, height: 96,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(colors: [
+              p.gold.withValues(alpha: 0.22), p.gold.withValues(alpha: 0.0)]),
+            border: Border.all(color: p.border)),
+          child: Icon(Icons.history_rounded, color: p.gold, size: 44)),
+        const SizedBox(height: 18),
+        Text(s.noHistory,
+          style: TextStyle(
+            color: p.text, fontSize: 17, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Text(
+          s.ar ? 'الملفات المعالجة ستظهر هنا' : 'Processed files will appear here',
+          style: TextStyle(color: p.textDim, fontSize: 13)),
+      ])));
+
+  Widget _jobCard(Map<String, dynamic> job, S s, NurPalette p) {
     final jobId  = job['job_id'] as String;
     final score  = double.tryParse(job['score']?.toString() ?? '0') ?? 0.0;
     final engine = job['engine'] as String? ?? 'v8.0';
@@ -222,7 +192,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final isExpired = _expired.contains(jobId);
     final isLoading = _downloading.contains(jobId);
 
-    // Format timestamp
     String displayTs = ts;
     try {
       final dt = DateTime.parse(ts);
@@ -231,156 +200,123 @@ class _HistoryScreenState extends State<HistoryScreen> {
         '${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
     } catch (_) {}
 
-    // Score label (using same thresholds as home_screen)
     final label = score >= 96 ? s.excellent
         : score >= 90 ? s.great
         : score >= 85 ? s.good
         : score >= 78 ? s.decent
         : s.fair;
 
-    final scoreColor = score >= 90 ? const Color(0xFF3FB950)
-        : score >= 80 ? _tGold
-        : const Color(0xFFF85149);
+    final scoreColor = score >= 90 ? p.ok : score >= 80 ? p.gold : p.err;
+
+    final metrics = [
+      if (job['lufs']  != null) 'LUFS ${job['lufs']}',
+      if (job['crest'] != null) 'Crest ${job['crest']}',
+      if (job['lra']   != null) 'LRA ${job['lra']}',
+    ].join('  ·  ');
 
     return Dismissible(
       key: Key(jobId),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFF200D0D),
-          borderRadius: BorderRadius.circular(12)),
-        child: const Icon(Icons.delete_outline, color: Color(0xFFF85149))),
+      direction: DismissDirection.horizontal,
+      background: _swipeBg(p, Alignment.centerLeft),
+      secondaryBackground: _swipeBg(p, Alignment.centerRight),
       onDismissed: (_) => _removeJob(jobId),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
+      child: NurCard(
+        margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isExpired ? const Color(0xFF1A0808) : _tCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isExpired ? const Color(0xFFF85149).withValues(alpha: 0.3) : _tBorder)),
+        radius: 20,
+        accent: isExpired ? p.err : scoreColor,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            // Score circle
+            // Score ring
             Container(
-              width: 50, height: 50,
+              width: 56, height: 56,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _tBg,
-                border: Border.all(color: scoreColor, width: 2)),
+                color: p.bg,
+                border: Border.all(
+                  color: isExpired ? p.textDim : scoreColor, width: 2.2),
+                boxShadow: [BoxShadow(
+                  color: scoreColor.withValues(alpha: isExpired ? 0 : 0.28),
+                  blurRadius: 14)]),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(score.toStringAsFixed(0),
                     style: TextStyle(
-                      color: scoreColor,
-                      fontWeight: FontWeight.bold, fontSize: 14)),
+                      color: isExpired ? p.textDim : scoreColor,
+                      fontWeight: FontWeight.w800, fontSize: 16, height: 1.0)),
                   Text(label,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: scoreColor, fontSize: 7)),
+                      color: isExpired ? p.textDim : scoreColor, fontSize: 8)),
                 ])),
-            const SizedBox(width: 12),
-
-            // Job info
+            const SizedBox(width: 14),
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-              // S28-T2: show original source name if stored, else fall back
-              Text(
-                job['original_name'] as String?
-                  ?? ApiService.buildFilename(engine),
-                maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: _tText, fontSize: 11, // S32-BUG7-FIX: theme-aware
-                  fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1500),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: _tGold.withValues(alpha: 0.4))),
-                  child: Text(engine, style: const TextStyle(
-                    color: Color(0xFFD4AF37), fontSize: 9,
-                    fontWeight: FontWeight.bold))),
-                const SizedBox(width: 6),
-                Text(displayTs, style: const TextStyle(
-                  color: Color(0xFF8B949E), fontSize: 10)),
-              ]),
-
-              // Metrics if available
-              if (job['lufs'] != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text(
-                    [
-                      if (job['lufs']  != null) 'LUFS ${job['lufs']}',
-                      if (job['crest'] != null) 'Crest ${job['crest']}',
-                      if (job['lra']   != null) 'LRA ${job['lra']}',
-                    ].join('  ·  '),
-                    style: const TextStyle(
-                      color: Color(0xFF484F58), fontSize: 10))),
-            ])),
+                Text(
+                  job['original_name'] as String?
+                    ?? ApiService.buildFilename(engine),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.text, fontSize: 13, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Row(children: [
+                  NurChip(label: engine, color: p.gold, fontSize: 10),
+                  const SizedBox(width: 8),
+                  Flexible(child: Text(displayTs,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: p.textSub, fontSize: 11))),
+                ]),
+                if (metrics.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Text(metrics,
+                      style: TextStyle(color: p.textDim, fontSize: 11))),
+              ])),
           ]),
-
-          const SizedBox(height: 10),
-
-          // Expired indicator OR re-download button
+          const SizedBox(height: 12),
           if (isExpired)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF200D0D),
-                borderRadius: BorderRadius.circular(8)),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const Icon(Icons.warning_amber_rounded,
-                  color: Color(0xFFF85149), size: 14),
-                const SizedBox(width: 6),
-                Flexible(child: Text(s.jobExpired,
-                  style: const TextStyle(
-                    color: Color(0xFFF85149), fontSize: 11))),
+                color: p.err.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: p.err.withValues(alpha: 0.35))),
+              child: Row(children: [
+                Icon(Icons.warning_amber_rounded, color: p.err, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text(s.jobExpired,
+                  style: TextStyle(color: p.err, fontSize: 12))),
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => _removeJob(jobId),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFF85149).withValues(alpha: 0.5)),
-                      borderRadius: BorderRadius.circular(6)),
-                    child: Text(s.ar ? 'حذف' : 'Remove',
-                      style: const TextStyle(
-                        color: Color(0xFFF85149), fontSize: 10)))),
+                  child: NurChip(
+                    label: s.ar ? 'حذف' : 'Remove', color: p.err, fontSize: 10)),
               ]))
           else
-            SizedBox(width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: isLoading ? null : () => _reDownload(job),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _tCard,
-                  foregroundColor: const Color(0xFF3FB950),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  side: const BorderSide(color: Color(0xFF3FB950), width: 0.8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-                  elevation: 0),
-                icon: isLoading
-                  ? const SizedBox(width: 14, height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        color: Color(0xFF3FB950)))
-                  : const Icon(Icons.download_rounded, size: 16),
-                label: Text(isLoading
-                  ? (s.ar ? 'جارٍ التحميل...' : 'Downloading...')
-                  : s.reDownload,
-                  style: const TextStyle(fontSize: 12)))),
+            NurButton(
+              label: isLoading
+                ? (s.ar ? 'جارٍ التحميل...' : 'Downloading...')
+                : s.reDownload,
+              icon: Icons.download_rounded,
+              loading: isLoading,
+              filled: false,
+              accent: p.ok,
+              height: 44,
+              onTap: isLoading ? null : () => _reDownload(job)),
         ]),
       ),
     );
   }
+
+  Widget _swipeBg(NurPalette p, Alignment al) => Container(
+    alignment: al,
+    padding: const EdgeInsets.symmetric(horizontal: 24),
+    margin: const EdgeInsets.only(bottom: 12),
+    decoration: BoxDecoration(
+      color: p.err.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(20)),
+    child: Icon(Icons.delete_outline_rounded, color: p.err));
 }
