@@ -5,15 +5,14 @@ import 'local_mode_info_screen.dart'; // S146
 
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
-import 'dart:math' show pi, sin, cos, Random; // S159c
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
-import '../main.dart' show ThemeProvider; // S31-F2c
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // S148
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../state/lang_provider.dart';
-import '../widgets/anim.dart';   // S250g
+import '../design/nur.dart'; // Nur design system (also exports widgets/anim.dart)
 import '../services/api_service.dart';
 import 'history_screen.dart';
 import 'audio_editor_screen.dart';
@@ -22,17 +21,6 @@ import 'ai_tools_screen.dart'; // S184 // S152-B13: home_screen is already in li
 import 'engine_code_screen.dart'; // S234
 import 'settings_screen.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // S61
-
-// ── Sacred Cosmos tokens ─────────────────────────────────────────────────────
-const _bgSurface = Color(0xFF0C1E28);
-const _bgCard    = Color(0xFF0F2420);
-const _gold      = Color(0xFFD4AF37);
-const _goldLight = Color(0xFFF0CF60);
-const _goldMuted = Color(0xFF3A2B08);
-const _teal      = Color(0xFF1DB898); // S40-TEAL
-const _textB     = Color(0xFF8AACBA);
-const _ok        = Color(0xFF2ABF6E);
-const _err       = Color(0xFFD94040);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -79,32 +67,16 @@ class _HomeScreenState extends State<HomeScreen>
   late FlutterLocalNotificationsPlugin _notif; // S61
 
 
-  // S32: theme cache — updated at top of every build() so ALL sub-methods
-  // (which are instance methods) can read current theme colors directly.
-  // Initialized to dark-mode defaults; updated before any widget is built.
-  Color _tBg     = const Color(0xFF080A0E);
-  Color _tCard   = const Color(0xFF161B22);
-  Color _tBorder = const Color(0xFF21262D);
-  Color _tText   = const Color(0xFFC9D1D9);
-  Color _tSub    = const Color(0xFF8B949E);
-  Color _tDim    = const Color(0xFF484F58);
-  Color _tGold   = const Color(0xFFD4AF37);
-  bool  _tDark   = true;
   // S19: Wake server state
   bool _waking       = false;
   int  _wakeAttempts = 0;
 
-  late final AnimationController _glowCtrl;
-  late final AnimationController _starCtrl;
-  late final AnimationController _shimmer;
-  late final AnimationController _geoRotCtrl;
-  late final AnimationController _audioBarsCtrl;
-  late final AnimationController _shimmerSweep;
+  late final AnimationController _glowCtrl;   // slow breathing pulse (reverse)
+  late final AnimationController _waveCtrl;   // looping 0..1 clock for waveforms/orb
   late final AnimationController _scoreCtrl;
-  late final List<_StarParticle> _starList;
   late final AnimationController _resultCtrl; // S29: result card entrance
   final ScrollController _scrollCtrl = ScrollController(); // S92-SCROLL
-  late final AnimationController _particleCtrl; // S58: rising particles
+  final ScrollController _engCtrl = ScrollController();    // engine carousel
 
   static const _wakeCh = MethodChannel('com.tilawa.tilawa_enhancer/wake'); // S63
   bool   _localMode  = false;  // S65: run via proot (offline)
@@ -219,32 +191,16 @@ class _HomeScreenState extends State<HomeScreen>
       _notif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
     });
-    final rng = Random(7777);
-    _starList = List.generate(18, (_) => _StarParticle(rng));
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2800))
       ..repeat(reverse: true);
-    _starCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 14))
-      ..repeat();
-    _geoRotCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 80))
-      ..repeat();
-    _audioBarsCtrl = AnimationController( // S62-BARS-CTRL
-        vsync: this, duration: const Duration(milliseconds: 1800))
-      ..repeat(reverse: true);
-    _shimmerSweep = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1200));
-    _shimmer = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1500))
+    _waveCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 7))
       ..repeat();
     _scoreCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 1300));
     _resultCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
-    _particleCtrl = AnimationController( // S58
-        vsync: this, duration: const Duration(seconds: 6))
-      ..repeat();
+        vsync: this, duration: const Duration(milliseconds: 1400));
     _checkServer();
     SharedPreferences.getInstance().then((p){if(mounted) {
       setState((){
@@ -267,7 +223,11 @@ class _HomeScreenState extends State<HomeScreen>
     ApiService.preWarm();
     // S30-F1: restored — one loadLastEngine call
     ApiService.loadLastEngine().then((e) {
-      if (mounted) setState(() => _engine = e);
+      if (!mounted) return;
+      setState(() => _engine = e);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToEngine();
+      });
     });
     // S57: restore in-progress job after app kill
     ApiService.loadJobId().then((saved) {
@@ -294,12 +254,8 @@ class _HomeScreenState extends State<HomeScreen>
     _prepSub?.cancel();       // S256: the first-launch unpack outlives this screen otherwise
     _resultCtrl.dispose();
     _scrollCtrl.dispose(); // S92-SCROLL
-    _particleCtrl.dispose(); // S58
-    _starCtrl.dispose();
-    _shimmer.dispose();
-    _geoRotCtrl.dispose();
-    _audioBarsCtrl.dispose();
-    _shimmerSweep.dispose();
+    _engCtrl.dispose();
+    _waveCtrl.dispose();
     _scoreCtrl.dispose();
     _abDurSub?.cancel(); _abPosSub?.cancel(); _abDoneSub?.cancel();  // S195-BUG6 (S196-BUG-A: dedup)
     _abPlayer.dispose();
@@ -563,7 +519,7 @@ class _HomeScreenState extends State<HomeScreen>
             duration: const Duration(seconds: 10),
             action: SnackBarAction(
               label: s.ar ? 'حسناً' : 'OK',
-              textColor: _tGold,
+              textColor: _p.gold,
               onPressed: () {})));
           return;
         }
@@ -592,7 +548,7 @@ class _HomeScreenState extends State<HomeScreen>
             duration: const Duration(seconds: 12),
             action: SnackBarAction(
               label: s.ar ? 'حسناً' : 'OK',
-              textColor: _tGold,
+              textColor: _p.gold,
               onPressed: () {})));
         }
       }
@@ -748,162 +704,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Widget _abCard(S s) {
-    if (_file == null || _output == null) return const SizedBox.shrink();
-    final progress = (_abPos / _abDur).clamp(0.0, 1.0);
-    const teal   = Color(0xFF1DB898);
-    const gold   = Color(0xFFD4AF37);
-    final active = _abIsB ? gold : teal;
-
-    String fmt(double ms) {
-      final t = Duration(milliseconds: ms.toInt());
-      return '${t.inMinutes}:${(t.inSeconds % 60).toString().padLeft(2,'0')}';
-    }
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [Color(0xFF061812), Color(0xFF030E0A)]),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: active.withValues(alpha: 0.3)),
-        boxShadow: [BoxShadow(
-          color: active.withValues(alpha: 0.08),
-          blurRadius: 20, spreadRadius: 0)]),
-      child: Column(children: [
-        // ── Header ──────────────────────────────────────────────
-        Row(children: [
-          Icon(Icons.compare_arrows_rounded, color: active, size: 13),
-          const SizedBox(width: 6),
-          Text(s.ar ? 'مقارنة قبل / بعد' : 'Before / After',
-            style: TextStyle(color: active, fontSize: 11,
-              fontWeight: FontWeight.w700, letterSpacing: 1.5)),
-          const Spacer(),
-          // playing indicator dots
-          if (_abPlaying) ...[
-            for (int i = 0; i < 3; i++)
-              AnimatedContainer(
-                duration: Duration(milliseconds: 300 + i * 120),
-                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                width: 3, height: _abPlaying ? 10.0 : 4.0,
-                decoration: BoxDecoration(
-                  color: active, borderRadius: BorderRadius.circular(2))),
-          ],
-        ]),
-        const SizedBox(height: 12),
-        // ── Buttons ──────────────────────────────────────────────
-        Row(children: [
-          // A — Original
-          Expanded(child: GestureDetector(
-            onTap: () async {
-              if (_abIsB) {
-                await _abToggleTrack();
-              } else {
-                await _abTogglePlay();
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: !_abIsB
-                  ? teal.withValues(alpha: 0.15)
-                  : const Color(0xFF050F0A),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: !_abIsB ? teal : teal.withValues(alpha: 0.2)),
-                boxShadow: !_abIsB && _abPlaying ? [BoxShadow(
-                  color: teal.withValues(alpha: 0.25),
-                  blurRadius: 12)] : []),
-              child: Column(children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    !_abIsB && _abPlaying
-                      ? Icons.pause_circle_rounded
-                      : Icons.play_circle_rounded,
-                    key: ValueKey(!_abIsB && _abPlaying),
-                    color: teal, size: 28)),
-                const SizedBox(height: 4),
-                Text(s.ar ? 'الأصلي' : 'Original',
-                  style: TextStyle(
-                    color: !_abIsB ? teal : teal.withValues(alpha: 0.6),
-                    fontSize: 10, fontWeight: FontWeight.w600)),
-              ])))),
-          const SizedBox(width: 10),
-          // B — Enhanced
-          Expanded(child: GestureDetector(
-            onTap: () async {
-              if (!_abIsB) {
-                await _abToggleTrack();
-              } else {
-                await _abTogglePlay();
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: _abIsB
-                  ? gold.withValues(alpha: 0.12)
-                  : const Color(0xFF0D0900),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: _abIsB ? gold : gold.withValues(alpha: 0.2)),
-                boxShadow: _abIsB && _abPlaying ? [BoxShadow(
-                  color: gold.withValues(alpha: 0.3),
-                  blurRadius: 16)] : []),
-              child: Column(children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(
-                    _abIsB && _abPlaying
-                      ? Icons.pause_circle_rounded
-                      : Icons.play_circle_rounded,
-                    key: ValueKey(_abIsB && _abPlaying),
-                    color: gold, size: 28)),
-                const SizedBox(height: 4),
-                Text(s.ar ? 'المُحسَّن' : 'Enhanced',
-                  style: TextStyle(
-                    color: _abIsB ? gold : gold.withValues(alpha: 0.6),
-                    fontSize: 10, fontWeight: FontWeight.w600)),
-              ])))),
-        ]),
-        const SizedBox(height: 12),
-        // ── Progress bar ─────────────────────────────────────────
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: progress),
-            duration: const Duration(milliseconds: 100),
-            builder: (_, v, __) => LinearProgressIndicator(
-              value: v, minHeight: 5,
-              backgroundColor: const Color(0xFF0F1F18),
-              valueColor: AlwaysStoppedAnimation<Color>(active)))),
-        const SizedBox(height: 6),
-        Row(children: [
-          Text(fmt(_abPos),
-            style: TextStyle(color: active.withValues(alpha: 0.7),
-              fontSize: 9, fontWeight: FontWeight.w500)),
-          const Spacer(),
-          Text(fmt(_abDur),
-            style: const TextStyle(color: Color(0xFF3A5048),
-              fontSize: 9)),
-        ]),
-        const SizedBox(height: 4),
-        Text(
-          _abIsB
-            ? (s.ar ? '▶ المُحسَّن' : '▶ Enhanced')
-            : (s.ar ? '▶ الأصلي' : '▶ Original'),
-          style: TextStyle(
-            color: _abIsB
-              ? const Color(0xFFD4AF37).withValues(alpha: 0.6)
-              : const Color(0xFF1DB898).withValues(alpha: 0.6),
-            fontSize: 9)),
-      ]));
-  }
 
   Future<void> _reDownload() async {
     // S100: Local mode — copy cached output to Downloads
@@ -1073,313 +873,6 @@ class _HomeScreenState extends State<HomeScreen>
     return '~10-20 min';
   }
 
-  // ── S31-F2c: theme color helpers (private instance methods) ────────────────
-  // Dart library-private functions (_name) can't cross library boundaries, so
-  // we define them here inside the class instead of importing from main.dart.
-  bool  _isDark(BuildContext ctx)   => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)      => _isDark(ctx) ? _tBg : const Color(0xFFFAF7EE);
-  Color _cCard(BuildContext ctx)    => _isDark(ctx) ? _tCard : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx)  => _isDark(ctx) ? _tBorder : const Color(0xFFD4C99A);
-  Color _cText(BuildContext ctx)    => _isDark(ctx) ? _tText : const Color(0xFF1A1400);
-  Color _cSub(BuildContext ctx)     => _isDark(ctx) ? _tSub : const Color(0xFF6B5E40);
-  Color _cDim(BuildContext ctx)     => _isDark(ctx) ? _tDim : const Color(0xFF8B7B5A);
-  Color _cGold(BuildContext ctx)    => _isDark(ctx) ? _tGold : const Color(0xFFB8941F);
-
-  // ── BUILD ──────────────────────────────────────────────────────────────────
-  @override
-  Widget build(BuildContext context) {
-    final s = LangProvider.strings(context);
-    // S32: populate theme cache so sub-methods see current colors
-    _tDark = _isDark(context); _tBg = _cBg(context); _tCard = _cCard(context);
-    _tBorder = _cBorder(context); _tText = _cText(context);
-    _tSub = _cSub(context); _tDim = _cDim(context); _tGold = _cGold(context);
-    final dark = _tDark; // used in gradient below
-    final cBg = _tBg;   // used in Scaffold backgroundColor
-    // S250 QoL — the back button was unguarded here. This is the root route, so
-    // on Android back EXITS THE APP: a tap during a multi-minute local
-    // restoration killed the proot process and lost the whole run with no
-    // warning. (The audio editor has had this guard since S203; the screen that
-    // runs the long jobs did not.) First press warns, a second within 3 s
-    // leaves — so it can't trap someone who really does want out.
-    return PopScope(
-      canPop: !_busy || _exitArmed,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop || !mounted) return;
-        setState(() => _exitArmed = true);
-        _exitArmTimer?.cancel();
-        _exitArmTimer = Timer(const Duration(seconds: 3), () {
-          if (mounted) setState(() => _exitArmed = false);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: const Color(0xFF1A1200),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
-          content: Text(
-            s.ar
-              ? 'المعالجة جارية — اضغط رجوع مرة أخرى للخروج وإلغاء العمل'
-              : 'Still processing — press back again to exit and cancel the run',
-            style: const TextStyle(color: Color(0xFFF0D882), fontSize: 12)),
-        ));
-      },
-      child: _buildHome(s, dark, cBg));
-  }
-
-  Widget _buildHome(S s, bool dark, Color cBg) {
-    return Scaffold(
-      backgroundColor: cBg,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            // S54-BG-GRADIENT: tinted by selected engine — S190: calmer default,
-            // and forced flat-dark while processing regardless of the toggle
-            colors: dark
-              ? (_busy
-                  ? [const Color(0xFF020D0C), const Color(0xFF030C0B)]
-                  : (_engineTintEnabled
-                      ? [Color.lerp(const Color(0xFF020D0C), _engineColor, 0.10)!,
-                         Color.lerp(const Color(0xFF020D0C), _engineColor, 0.055)!]
-                      : [const Color(0xFF020D0C), const Color(0xFF050F0E)]))
-              : [const Color(0xFFFAF7EE), const Color(0xFFF5F0E0)])),
-        // S29: Sacred Cosmos painters Stack
-        child: Stack(children: [
-          if (dark) Positioned.fill(
-            child: IgnorePointer(
-              child: RepaintBoundary(
-                child: CustomPaint(
-                  painter: _GeoPainter(dim: _busy ? 0.45 : 1.0),  // S190
-                  isComplex: true,
-                  willChange: false)))),
-          // S58: rising particles (engine-tinted incense dots) — S190: dimmed/neutral
-          // when tint disabled or while processing
-          if (dark) Positioned.fill(
-            child: IgnorePointer(
-              child: RepaintBoundary(
-                child: AnimatedBuilder(
-                  animation: _particleCtrl,
-                  builder: (_, __) => CustomPaint(
-                    painter: _IncensePainter(
-                      _particleCtrl.value,
-                      _engineTintEnabled ? _engineColor : const Color(0xFF1DB898),
-                      dim: _busy ? 0.35 : (_engineTintEnabled ? 1.0 : 0.45))))))),
-          if (dark) Positioned.fill(
-            child: IgnorePointer(
-              child: RepaintBoundary(
-                child: AnimatedBuilder(
-                  animation: _starCtrl,
-                  builder: (_, __) => CustomPaint(
-                    painter: _StarsPainter(_starCtrl.value, _starList,
-                      dim: _busy ? 0.4 : 1.0),  // S190
-                    isComplex: true))))),
-          CustomScrollView(controller: _scrollCtrl, slivers: [ // S62b S92-SCROLL
-            SliverAppBar( // S61-APPBAR
-              pinned: true,
-              floating: false,
-              backgroundColor: const Color(0xFF020D0C),
-              elevation: 0,
-              expandedHeight: 72,
-              automaticallyImplyLeading: false,
-              actions: _headerActions(),
-              // S255: the wordmark belongs in the AppBar's own title slot, not
-              // FlexibleSpaceBar's. FlexibleSpaceBar centres its title across
-              // the full bar width and the actions are painted over the top of
-              // it, so the lockup ran underneath the buttons and lost its first
-              // characters. AppBar lays leading/title/actions out as a row and
-              // reserves the space, which is exactly the problem it exists to
-              // solve.
-              centerTitle: true,
-              title: _wordmark(),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(
-                  height: 1,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.transparent,
-                               Color(0xFFD4AF37),
-                               Color(0xFF1DB898),
-                               Colors.transparent])))),
-              flexibleSpace: FlexibleSpaceBar(
-                centerTitle: true,
-                background: Container(
-                  decoration: const BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.topCenter,
-                      radius: 1.8,
-                      colors: [
-                        Color(0xFF0D2E1F),
-                        Color(0xFF020D0C)]))),
-                // S255: the brand lockup is a fixed-width logo plus two runs of
-                // 19px text, and nothing bounded it. FlexibleSpaceBar hands its
-                // title a constrained box, so on a 360px screen it overflowed by
-                // 38px — 106px once the system text size is turned up — and the
-                // striped overflow bar was the first thing on screen. scaleDown
-                // keeps the whole name and shrinks it to fit instead of
-                // clipping or ellipsising the app's own title.
-                //
-                // It also only appears once the hero has gone. At rest the logo
-                // and the name were on screen twice within 250px — once here,
-                // once in the hero directly beneath. Now the bar carries the
-                // actions while the hero carries the identity, and the lockup
-                // fades in to take over exactly as the hero scrolls out, so the
-                // brand is always present and never doubled.
-              ),
-            ),
-            SliverToBoxAdapter(child: _header(s)),
-            if (!_localMode) // S147: hide server banner in local mode
-              SliverToBoxAdapter(child: _serverBanner(s)),
-            SliverToBoxAdapter(child: _localModeToggle(s)), // S65
-            SliverToBoxAdapter(child: _engineTintToggle(s)), // S188-B
-            if (_localMode && _localReady && _engine == 'v11.0')
-              SliverToBoxAdapter(child: _aggressiveModeToggle(s)), // S173
-            SliverToBoxAdapter(child: _geoSep(s.ar ? 'اختر المحرك' : 'Engine')),
-            SliverToBoxAdapter(child: _engineSelector(s)),
-            SliverToBoxAdapter(child: _geoDiamond()),
-            SliverToBoxAdapter(child: _fileCard(s)),
-            if (_busy || _progress > 0)
-              SliverToBoxAdapter(child: _progressCard(s)),
-            if (_result != null)
-              SliverToBoxAdapter(
-                child: FadeTransition(
-                  opacity: CurvedAnimation(
-                    parent: _resultCtrl, curve: Curves.easeOutBack),
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.08),
-                      end: Offset.zero,
-                    ).animate(CurvedAnimation(
-                      parent: _resultCtrl, curve: Curves.easeOutBack)),
-                    child: _resultCard(s),
-                  ),
-                ),
-              ),
-            if (_result != null)
-                SliverToBoxAdapter(child: _reportCard(s)),
-            if (_result != null)
-                SliverToBoxAdapter(child: _abCard(s)),
-            SliverToBoxAdapter(child: _bottomRow(s)),
-            SliverToBoxAdapter(child: _audioEditorCard(s)),  // S152
-            SliverToBoxAdapter(child: _aiToolsCard(s)),     // S184
-            SliverToBoxAdapter(child: _engineCodeCard(s)),   // S234
-            SliverToBoxAdapter(child: _donationCard(s)),
-            const SliverToBoxAdapter(child: SizedBox(height: 40)),
-          ]),
-          // S183: processing overlay — sits above CustomScrollView in the Stack
-          if (_busy)
-            Positioned.fill(child: _engineProcessingOverlay()),
-        ]),
-      ),
-    );
-  }
-
-  // S183 ── Engine processing overlay ─────────────────────────────────────────
-  // Semi-transparent dark scrim over the whole screen while _busy.
-  // The Cancel button is embedded in the overlay so the user can still stop.
-  Widget _engineProcessingOverlay() {
-    return Container(
-      color: Colors.black.withValues(alpha: 0.62),
-      alignment: Alignment.center,
-      child: AnimatedBuilder(
-        animation: _glowCtrl,
-        builder: (_, __) => Column(mainAxisSize: MainAxisSize.min, children: [
-          // Outer glow ring + spinner
-          SizedBox(width: 104, height: 104,
-            child: Stack(alignment: Alignment.center, children: [
-              Container(
-                width: 104, height: 104,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: _engineColor.withValues(alpha: 0.20 + 0.30 * _glowCtrl.value),
-                    width: 1.4),
-                  boxShadow: [BoxShadow(
-                    color: _engineColor.withValues(alpha: 0.08 + 0.14 * _glowCtrl.value),
-                    blurRadius: 32)])),
-              SizedBox(width: 76, height: 76,
-                child: CircularProgressIndicator(
-                  value: _progress > 0.05 ? _progress : null,
-                  strokeWidth: 3,
-                  backgroundColor: _tBorder,
-                  valueColor: AlwaysStoppedAnimation(
-                    Color.lerp(_teal, _gold, _glowCtrl.value)!),
-                  strokeCap: StrokeCap.round)),
-              const Icon(Icons.graphic_eq_rounded, color: _gold, size: 30),
-            ])),
-          const SizedBox(height: 22),
-          ShaderMask(
-            shaderCallback: (b) => const LinearGradient(
-              colors: [_gold, _goldLight]).createShader(b),
-            child: const Text('جارٍ المعالجة',
-              style: TextStyle(color: Colors.white, fontSize: 22,
-                fontWeight: FontWeight.w800, letterSpacing: 0.5))),
-          const SizedBox(height: 8),
-          Text(
-            _isMerging ? 'جارٍ دمج المقاطع…' : _status.isNotEmpty ? _status : 'يُرجى الانتظار…',
-            style: const TextStyle(color: _textB, fontSize: 13)),
-          const SizedBox(height: 18),
-          // Progress bar
-          SizedBox(width: 240,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: _isMerging ? null : (_progress > 0.05 ? _progress : null),
-                backgroundColor: _tBorder,
-                valueColor: const AlwaysStoppedAnimation(_gold),
-                minHeight: 5))),
-          if (_progress > 0.05) ...[
-            const SizedBox(height: 8),
-            Text('${(_progress * 100).round()}%',
-              style: const TextStyle(color: _textB, fontSize: 12)),
-          ],
-          const SizedBox(height: 22),
-          // Cancel button (NOT behind AbsorbPointer — user must be able to cancel)
-          Container(
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: const Color(0xFF1B6B80).withValues(alpha: 0.45)),
-              borderRadius: BorderRadius.circular(10)),
-            child: TextButton.icon(
-              onPressed: _cancelProcessing,
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                minimumSize: Size.zero),
-              icon: const Icon(Icons.cancel_outlined, size: 16,
-                color: Color(0xFF6B9EAE)),
-              label: const Text('إلغاء',
-                style: TextStyle(color: Color(0xFF6B9EAE), fontSize: 13)))),
-          const SizedBox(height: 12),
-          // S209: processing continues in the background (owned by this
-          // State object, not disposed by pushing another route) — this is
-          // the primary "play while you wait" entry point.
-          Container(
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_teal, _gold]),
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [BoxShadow(
-                color: _gold.withValues(alpha: 0.20 + 0.15 * _glowCtrl.value),
-                blurRadius: 16)]),
-            child: TextButton.icon(
-              onPressed: () => Navigator.push(context,
-                PageRouteBuilder(
-                  pageBuilder: (_, __, ___) => const GameScreen(),
-                  transitionsBuilder: (_, anim, __, child) =>
-                    FadeTransition(opacity: anim, child: child),
-                  transitionDuration: const Duration(milliseconds: 220))),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-                minimumSize: Size.zero),
-              icon: const Icon(Icons.sports_esports_rounded, size: 17,
-                color: Colors.black),
-              label: Text(LangProvider.strings(context).playWhileWait,
-                style: const TextStyle(color: Colors.black, fontSize: 13,
-                  fontWeight: FontWeight.w700)))),
-        ]),
-      ),
-    );
-  }
-
-  // ── HEADER — Sacred Cosmos Hero ─────────────────────────────────────────────
   // ── LOCAL PROCESS (S65) — proot offline engine ────────────────────────────
   Future<void> _processLocal() async {
     if (_file == null || _busy) return;
@@ -1485,33 +978,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  /// S256: a thin progress line for the unprompted first-launch unpack. It
-  /// reports rather than asks — there is no button, because there is no
-  /// decision: the engine is already in the APK either way.
-  Widget _prepStatus(S s) => Padding(
-    padding: const EdgeInsets.only(top: 4),
-    child: Column(
-      crossAxisAlignment: s.ar
-        ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: [
-        Text(
-          _prepping
-            ? (s.ar ? 'يُجهّز المحرك المحلي… $_prepPct٪'
-                    : 'Preparing the offline engine… $_prepPct%')
-            : (s.ar ? 'يبدأ التجهيز…' : 'Starting…'),
-          style: const TextStyle(color: Color(0xFFF0D882), fontSize: 10)),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(2),
-          child: SizedBox(
-            width: 160, height: 3,
-            child: LinearProgressIndicator(
-              value: _prepping && _prepPct > 0 ? _prepPct / 100.0 : null,
-              backgroundColor: const Color(0xFF1A2E20),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD4AF37)))),
-        ),
-      ]));
-
   /// S256: unpack the bundled offline engine, unprompted, in the background.
   ///
   /// Safe to call more than once — it no-ops while a run is in flight. A
@@ -1552,218 +1018,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  /// S255: info / game / settings. These used to be Positioned inside the
-  /// hero's Stack, which floated them over the hero artwork and left the app
-  /// bar carrying nothing but the wordmark. They belong in the bar: it is
-  /// pinned, so they stay reachable however far the page is scrolled, instead
-  /// of scrolling away with the header they were painted on top of.
-  List<Widget> _headerActions() => [
-    _iconBtn(Icons.info_outline_rounded, () => _showInfoSheet(context)),
-    const SizedBox(width: 8),
-    // S209: persistent entry point to the mini-game, always available
-    _iconBtn(Icons.sports_esports_rounded, () => Navigator.push(context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const GameScreen(),
-        transitionsBuilder: (_, anim, __, child) =>
-          FadeTransition(opacity: anim, child: child),
-        transitionDuration: const Duration(milliseconds: 220)))),
-    const SizedBox(width: 8),
-    _iconBtn(Icons.settings_outlined, () => Navigator.push(context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const SettingsScreen(),
-        transitionsBuilder: (_, anim, __, child) =>
-          FadeTransition(opacity: anim, child: child),
-        transitionDuration: const Duration(milliseconds: 220)))),
-    const SizedBox(width: 12),
-  ];
-
-  /// The compact brand lockup in the app bar, revealed as the hero scrolls
-  /// away. FittedBox(scaleDown) keeps the whole name on a narrow screen or at
-  /// a large text scale rather than letting it overflow the constrained box
-  /// FlexibleSpaceBar hands its title.
-  Widget _wordmark() => AnimatedBuilder(
-    animation: _scrollCtrl,
-    builder: (_, child) {
-      // hasClients guards the first build, before the view is attached.
-      final off = _scrollCtrl.hasClients ? _scrollCtrl.offset : 0.0;
-      final t = ((off - 110.0) / 80.0).clamp(0.0, 1.0);
-      return Opacity(
-        // Keyed so the scroll-reveal can be asserted directly rather than
-        // inferred from where it happens to sit in the tree.
-        key: const ValueKey('appbar-wordmark-opacity'),
-        opacity: t,
-        child: Transform.translate(
-          offset: Offset(0, 10 * (1 - t)), child: child));
-    },
-    child: FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 30, height: 30,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [BoxShadow(
-                color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
-                blurRadius: 12)]),
-            child: ClipOval(child: Image.asset(
-              'assets/images/logo.png', fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: _bgCard,
-                child: const Icon(Icons.menu_book_rounded,
-                  color: _gold, size: 16))))),
-          const SizedBox(width: 9),
-          ShaderMask(
-            shaderCallback: (b) => const LinearGradient(
-              colors: [Color(0xFFD4AF37), Color(0xFFF0CF60),
-                       Color(0xFFD4AF37)]).createShader(b),
-            child: const Text('التلاوة',
-              style: TextStyle(
-                color: Colors.white, fontSize: 18,
-                fontWeight: FontWeight.w300, letterSpacing: 0.3))),
-          // S193: was 'محسِّن ' BEFORE the ShaderMask above — in this plain LTR
-          // Row that put 'محسِّن' on the left/'التلاوة' on the right, which an RTL
-          // reader reads backwards as "التلاوة محسِّن".
-          const Text(' محسِّن',
-            style: TextStyle(
-              color: Color(0xFFE2CFA0), fontSize: 18,
-              fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-        ])));
-
-  // S255: this was a Stack holding the hero plus the three Positioned action
-  // buttons. With the buttons moved into the app bar the Stack had one child
-  // left, and a Stack passes LOOSE constraints to a non-positioned child — so
-  // the hero shrink-wrapped to the width of its widest element (the subtitle
-  // pill) and aligned to the leading edge, pulling the whole lockup ~40px off
-  // centre. A plain Padding takes the sliver's tight width and centres again.
-  Widget _header(S s) => Container(
-    padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
-    child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-        child: Column(children: [
-          // Orbital ring + logo
-          // S31-3RINGS
-          RepaintBoundary(child: AnimatedBuilder( // S59b-ORBITAL-RB
-            animation: Listenable.merge([_glowCtrl, _geoRotCtrl]),
-            builder: (_, __) {
-              final t  = _glowCtrl.value;
-              final r  = _geoRotCtrl.value * 6.2832;
-              return SizedBox(width: 148, height: 148,
-                child: Stack(alignment: Alignment.center, children: [
-                  // Ring 3 — outermost, slow clockwise
-                  Transform.rotate(angle: r * 0.3,
-                    child: Container(width: 148, height: 148,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _gold.withValues(alpha: 0.10 + 0.12 * t),
-                          width: 0.8),
-                        boxShadow: [BoxShadow(
-                          color: _gold.withValues(alpha: 0.06 + 0.08 * t),
-                          blurRadius: 18 + 14 * t)]))),
-                  // Ring 2 — mid, counter-clockwise
-                  Transform.rotate(angle: -r * 0.5,
-                    child: Container(width: 124, height: 124,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _teal.withValues(alpha: 0.20 + 0.22 * t),
-                          width: 1.0)))),
-                  // Ring 1 — inner gold, clockwise faster
-                  Transform.rotate(angle: r * 1.2,
-                    child: Container(width: 104, height: 104,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _gold.withValues(alpha: 0.22 + 0.28 * t),
-                          width: 1.4),
-                        boxShadow: [BoxShadow(
-                          color: _gold.withValues(alpha: 0.12 + 0.16 * t),
-                          blurRadius: 12 + 10 * t)]))),
-                  // Logo — breathing scale
-                  Transform.scale(
-                    scale: 0.96 + 0.08 * t,
-                    child: Container(width: 88, height: 88,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(
-                          color: _gold.withValues(alpha: 0.22 + 0.28 * t),
-                          blurRadius: 20 + 16 * t,
-                          spreadRadius: 2)]),
-                      child: ClipOval(child: Image.asset(
-                        'assets/images/logo.png', fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: _bgCard,
-                          child: const Icon(Icons.menu_book_rounded,
-                            color: _gold, size: 44)))))),
-                ]));
-            })),
-          const SizedBox(height: 16),
-          // S61-HEADER-NAME — always Arabic, elegant sizing
-          ShaderMask(
-            shaderCallback: (b) => const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFD4AF37), Color(0xFFF5E070),
-                       Color(0xFFD4AF37)])
-              .createShader(b),
-            child: const Text('محسِّن التلاوة',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 30, fontWeight: FontWeight.w800,
-                color: Colors.white, height: 1.1,
-                letterSpacing: 1.2))),
-          const SizedBox(height: 4),
-          // Subtitle pill
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            decoration: BoxDecoration(
-              color: _teal.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _teal.withValues(alpha: 0.35))),
-            // S255: was RichText, which builds its own TextStyle from scratch
-            // instead of inheriting DefaultTextStyle — so this one pill rendered
-            // in the platform font while every other string on the screen is
-            // Tajawal. Text.rich inherits, so it now matches its surroundings.
-            child: Text.rich(
-              TextSpan(
-                style: const TextStyle(
-                  color: _textB, fontSize: 10, letterSpacing: 1.5),
-                children: [
-                  TextSpan(text: s.subtitle),
-                  const TextSpan(text: '  ·  ',
-                    style: TextStyle(color: Color(0xFF1DB898))),
-                  TextSpan(
-                    text: _engines.firstWhere(
-                      (e) => e.id == _engine,
-                      orElse: () => _engines.first).nameAr,
-                    style: const TextStyle(
-                      color: Color(0xFFD4AF37),
-                      fontWeight: FontWeight.w600)),
-                ])),
-          ),
-        ])),
-  );
-
-  Widget _iconBtn(IconData icon, VoidCallback onTap) {
-    // S29-ICONBTN-SACRED
-    return GestureDetector(
-      onTap: onTap,
-      child: RepaintBoundary(child: AnimatedBuilder( // S59b-ICONBTN-RB
-        animation: _glowCtrl,
-        builder: (_, __) => Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: _bgCard, shape: BoxShape.circle,
-            border: Border.all(
-              color: _teal.withValues(alpha: 0.28 + 0.22 * _glowCtrl.value)),
-            boxShadow: [BoxShadow(
-              color: _teal.withValues(alpha: 0.08 + 0.08 * _glowCtrl.value),
-              blurRadius: 10)]),
-          child: Icon(icon, color: _textB, size: 20)))));
-  }
-
   // S56: Resume polling when app returns to foreground
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -1775,424 +1029,30 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ── SERVER BANNER (S19: wake button + hint) ────────────────────────────────
-  // ── LOCAL MODE TOGGLE (S65) ──────────────────────────────────────────────
-  Widget _localModeToggle(S s) {
-    const gold  = Color(0xFFC8A048);
-    const teal  = Color(0xFF1DB898);
-    const jade  = Color(0xFF0D2B22);
-    const textB = Color(0xFF8AACBA);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: _localMode
-            ? jade.withValues(alpha: 0.85)
-            : const Color(0xFF0A0E12).withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: _localMode
-              ? gold.withValues(alpha: 0.45)
-              : const Color(0xFF1A2733),
-            width: 1.0)),
-        // S255: mirror in Arabic, the same way welcome_screen's _modeRow does.
-        // These rows read icon -> label -> switch, which is a leading-to-
-        // trailing order, but the Row was hard-wired LTR: in Arabic the icon
-        // sat on the far side of its own label and the switch ended up on the
-        // leading edge, so the row read inside-out against the text beside it.
-        child: Row(
-          textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
-          children: [
-          Icon(
-            _localMode ? Icons.offline_bolt_rounded : Icons.cloud_outlined,
-            color: _localMode ? gold : textB, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Column(
-            crossAxisAlignment: s.ar
-              ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-            Text(
-              _localMode
-                ? (s.ar ? 'المحرك المحلي (بدون إنترنت)' : 'Local Engine (Offline)')
-                : (s.ar ? 'وضع الخادم (متصل)' : 'Server Mode (Online)'),  // S147
-              style: TextStyle(
-                color: _localMode ? gold : textB,
-                fontSize: 12, fontWeight: FontWeight.w700)),
-            // S256: this used to read "Tap to set up (one-time ~200MB)" and
-            // open a dedicated screen. The engine ships inside the app, so
-            // there was nothing to fetch and nothing to decide — the tap was
-            // ceremony in front of a file copy. It now unpacks itself on first
-            // launch and this just reports where it has got to.
-            if (_localMode && !_localReady && _prepError == null)
-              _prepStatus(s),
-            if (_localMode && !_localReady && _prepError != null)
-              GestureDetector(
-                onTap: _busy ? null : _autoPrepareOfflineEngine,
-                child: Text(
-                  s.ar ? 'تعذّر التجهيز — اضغط للمحاولة مجدداً'
-                       : 'Preparation failed — tap to retry',
-                  style: const TextStyle(
-                    color: Color(0xFFF85149), fontSize: 10,
-                    decoration: TextDecoration.underline))),
-            if (_localMode && _localReady)
-              // S250 QoL — say how many engines are actually runnable offline.
-              // "Ready — processes fully offline" was true of the environment
-              // but said nothing about the engines, which is what silently
-              // varied (and was silently broken for five of them).
-              Text(
-                _localEngines.isEmpty
-                  ? (s.ar ? 'جاهز — تشغيل بدون إنترنت' : 'Ready — processes fully offline')
-                  : (s.ar
-                      ? 'جاهز — ${_localEngines.length} محركات تعمل بدون إنترنت'
-                      : 'Ready — ${_localEngines.length} engines run offline'),
-                style: const TextStyle(color: teal, fontSize: 10)),
-            if (!_localMode)
-              Text(s.ar ? 'فعِّل للمعالجة خارج الإنترنت' : 'Switch for offline, private processing', // S147
-                style: const TextStyle(color: Color(0xFF3D5A65), fontSize: 10)),
-          ])),
-          GestureDetector( // S146: info button
-            onTap: () => Navigator.push(context,
-              PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const LocalModeInfoScreen(),
-                transitionsBuilder: (_, anim, __, child) =>
-                  FadeTransition(opacity: anim, child: child),
-                transitionDuration: const Duration(milliseconds: 250))),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Icon(Icons.info_outline_rounded,
-                color: const Color(0xFFC8A048).withValues(alpha: 0.65),
-                size: 16))),
-          Switch(
-            value: _localMode,
-            onChanged: _busy ? null : (v) {
-              setState(() => _localMode = v);
-              SharedPreferences.getInstance().then((p)=>p.setBool("local_mode",v)); // S148
-              // S93: always re-check on toggle ON.
-              // S256: and if it is not ready, just prepare it — in the
-              // background, where the user can keep using the app — instead of
-              // pushing a full-screen setup flow in front of them. The engine
-              // is already on the device; there is nothing to consent to.
-              if (v) {
-                LocalEngineService.isSetupComplete().then((ready) {
-                  if (!mounted) return;
-                  setState(() => _localReady = ready);
-                  if (!ready) _autoPrepareOfflineEngine();
-                });
-              }
-            },
-            activeThumbColor: gold,
-            inactiveThumbColor: textB.withValues(alpha: 0.5),
-            inactiveTrackColor: const Color(0xFF1A2733)),
-        ]),
-      ),
-    );
-  }
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  NUR UI — everything below is presentation only. All behaviour lives above.
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  // S188-B: engine-color background tint intensity toggle
-  Widget _engineTintToggle(S s) {
-    const gold  = Color(0xFFC8A048);
-    const textB = Color(0xFF8AACBA);
-    const jade  = Color(0xFF0D2B22);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: _engineTintEnabled
-            ? jade.withValues(alpha: 0.5)
-            : const Color(0xFF0A0E12).withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: _engineTintEnabled
-              ? gold.withValues(alpha: 0.3)
-              : const Color(0xFF1A2733),
-            width: 1.0)),
-        child: Row(
-          textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
-          children: [
-          Icon(Icons.palette_outlined,
-            color: _engineTintEnabled ? gold : textB, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Text(
-            s.ar ? 'تظليل الخلفية بلون المحرك' : 'Engine-color background tint',
-            textAlign: s.ar ? TextAlign.right : TextAlign.left,
-            style: TextStyle(
-              color: _engineTintEnabled ? gold : textB,
-              fontSize: 12, fontWeight: FontWeight.w700))),
-          Switch(
-            value: _engineTintEnabled,
-            onChanged: (v) {
-              setState(() => _engineTintEnabled = v);
-              SharedPreferences.getInstance()
-                .then((p) => p.setBool("engine_tint_enabled", v)); // S188-B
-            },
-            activeThumbColor: gold,
-            inactiveThumbColor: textB.withValues(alpha: 0.5),
-            inactiveTrackColor: const Color(0xFF1A2733)),
-        ]),
-      ),
-    );
-  }
-
-  // S173/S174-hotfix: aggressive dereverberation toggle (الصفاء v11.0 only)
-  Widget _aggressiveModeToggle(S s) {
-    const amber  = Color(0xFFE8943A);
-    const textB  = Color(0xFF8AACBA);
-    const darkBg = Color(0xFF1A0E05);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: _aggressive
-            ? darkBg.withValues(alpha: 0.85)
-            : const Color(0xFF0A0E12).withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: _aggressive
-              ? amber.withValues(alpha: 0.45)
-              : const Color(0xFF1A2733),
-            width: 1.0)),
-        child: Row(children: [
-          Icon(
-            _aggressive ? Icons.waves_rounded : Icons.water_drop_outlined,
-            color: _aggressive ? amber : textB, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            Text(
-              _aggressive
-                ? (s.ar ? 'وضع صارم (إزالة صدى عميقة)' : 'Aggressive (deep dereverberation)')
-                : (s.ar ? 'وضع قياسي (محافظ على الصوت)' : 'Standard (voice-preserving)'),
-              style: TextStyle(
-                color: _aggressive ? amber : textB,
-                fontSize: 12, fontWeight: FontWeight.w700)),
-            Text(
-              _aggressive
-                ? (s.ar ? 'لتسجيلات شديدة الصدى' : 'Best for heavily reverberant recordings')
-                : (s.ar ? 'موصى به للتسجيلات العادية' : 'Recommended for most recordings'),
-              style: const TextStyle(
-                color: Color(0xFF3D5A65), fontSize: 10)),
-          ])),
-          Switch(
-            value: _aggressive,
-            onChanged: _busy ? null : (v) {
-              setState(() => _aggressive = v);
-              SharedPreferences.getInstance().then(
-                (p) => p.setBool('aggressive_mode', v));  // S174-B4
-            },
-            activeThumbColor: amber,
-            inactiveThumbColor: textB.withValues(alpha: 0.5),
-            inactiveTrackColor: const Color(0xFF1A2733)),
-        ]),
-      ),
-    );
-  }
-
-  Widget _serverBanner(S s) {
-    final isOffline = !_serverUp;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: _serverUp
-          ? _ok.withValues(alpha: 0.06)
-          : _waking
-            ? _gold.withValues(alpha: 0.06)
-            : _err.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _serverUp
-            ? const Color(0xFF3FB950)
-            : _waking
-              ? _tGold
-              : const Color(0xFFF85149),
-          width: 0.8)),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            // Status dot / spinner
-            if (_waking)
-              const SizedBox(width: 8, height: 8,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.5,
-                  color: Color(0xFFD4AF37)))
-            else
-              RepaintBoundary(child: AnimatedBuilder( // S59b-SRVDOT-RB
-                animation: _glowCtrl,
-                builder: (_, __) {
-                  final t = _glowCtrl.value;
-                  final c = _serverUp ? _ok : _err;
-                  return SizedBox(width: 22, height: 22,
-                    child: Stack(alignment: Alignment.center, children: [
-                      if (_serverUp) Container(
-                        width: 8 + 12 * t, height: 8 + 12 * t,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: c.withValues(alpha: 0.6 * (1 - t)),
-                            width: 1.5))),
-                      Container(width: 8, height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle, color: c,
-                          boxShadow: [BoxShadow(
-                            color: c.withValues(alpha: 0.4 + 0.5 * t),
-                            blurRadius: 5 + 8 * t)])),
-                    ]));
-                })),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _waking
-                  ? s.waking
-                  : _serverUp
-                    ? (_latencyMs != null
-                        ? '${s.serverOnline} · ${_latencyMs}ms' // S30-S
-                        : s.serverOnline)
-                    : s.serverOffline,
-                style: TextStyle(
-                  color: _serverUp
-                    ? const Color(0xFF3FB950)
-                    : _waking
-                      ? _tGold
-                      : const Color(0xFFF85149),
-                  fontSize: 12)),
-            ),
-            // S19: Wake button — shown when server is offline and not already waking
-            if (isOffline && !_waking)
-              GestureDetector(
-                onTap: _wakeServer,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1000),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _tGold.withValues(alpha: 0.6))),
-                  child: Text(s.wakeServer,
-                    style: const TextStyle(
-                      color: Color(0xFFD4AF37),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold)))),
-          ]),
-          // S19: Hint text when offline
-          if (isOffline && !_waking) ...[
-            const SizedBox(height: 6),
-            Text(s.wakeHint,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF8B949E), fontSize: 10)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ── ENGINE SELECTOR ────────────────────────────────────────────────────────
-  Widget _engineSelector(S s) => Container(
-    margin: const EdgeInsets.fromLTRB(16,16,16,8),
-    decoration: BoxDecoration(
-      color: _bgSurface,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _teal.withValues(alpha: 0.28)),
-      boxShadow: [BoxShadow(
-        color: _teal.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, 4))]),
-    child: Column(children: [
-      // ── Header row ──────────────────────────────────────────────────
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18,16,18,14),
-        child: Row(children: [
-          const Icon(Icons.tune_rounded, color: Color(0xFF484F58), size: 13),
-          const SizedBox(width: 7),
-          Text(s.chooseEngine, style: const TextStyle(
-            color: _textB, fontSize: 11, letterSpacing: 1.8,
-            fontWeight: FontWeight.w600)),
-          const Spacer(),
-          // Score pill for selected engine
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: _badgeBg(_selectedEngine.bc),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: _badgeColor(_selectedEngine.bc).withValues(alpha: 0.5))),
-            child: Text(
-              '≥${_selectedEngine.score.toInt()}',
-              style: TextStyle(
-                color: _engineColor,
-                fontSize: 10, fontWeight: FontWeight.bold))),
-        ])),
-      ..._engines.map((e) => _engineCard(e, s)),
-      const SizedBox(height: 10),
-    ]),
-  );
+  NurPalette _p = NurPalette.night;
 
   _EngineData get _selectedEngine =>
       _engines.firstWhere((e) => e.id == _engine, orElse: () => _engines.first);
 
-  // S54: per-engine identity color drives bg tint and glow
-  Color get _engineColor {
-    switch (_engine) {
-      case 'v11.0': return const Color(0xFFD4AF37); // safaa gold // S149
-      case 'v11.1': return const Color(0xFF1DB898); // itiqan teal
-      case 'v11.2': return const Color(0xFFE8A030); // isteidad amber
-      case 'v10.0': return const Color(0xFFB8860B); // Aetherion dark gold
-      case 'v9.0':  return const Color(0xFF9B7FFF); // Evolution violet
-      case 'v8.5':  return const Color(0xFF5BB8FF); // Honest blue
-      case 'v8.0':  return const Color(0xFFFF7EA0); // Precision rose
-      default:      return const Color(0xFFD4AF37);
+  /// Per-engine identity colour: drives the backdrop tint, glow and accents.
+  Color _colorOf(String id) {
+    switch (id) {
+      case 'v11.0': return const Color(0xFFD9B13F); // Safaa — gold
+      case 'v11.1': return const Color(0xFF2FD4B0); // Itiqan — teal
+      case 'v11.2': return const Color(0xFFF0A23B); // Isteidad — amber
+      case 'v10.0': return const Color(0xFFC9972B); // Aetherion — dark gold
+      case 'v9.0':  return const Color(0xFF9B7FFF); // Evolution — violet
+      case 'v8.5':  return const Color(0xFF5BB8FF); // Honest — blue
+      case 'v8.0':  return const Color(0xFFFF7EA0); // Precision — rose
+      default:      return const Color(0xFFD9B13F);
     }
   }
 
-  // ── KHATAM BADGE (S50) ─────────────────────────────────────────────────
-  Widget _khatamBadge(Color col, double score, {double size = 42}) {
-    return SizedBox(width: size, height: size,
-      child: Stack(alignment: Alignment.center, children: [
-        RepaintBoundary(child: AnimatedBuilder( // S59b-ENGRING-RB
-          animation: _glowCtrl,
-          builder: (_, __) {
-            final g = _glowCtrl.value;
-            return Stack(children: [
-              Positioned.fill(child: Container(
-                margin: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(2),
-                  color: col.withValues(alpha: 0.12),
-                  border: Border.all(
-                    color: col.withValues(alpha: 0.58 + 0.30 * g), width: 1.5),
-                  boxShadow: [BoxShadow(
-                    color: col.withValues(alpha: 0.20 + 0.22 * g),
-                    blurRadius: 8 + 6 * g)]))),
-              Positioned.fill(child: Transform.rotate(
-                angle: pi / 4,
-                child: Container(
-                  margin: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(2),
-                    color: col.withValues(alpha: 0.05),
-                    border: Border.all(
-                      color: col.withValues(alpha: 0.38 + 0.18 * g), width: 1))))),
-            ]);
-          })),
-        ShaderMask(
-          shaderCallback: (b) => LinearGradient(
-            colors: [col, col.withValues(alpha: 0.65)],
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-          ).createShader(b),
-          child: Text('≥${score.toInt()}',
-            style: const TextStyle(
-              color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800,
-              letterSpacing: 0.3))),
-      ]));
-  }
+  Color get _engineColor => _colorOf(_engine);
 
   Future<void> _refreshLocalEngines() async {
     final list = await LocalEngineService.availableLocalEngines();
@@ -2204,1048 +1064,862 @@ class _HomeScreenState extends State<HomeScreen>
   bool _engineBlocked(String id) =>
       _localMode && _localEngines.isNotEmpty && !_localEngines.contains(id);
 
-  Widget _engineCard(_EngineData e, S s) {
-    final sel = _engine == e.id;
-    final col = _badgeColor(e.bc);
-    final blocked = _engineBlocked(e.id);  // S250
-    return PressScale(  // S87: removed Opacity/AbsorbPointer wrapper; S250g: press feedback
-      scale: 0.97,
-      onTap: () {
-        HapticFeedback.selectionClick(); // S30-P1
-        // S250: selecting an engine with no on-device script used to "work"
-        // right up until processing failed inside proot with an unreadable
-        // error. Explain it at the point of choice instead.
-        if (_engineBlocked(e.id)) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            backgroundColor: const Color(0xFF200D0D),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 5),
-            content: Text(
-              s.ar
-                ? '${e.nameAr} غير متوفر بدون إنترنت — أوقف الوضع المحلي لاستخدامه'
-                : '${e.nameEn} isn\'t available offline — turn off local mode to use it',
-              style: const TextStyle(color: Color(0xFFF85149), fontSize: 12)),
-            action: SnackBarAction(
-              label: s.ar ? 'أوقف' : 'Turn off',
-              textColor: _gold,
-              onPressed: () => setState(() => _localMode = false)),
-          ));
-          return;
-        }
-        setState(() {
-              _engine = e.id;
-              // S87: removed auto-mode switch — user controls mode
-            });
-        ApiService.saveLastEngine(e.id); // S28-T2: persist
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        margin: const EdgeInsets.fromLTRB(8,3,8,3),
-        // S32-ENGINE-GLASS
-        // S250: dim + red-tint an engine that has no offline script, so the
-        // constraint is visible before it is tapped.
-        foregroundDecoration: blocked
-          ? BoxDecoration(
-              color: const Color(0xFF020D0C).withValues(alpha: 0.45),
-              borderRadius: BorderRadius.circular(14))
-          : null,
-        decoration: BoxDecoration(
-          color: sel
-            ? col.withValues(alpha: 0.10)
-            : const Color(0xFF0D2B22).withValues(alpha: 0.70),  // S85: grey handled by Opacity wrapper
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: blocked
-              ? const Color(0xFFF85149).withValues(alpha: 0.35)
-              : sel
-                ? col.withValues(alpha: 0.70)
-                : const Color(0xFF1DB898).withValues(alpha: 0.22),
-            width: sel ? 1.8 : 0.8),
-          boxShadow: sel ? [
-            BoxShadow(
-              color: col.withValues(alpha: 0.22),
-              blurRadius: 22, spreadRadius: 0,
-              offset: const Offset(0, 4)),
-            BoxShadow(
-              color: col.withValues(alpha: 0.10),
-              blurRadius: 40, spreadRadius: 2),
-          ] : null),
-        child: Stack(children: [
-          // Left accent bar
-          if (sel) Positioned(left: 0, top: 0, bottom: 0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 280),
-              width: 3.5,
-              decoration: BoxDecoration(
-                color: col,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(13),
-                  bottomLeft: Radius.circular(13)),
-                boxShadow: [BoxShadow(
-                  color: col.withValues(alpha: 0.55), blurRadius: 8)]))),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // S54: Premium image engine card
-          if (e.imgAsset != null) RepaintBoundary(child: AnimatedBuilder( // S59-CARD-IMG-RB
-            animation: _glowCtrl,
-            builder: (_, __) {
-              final g = _glowCtrl.value;
-              return Stack(children: [
-                // Image layer with optional tint overlay
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(13),
-                    topRight: Radius.circular(13)),
-                  child: Stack(children: [
-                    Image.asset(e.imgAsset!,
-                      width: double.infinity, height: 130,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        height: 130,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [col.withValues(alpha: 0.25),
-                                     const Color(0xFF020D0C)])))),
-                    if (sel) Positioned.fill(child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            col.withValues(alpha: 0.22 + 0.12 * g),
-                            Colors.transparent])))),
-                    Positioned.fill(child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          stops: const [0.35, 1.0],
-                          colors: [Colors.transparent,
-                                   const Color(0xFF020D0C).withValues(alpha: 0.92)])))),
-                  ])),
-                // Khatam badge top-right
-                Positioned(top: 8, right: 10,
-                  child: _khatamBadge(col, e.score, size: 48)),
-                // Badge pill top-left
-                if (e.badge.isNotEmpty)
-                  Positioned(top: 10, left: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: col.withValues(alpha: 0.15 + 0.10 * g),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: col.withValues(alpha: 0.55 + 0.25 * g)),
-                        boxShadow: [BoxShadow(
-                          color: col.withValues(alpha: 0.25 + 0.20 * g),
-                          blurRadius: 8)]),
-                      child: Text(e.badge, style: TextStyle(
-                        color: col, fontSize: 9, fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8)))),
-                // Engine name and ID pill at bottom
-                Positioned(bottom: 0, left: 0, right: 0,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                    child: Row(children: [
-                      Expanded(child: ShaderMask(
-                        shaderCallback: (b) => LinearGradient(
-                          colors: sel
-                            ? [col, col.withValues(alpha: 0.80)]
-                            : [Colors.white, Colors.white70],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ).createShader(b),
-                        child: Text(s.ar ? e.nameAr : e.nameEn,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20, fontWeight: FontWeight.w800,
-                            height: 1.1,
-                            shadows: [Shadow(
-                              color: Colors.black87, blurRadius: 10)])))),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: col.withValues(alpha: 0.45))),
-                        child: Text(e.id, style: TextStyle(
-                          color: col, fontSize: 9,
-                          fontWeight: FontWeight.w700))),
-                    ]))),
-                // Selected glow border overlay
-                if (sel) Positioned.fill(child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(13),
-                      topRight: Radius.circular(13)),
-                    border: Border.all(
-                      color: col.withValues(alpha: 0.55 + 0.35 * g),
-                      width: 2.0)))),
-              ]);
-            })),
-          // S50: JSX khatam card
-          if (e.imgAsset == null) Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-              _khatamBadge(col, e.score),
-              const SizedBox(width: 12),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                  Flexible(child: Text(e.nameAr,
-                    style: TextStyle(
-                      color: sel ? col : col.withValues(alpha: 0.80),
-                      fontSize: 18, fontWeight: FontWeight.w700, height: 1.1))),
-                  const SizedBox(width: 8),
-                  // S84-BADGE: LOCAL / SERVER mode badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: e.localOnly
-                        ? _teal.withValues(alpha: 0.18)
-                        : _tBorder.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(
-                        color: e.localOnly ? _teal : _tSub.withValues(alpha: 0.5))),
-                    child: Text(
-                      e.localOnly ? '🏠 LOCAL' : '☁ SERVER',
-                      style: TextStyle(
-                        color: e.localOnly ? _teal : _tSub,
-                        fontSize: 7, fontWeight: FontWeight.bold,
-                        letterSpacing: 0.6))),
-                  if (e.badge.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: col.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: col.withValues(alpha: 0.45))),
-                      child: Text(e.badge, style: TextStyle(
-                        color: col, fontSize: 8, fontWeight: FontWeight.bold,
-                        letterSpacing: 0.8))),
-                  ],
-                ]),
-                const SizedBox(height: 3),
-                Text(e.nameEn, style: TextStyle(
-                  color: const Color(0xFFF0E8D2).withValues(alpha: 0.42),
-                  fontSize: 10.5, fontStyle: FontStyle.italic)),
-              ])),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: col.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: col.withValues(alpha: 0.35))),
-                child: Text(e.id, style: TextStyle(
-                  color: col, fontSize: 9, fontWeight: FontWeight.w600,
-                  letterSpacing: 0.4))),
-            ])),
-          // ── Expanded details (selected engine only) ──────────────────
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 250),
-            crossFadeState: sel
-              ? CrossFadeState.showSecond
-              : CrossFadeState.showFirst,
-            firstChild: const SizedBox.shrink(),
-            secondChild: _engineExpanded(e, s, col),
-          ),
-        ]), // end Column
-        ]), // end accent-bar Stack
-      ),
-    );  // S87c: close GestureDetector
+  void _setLocalMode(bool v) {
+    if (_busy) return;
+    setState(() => _localMode = v);
+    SharedPreferences.getInstance().then((p) => p.setBool('local_mode', v)); // S148
+    // S93/S256: re-check on toggle ON; if not ready, prepare in the background.
+    if (v) {
+      LocalEngineService.isSetupComplete().then((ready) {
+        if (!mounted) return;
+        setState(() => _localReady = ready);
+        if (!ready) _autoPrepareOfflineEngine();
+      });
+    }
   }
 
-  Widget _engineExpanded(_EngineData e, S s, Color col) => Padding(
-    padding: const EdgeInsets.fromLTRB(12,0,12,12),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(height: 1, color: _tBorder,
-        margin: const EdgeInsets.only(bottom: 10)),
-      // Score bar
-      Row(children: [
-        Expanded(child: ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: e.score / 100,
-            minHeight: 5,
-            backgroundColor: _tBorder,
-            valueColor: AlwaysStoppedAnimation<Color>(col)))),
-        const SizedBox(width: 8),
-        Text('${e.score.toInt()}/100', style: TextStyle(
-          color: col, fontSize: 10, fontWeight: FontWeight.bold)),
-      ]),
-      const SizedBox(height: 10),
-      // Feature chips
-      Wrap(
-        spacing: 5, runSpacing: 5,
-        children: e.features.map((f) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-          decoration: BoxDecoration(
-            color: col.withValues(alpha: 0.07),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: col.withValues(alpha: 0.28))),
-          child: Text(f, style: TextStyle(
-            color: col.withValues(alpha: 0.75), fontSize: 9)))).toList()),
-      const SizedBox(height: 10),
-      // What's New box
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
+  void _selectEngine(_EngineData e, S s) {
+    HapticFeedback.selectionClick(); // S30-P1
+    // S250: explain at the point of choice, not deep inside proot.
+    if (_engineBlocked(e.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: const Color(0xFF200D0D),
+        duration: const Duration(seconds: 5),
+        content: Text(
+          s.ar
+            ? '${e.nameAr} غير متوفر بدون إنترنت — أوقف الوضع المحلي لاستخدامه'
+            : '${e.nameEn} isn\'t available offline — turn off local mode to use it',
+          style: const TextStyle(color: Color(0xFFFF8A8A), fontSize: 12)),
+        action: SnackBarAction(
+          label: s.ar ? 'أوقف' : 'Turn off',
+          textColor: _p.gold,
+          onPressed: () => _setLocalMode(false)),
+      ));
+      return;
+    }
+    setState(() => _engine = e.id);
+    ApiService.saveLastEngine(e.id); // S28-T2: persist
+  }
+
+  void _scrollToEngine() {
+    final i = _engines.indexWhere((e) => e.id == _engine);
+    if (i < 0 || !_engCtrl.hasClients) return;
+    final target = (i * (_engCardW + 12.0))
+        .clamp(0.0, _engCtrl.position.maxScrollExtent);
+    _engCtrl.animateTo(target,
+        duration: const Duration(milliseconds: 520), curve: Curves.easeOutCubic);
+  }
+
+  static const double _engCardW = 236;
+
+  Route<T> _go<T>(Widget page) => nurRoute<T>(page);
+
+  // ── BUILD ──────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    final s = LangProvider.strings(context);
+    _p = NurPalette.of(context);
+    // S250 QoL — the root route's back button EXITS THE APP; a tap during a
+    // multi-minute local restoration killed the proot process and lost the run.
+    // First press warns, a second within 3 s leaves.
+    return PopScope(
+      canPop: !_busy || _exitArmed,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || !mounted) return;
+        setState(() => _exitArmed = true);
+        _exitArmTimer?.cancel();
+        _exitArmTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _exitArmed = false);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          duration: const Duration(seconds: 3),
+          content: Text(
+            s.ar
+              ? 'المعالجة جارية — اضغط رجوع مرة أخرى للخروج وإلغاء العمل'
+              : 'Still processing — press back again to exit and cancel the run',
+            style: TextStyle(color: _p.text, fontSize: 12.5)),
+        ));
+      },
+      child: Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: _buildHome(s)));
+  }
+
+  Widget _buildHome(S s) {
+    final p = _p;
+    return Scaffold(
+      backgroundColor: p.bg,
+      body: NurBackdrop(
+        accent: _engineTintEnabled ? _engineColor : p.teal,
+        intensity: _busy ? 0.55 : 1.0,
+        child: Stack(children: [
+          CustomScrollView(controller: _scrollCtrl, slivers: [
+            _appBar(s),
+            SliverToBoxAdapter(child: EntranceFade(index: 0, child: _hero(s))),
+            SliverToBoxAdapter(child: EntranceFade(index: 1, child: _modeCard(s))),
+            SliverToBoxAdapter(child: EntranceFade(index: 2, child: _engineSection(s))),
+            SliverToBoxAdapter(child: EntranceFade(index: 3, child: _fileCard(s))),
+            if (!_busy && _progress > 0)
+              SliverToBoxAdapter(child: _progressStrip(s)),
+            if (_result != null)
+              SliverToBoxAdapter(
+                child: FadeTransition(
+                  opacity: CurvedAnimation(
+                    parent: _resultCtrl,
+                    curve: const Interval(0, 0.35, curve: Curves.easeOutCubic)),
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.08), end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: _resultCtrl,
+                      curve: const Interval(0, 0.45, curve: Curves.easeOutCubic))),
+                    child: _resultCard(s)))),
+            if (_result != null) SliverToBoxAdapter(child: _reportCard(s)),
+            if (_result != null) SliverToBoxAdapter(child: _abCard(s)),
+            SliverToBoxAdapter(child: EntranceFade(index: 4, child: _toolsSection(s))),
+            const SliverToBoxAdapter(child: SizedBox(height: 48)),
+          ]),
+          if (_busy) Positioned.fill(child: _processingOverlay(s)),
+        ]),
+      ),
+    );
+  }
+
+  // ── APP BAR ────────────────────────────────────────────────────────────────
+  Widget _appBar(S s) => SliverAppBar(
+    pinned: true,
+    automaticallyImplyLeading: false,
+    backgroundColor: _p.bg.withValues(alpha: 0.80),
+    surfaceTintColor: Colors.transparent,
+    elevation: 0,
+    scrolledUnderElevation: 0,
+    toolbarHeight: 62,
+    centerTitle: true,
+    title: _wordmark(),
+    actions: [
+      NurIconButton(
+        icon: Icons.info_outline_rounded, size: 38,
+        onTap: () => _showInfoSheet(context)),
+      const SizedBox(width: 6),
+      // S209: persistent entry point to the mini-game
+      NurIconButton(
+        icon: Icons.sports_esports_rounded, size: 38,
+        onTap: () => Navigator.push(context, _go(const GameScreen()))),
+      const SizedBox(width: 6),
+      NurIconButton(
+        icon: Icons.settings_outlined, size: 38,
+        onTap: () => Navigator.push(context, _go(const SettingsScreen()))),
+      const SizedBox(width: 12),
+    ],
+    bottom: PreferredSize(
+      preferredSize: const Size.fromHeight(1),
+      child: Container(
+        height: 1,
         decoration: BoxDecoration(
-          color: const Color(0xFF0A0C10),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: col.withValues(alpha: 0.2))),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(s.ar ? '▶ الجديد في هذه النسخة'
-                    : "▶ What's New",
-            style: TextStyle(
-              color: col, fontSize: 9, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 5),
-          Text(s.ar ? e.whatsNewAr : e.whatsNewEn,
-            textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
-            style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 10, height: 1.55)),
-        ])),
-    ]),
+          gradient: LinearGradient(colors: [
+            Colors.transparent,
+            _p.gold.withValues(alpha: 0.55),
+            _p.teal.withValues(alpha: 0.55),
+            Colors.transparent,
+          ])))),
   );
 
-  // S40-GEO-SEP — sacred geometry section divider from HTML design
-  Widget _geoSep(String label) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-    child: Row(children: [
-      Expanded(child: Container(height: 1,
-        decoration: BoxDecoration(gradient: LinearGradient(
-          colors: [Colors.transparent, _engineColor],
-          stops: const [0.0, 1.0])))),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          _geoDiamond(),
-          if (label.isNotEmpty) Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Text(label.toUpperCase(), style: TextStyle(
-              color: _engineColor, fontSize: 9,
-              letterSpacing: 0.22, fontWeight: FontWeight.w500))),
-          _geoDiamond(),
-        ])),
-      Expanded(child: Container(height: 1,
-        decoration: BoxDecoration(gradient: LinearGradient(
-          colors: [_engineColor, Colors.transparent],
-          stops: const [0.0, 1.0])))),
-    ]));
+  /// Compact brand lockup, revealed as the hero scrolls away so the brand is
+  /// always present and never doubled. FittedBox keeps it inside the bar on a
+  /// narrow screen or at a large text scale.
+  Widget _wordmark() => AnimatedBuilder(
+    animation: _scrollCtrl,
+    builder: (_, child) {
+      final off = _scrollCtrl.hasClients ? _scrollCtrl.offset : 0.0;
+      final t = ((off - 150.0) / 80.0).clamp(0.0, 1.0);
+      return Opacity(
+        key: const ValueKey('appbar-wordmark-opacity'),
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, 10 * (1 - t)), child: child));
+    },
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 28, height: 28,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(
+              color: _p.gold.withValues(alpha: 0.40), blurRadius: 12)]),
+          child: ClipOval(child: Image.asset(
+            'assets/images/logo.png', fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Icon(
+              Icons.menu_book_rounded, color: _p.gold, size: 16)))),
+        const SizedBox(width: 9),
+        GradientText('محسِّن التلاوة',
+          gradient: _p.goldGradient,
+          style: const TextStyle(
+            fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+      ])));
 
-  Widget _geoDiamond() => Transform.rotate(
-    angle: 0.7854,
-    child: Container(
-      width: 6, height: 6,
-      decoration: BoxDecoration(
-        color: _engineColor,
-        borderRadius: BorderRadius.circular(1),
-        boxShadow: [BoxShadow(
-          color: _engineColor.withValues(alpha: 0.50), blurRadius: 5)])));
-
-  Color _badgeColor(String bc) => bc == 'gold' ? _tGold
-      : bc == 'green' ? const Color(0xFF3FB950)
-      : bc == 'blue'  ? const Color(0xFF58A6FF)
-      : _tDim;
-
-  Color _badgeBg(String bc) => bc == 'gold' ? const Color(0xFF1A1200)
-      : bc == 'green' ? const Color(0xFF0D2015)
-      : bc == 'blue'  ? const Color(0xFF0D1B2E)
-      : _tCard;
-
-  // ── FILE CARD — Mihrab Upload Portal (S43) ───────────────────────────────
-  Widget _fileCard(S s) {
-    final hasFile = _file != null;
-    return GestureDetector(
-      onTap: _busy ? null : _pickFile,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-        decoration: BoxDecoration(
-          color: hasFile
-            ? const Color(0xFF0D2B22)
-            : const Color(0xFF071A14),
-          borderRadius: const BorderRadius.only( // S46-ARCH
-            topLeft: Radius.circular(200),
-            topRight: Radius.circular(200),
-            bottomLeft: Radius.circular(22),
-            bottomRight: Radius.circular(22)),
-          border: Border.all(
-            color: hasFile
-              ? _engineColor.withValues(alpha: 0.68)
-              : const Color(0xFF1DB898).withValues(alpha: 0.24),
-            width: hasFile ? 1.8 : 1.0),
-          boxShadow: [BoxShadow(
-            color: hasFile
-              ? _engineColor.withValues(alpha: 0.20)
-              : const Color(0xFF1DB898).withValues(alpha: 0.08),
-            blurRadius: 36, spreadRadius: 2)]),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-          child: Column(children: [
-            // ── Upload icon with breathing ring ──
-            AnimatedBuilder(
+  // ── HERO — the studio orb ──────────────────────────────────────────────────
+  Widget _hero(S s) {
+    final p = _p;
+    final eng = _selectedEngine;
+    final energy = _busy ? 1.0 : (_file != null ? 0.78 : 0.5);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+      child: Column(children: [
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: energy, end: energy),
+          duration: const Duration(milliseconds: 700),
+          curve: Curves.easeOutCubic,
+          builder: (_, e, __) => NurOrb(
+            animation: _waveCtrl,
+            size: 244,
+            energy: e,
+            a: p.teal,
+            b: _engineColor,
+            child: AnimatedBuilder(
               animation: _glowCtrl,
-              builder: (_, __) => Container(
-                width: 72, height: 72,
+              builder: (_, child) => Transform.scale(
+                scale: 0.97 + 0.05 * _glowCtrl.value, child: child),
+              child: Container(
+                width: 96, height: 96,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: _engineColor
-                      .withValues(alpha: 0.38 + 0.32 * _glowCtrl.value),
-                    width: 1.5),
                   boxShadow: [BoxShadow(
-                    color: _engineColor
-                      .withValues(alpha: 0.10 + 0.18 * _glowCtrl.value),
-                    blurRadius: 18 + 16 * _glowCtrl.value)]),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 380),
-                  switchInCurve: Curves.easeOutBack,
-                  transitionBuilder: (child, anim) => ScaleTransition(
-                    scale: anim, child: child),
-                  child: Icon(
-                    hasFile ? Icons.audio_file_rounded : Icons.upload_rounded,
-                    key: ValueKey(hasFile),
-                    color: const Color(0xFFC8A048), size: 34)))),
-            const SizedBox(height: 16),
-            // ── Animated waveform bars (file selected) / empty placeholder ──
-            SizedBox(height: 48, // S62-FILE-BOX
-              child: hasFile
-                ? AnimatedBuilder( // S62-FILE-BARS
-                    animation: _audioBarsCtrl,
-                    builder: (_, __) => Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: List.generate(26, (i) {
-                        final v = _audioBarsCtrl.value;
-                        final f1 = sin((v + i / 26) * 6.2832 * 1.4);
-                        final f2 = sin((v * 1.9 + i / 26) * 6.2832 * 0.7);
-                        final f3 = sin((v * 0.5 + i / 26) * 6.2832 * 2.1);
-                        final wave = f1 * 0.5 + f2 * 0.3 + f3 * 0.2;
-                        final barH = 5.0 + 36.0 * (wave * 0.5 + 0.5);
-                        final glow = 0.45 + 0.55 * v;
-                        return Container(
-                          width: 3, height: barH,
-                          margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(2),
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [
-                                const Color(0xFF1DB898).withValues(alpha: glow),
-                                const Color(0xFFD4AF37).withValues(alpha: glow * 0.8)]),
-                            boxShadow: [BoxShadow(
-                              color: const Color(0xFF1DB898).withValues(alpha: 0.25 * v),
-                              blurRadius: 4)]));
-                      })))
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(18, (i) => Container(
-                      width: 3, height: 4.0 + 14.0 * sin(i * 0.45).abs(),
-                      margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(2),
-                        color: const Color(0xFF1DB898).withValues(alpha: 0.20)))))),
-            const SizedBox(height: 12),
-            // ── Filename / pick label ──
-            Text(
-              hasFile ? _file!.path.split('/').last // S46-PORTAL
-                : (s.ar ? 'أسقط تلاوتك في هذا المحراب'
-                        : 'Drop your Quran audio into this sacred portal'),
-              textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr, // S147
-              textAlign: TextAlign.center,
-              maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: hasFile
-                  ? const Color(0xFFE2CFA0)
-                  : const Color(0xFF8AACBA),
-                fontSize: hasFile ? 13 : 15,
-                fontWeight: hasFile ? FontWeight.w500 : FontWeight.w600,
-                letterSpacing: hasFile ? 0 : 0.4)),
-            if (hasFile) ...[
-              const SizedBox(height: 4),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Text(_sizeLabel,
-                  style: const TextStyle(
-                    color: Color(0xFF8B949E), fontSize: 11)),
-                if (_isLarge) ...[
-                  const SizedBox(width: 8),
-                  _badge(s.chunkedBadge, 'gold'),
-                ],
-              ]),
-              if (_fileBytes > 0) ...[
-                const SizedBox(height: 3),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Icon(Icons.timer_outlined,
-                    size: 10, color: Color(0xFF3D5A65)),
-                  const SizedBox(width: 3),
-                  Text('${s.estTime}: ${_estimatedTime()}',
-                    style: const TextStyle(
-                      color: Color(0xFF3D5A65), fontSize: 10)),
-                ]),
-              ],
-            ],
-            const SizedBox(height: 3),
-            if (!hasFile) const Text('mp3  ·  wav  ·  m4a', // S46-FMT
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF1DB898),
-                fontSize: 9, letterSpacing: 1.4)),
-            const SizedBox(height: 3),
-            Text(s.sizeLimit,
-              style: const TextStyle(
-                color: Color(0xFF3D5A65), fontSize: 10,
-                letterSpacing: 0.4)),
-            if (hasFile) ...[
-              const SizedBox(height: 18),
-              // ── Elevate button — gold gradient ──
-              // S250g — the app's primary action now acknowledges the tap.
-              // Processing can take minutes to show anything, so a flat
-              // container that did not react read as a dropped press.
-              PressScale(
-                scale: 0.97,
-                onTap: _busy ? null : () {  // S95
-                  HapticFeedback.mediumImpact();
-                  _process();
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: _busy  // S95
-                      ? LinearGradient(colors: [
-                          const Color(0xFF1A1200).withValues(alpha: 0.6),
-                          const Color(0xFF1A1200).withValues(alpha: 0.6)])
-                      : const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xFF6B4518),
-                            Color(0xFFC8A048),
-                            Color(0xFFF0D882),
-                            Color(0xFFC8A048),
-                          ],
-                          stops: [0.0, 0.3, 0.6, 1.0]),
-                    boxShadow: _busy ? null : [  // S95
-                      BoxShadow(
-                        color: const Color(0xFFC8A048).withValues(alpha: 0.40),
-                        blurRadius: 24, offset: const Offset(0, 6)),
-                    ]),
-                  child: _busy
-                    ? Row(mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF020D0C))),
-                          const SizedBox(width: 10),
-                          Text(s.processing,
-                            style: const TextStyle(
-                              color: Color(0xFF020D0C),
-                              fontWeight: FontWeight.w900, fontSize: 14,
-                              letterSpacing: 0.5)),
-                        ])
-                    : Text(
-                        s.ar ? 'ارفع التلاوة' : 'Elevate This Recitation',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _busy  // S95
-                            ? const Color(0xFF3D5A65)
-                            : const Color(0xFF020D0C),
-                          fontWeight: FontWeight.w900, fontSize: 14,
-                          letterSpacing: 0.8)))),
-            ],
-          ]),
+                    color: _engineColor.withValues(alpha: 0.45),
+                    blurRadius: 26, spreadRadius: 1)]),
+                child: ClipOval(child: Image.asset(
+                  'assets/images/logo.png', fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: p.surfaceHi,
+                    child: Icon(Icons.menu_book_rounded,
+                      color: p.gold, size: 44))))))),
         ),
-      ),
-    );
-  }
-
-  // ── S21: Info bottom sheet ──────────────────────────────────────────────────
-  void _showInfoSheet(BuildContext ctx) {
-    final s = LangProvider.strings(ctx);
-    showModalBottomSheet(
-      context: ctx,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.78,
-        minChildSize: 0.40,
-        maxChildSize: 0.95,
-        builder: (_, ctrl) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF061A14),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-          child: Column(children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: _tBorder,
-                borderRadius: BorderRadius.circular(2))),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20,4,20,12),
-              child: Row(children: [
-                const Icon(Icons.info_outline_rounded,
-                  color: Color(0xFFD4AF37), size: 18),
-                const SizedBox(width: 8),
-                Text(s.ar ? 'عن التطبيق' : 'About',
-                  style: const TextStyle(
-                    color: Color(0xFFD4AF37),
-                    fontWeight: FontWeight.bold, fontSize: 16)),
-              ])),
-            Expanded(child: ListView(
-              controller: ctrl,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
-              children: [
-                _infoSectionLabel(s.ar ? '📺 قناة يوتيوب' : '📺 YouTube Channel'),
-                GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse('https://youtube.com/@carm-tv2hv'),
-                    mode: LaunchMode.externalApplication),
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A0A0A),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFFFF0000).withValues(alpha: 0.3))),
-                    child: Row(children: [
-                      Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF0000),
-                          borderRadius: BorderRadius.circular(10)),
-                        child: const Icon(Icons.play_arrow_rounded,
-                          color: Colors.white, size: 26)),
-                      const SizedBox(width: 12),
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                        Text(s.ar ? 'قناة يوتيوب' : 'YouTube Channel',
-                          style: const TextStyle(
-                            color: Color(0xFFC9D1D9),
-                            fontWeight: FontWeight.bold, fontSize: 13)),
-                        const SizedBox(height: 2),
-                        const Text('@carm-tv2hv',
-                          style: TextStyle(
-                            color: Color(0xFF8B949E), fontSize: 11)),
-                      ])),
-                      const Icon(Icons.open_in_new_rounded,
-                        color: Color(0xFF484F58), size: 16),
-                    ]))),
-                _infoSectionLabel(s.ar ? '💬 قناة تيليغرام' : '💬 Telegram Channel'),
-                GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse('https://t.me/TilawaEhnacher'),
-                    mode: LaunchMode.externalApplication),
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0A0F1A),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFF2AABEE).withValues(alpha: 0.35))),
-                    child: Row(children: [
-                      Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF2AABEE), Color(0xFF229ED9)]),
-                          borderRadius: BorderRadius.circular(10)),
-                        child: const Icon(Icons.send_rounded,
-                          color: Colors.white, size: 22)),
-                      const SizedBox(width: 12),
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                        Text(s.ar ? 'قناة التيليغرام' : 'Telegram Channel',
-                          style: const TextStyle(
-                            color: Color(0xFFC9D1D9),
-                            fontWeight: FontWeight.bold, fontSize: 13)),
-                        const SizedBox(height: 2),
-                        const Text('@TilawaEhnacher',
-                          style: TextStyle(
-                            color: Color(0xFF8B949E), fontSize: 11)),
-                      ])),
-                      const Icon(Icons.open_in_new_rounded,
-                        color: Color(0xFF484F58), size: 16),
-                    ]))),
-                _infoSectionLabel(s.ar ? '🌐 الموقع الإلكتروني' : '🌐 Website'),
-                GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse('https://hammer24678-star.github.io/tilawa-enhancer-/'),
-                    mode: LaunchMode.externalApplication),
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 16),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A140A),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.35))),
-                    child: Row(children: [
-                      Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFD4AF37), Color(0xFFB8860B)]),
-                          borderRadius: BorderRadius.circular(10)),
-                        child: const Icon(Icons.language_rounded,
-                          color: Colors.white, size: 22)),
-                      const SizedBox(width: 12),
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                        Text(s.ar ? 'الموقع الإلكتروني الرسمي' : 'Official Website',
-                          style: const TextStyle(
-                            color: Color(0xFFC9D1D9),
-                            fontWeight: FontWeight.bold, fontSize: 13)),
-                        const SizedBox(height: 2),
-                        const Text('hammer24678-star.github.io/tilawa-enhancer-',
-                          style: TextStyle(
-                            color: Color(0xFF8B949E), fontSize: 11)),
-                      ])),
-                      const Icon(Icons.open_in_new_rounded,
-                        color: Color(0xFF484F58), size: 16),
-                    ]))),
-                _infoSectionLabel(s.ar ? '🎯 المرجع الصوتي' : '🎯 Reference Standard'),
-                Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0A1A0F),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFF3FB950).withValues(alpha: 0.3))),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                    Text(
-                      s.ar ? 'الشيخ ياسر الدوسري — 1425هـ'
-                           : 'Sheikh Yasser Al-Dossari — 1425H',
-                      style: const TextStyle(
-                        color: Color(0xFF3FB950),
-                        fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'LUFS=-6.29  ·  RMS=-10.01  ·  Crest=10.25  ·  LRA=4.19',
-                      style: TextStyle(
-                        color: Color(0xFF8B949E),
-                        fontSize: 11, height: 1.7)),
-                    const SizedBox(height: 8),
-                    Text(
-                      s.ar
-                        ? 'ثلاثة ملفات مرجعية: الأعراف · الفتح · فاطر'
-                        : 'Three reference files: Al-Araf · Al-Fath · Fatir',
-                      style: const TextStyle(
-                        color: Color(0xFF484F58), fontSize: 10)),
-                  ])),
-                _infoSectionLabel(s.ar ? '📊 مقارنة المحركات' : '📊 Engine Comparison'),
-                Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration( // S61-ENG-CONTAINER
-                    color: const Color(0xFF061018),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFD4AF37).withValues(alpha: 0.2)),
-                    boxShadow: [BoxShadow(
-                      color: const Color(0xFF1DB898).withValues(alpha: 0.06),
-                      blurRadius: 20)]),
-                  child: Column(
-                    children: _engines.map((e) {
-                      final col = _badgeColor(e.bc);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                          Row(children: [
-                            Text(e.id, style: TextStyle(
-                              color: col,
-                              fontWeight: FontWeight.bold, fontSize: 12)),
-                            const SizedBox(width: 6),
-                            Expanded(child: Text(s.ar ? e.nameAr : e.nameEn,
-                              style: const TextStyle(
-                                color: Color(0xFF8B949E), fontSize: 10))),
-                            Text('≥${e.score.toInt()}', style: TextStyle(
-                              color: col,
-                              fontWeight: FontWeight.bold, fontSize: 12)),
-                          ]),
-                          const SizedBox(height: 5),
-                          // S61-ENG-BAR
-                          Stack(children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: e.score / 100,
-                                minHeight: 7,
-                                backgroundColor: _tBorder,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  col))),
-                            Positioned.fill(child: ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: FractionallySizedBox(
-                                widthFactor: e.score / 100,
-                                alignment: Alignment.centerLeft,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(4),
-                                    boxShadow: [BoxShadow(
-                                      color: col.withValues(alpha: 0.5),
-                                      blurRadius: 6,
-                                      spreadRadius: 0)])))))],
-                          ),
-                        ]));
-                    }).toList())),
-                _infoSectionLabel(s.ar ? '📖 من المطوِّر' : '📖 Developer Notes'),
-                Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      colors: [Color(0xFF0D1B2A), Color(0xFF06101A)]),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFFD4AF37).withValues(alpha: 0.18))),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                    Text(
-                      s.ar ? '﷽' : '﷽',
-                      style: const TextStyle(
-                        color: Color(0xFFD4AF37),
-                        fontSize: 22, height: 1.4)),
-                    const SizedBox(height: 10),
-                    Text(
-                      s.ar
-                        ? 'هذا التطبيق وُلد من حبٍّ خالص لكتاب الله.\n\n'
-                          'أكثر من ٦٠ جلسة، مئات الإصلاحات، ومحرك واحد لا يهدأ: '
-                          'أن تُسمع التلاوة كما ينبغي لها أن تُسمع.\n\n'
-                          'لا فريق، لا ميزانية — فقط هاتف، وطرفية، ومحبة للقرآن الكريم. '
-                          'كل محرك بُني كأنه عبادة، وكل معامل ضُبط كأنه دعاء.\n\n'
-                          'الهدف لم يتغيّر: أن يُعاد للصوت القرآني جماله الأصيل،'
-                          ' حتى وإن جاء من تسجيل قديم أو ملف تالف.'
-                        : 'This app was born from pure love for the Book of Allah.\n\n'
-                          'Over 60 sessions, hundreds of fixes, one relentless goal: '
-                          'to make Quranic recitation sound as it deserves to be heard.\n\n'
-                          'No team, no budget — just a phone, Termux, and a deep love for the Quran. '
-                          'Every engine was built like an act of worship, every parameter tuned like a prayer.\n\n'
-                          'The mission never changed: restore the original beauty of the Quranic voice, '
-                          'even from an old recording or a damaged file.',
-                      style: const TextStyle(
-                        color: Color(0xFFA8B8C8),
-                        fontSize: 12, height: 1.75)),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFFD4AF37).withValues(alpha: 0.2))),
-                      child: Text(
-                        s.ar
-                          ? '🎯 المرجع: الشيخ ياسر الدوسري · ١٤٢٥هـ · LUFS=-6.29'
-                          : '🎯 Reference: Yasser Al-Dossari · 1425H · LUFS=-6.29',
-                        style: const TextStyle(
-                          color: Color(0xFFD4AF37),
-                          fontSize: 10, fontWeight: FontWeight.bold))),
-                  ])),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: _tCard,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _tBorder)),
-                  child: Row(children: [
-                    ClipOval(child: Image.asset('assets/images/logo.png',
-                      width: 44, height: 44, fit: BoxFit.cover,
-                      errorBuilder: (_,__,___) => Container(
-                        width: 44, height: 44,
-                        color: _goldMuted.withValues(alpha: 0.55),
-                        child: const Icon(Icons.music_note,
-                          color: Color(0xFFD4AF37), size: 22)))),
-                    const SizedBox(width: 12),
-                    Column(crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                      const Text('محسِّن التلاوة',
-                        style: TextStyle(
-                          color: Color(0xFFD4AF37),
-                          fontWeight: FontWeight.bold, fontSize: 14)),
-                      Text(s.version, style: const TextStyle(
-                        color: Color(0xFF8B949E), fontSize: 11)),
-                    ]),
-                  ])),
-              ],
-            )),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _infoSectionLabel(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 8, top: 4),
-    child: Text(text, style: const TextStyle(
-      color: Color(0xFF8B949E), fontSize: 11,
-      fontWeight: FontWeight.bold, letterSpacing: 0.5)));
-
-    Widget _badge(String text, String bc) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-    decoration: BoxDecoration(
-      color: _badgeBg(bc), borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: _badgeColor(bc).withValues(alpha: 0.5))),
-    child: Text(text,
-      style: TextStyle(
-        color: _badgeColor(bc), fontSize: 9, fontWeight: FontWeight.bold)));
-
-  // ── PROGRESS ───────────────────────────────────────────────────────────────
-  Widget _progressCard(S s) => Container(
-    margin: const EdgeInsets.fromLTRB(16,10,16,4),
-    padding: const EdgeInsets.all(18),
-    // S35-PROGRESS-CARD
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft, end: Alignment.bottomRight,
-        colors: [Color(0xFF0D2B22), Color(0xFF071A14)]),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(
-        color: _engineColor.withValues(alpha: 0.20), width: 0.9),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
-          blurRadius: 30, spreadRadius: 0,
-          offset: const Offset(0, 6)),
-        BoxShadow(
-          color: const Color(0xFF1DB898).withValues(alpha: 0.08),
-          blurRadius: 60, spreadRadius: 2),
+        const SizedBox(height: 6),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: GradientText('محسِّن التلاوة',
+            gradient: p.goldGradient,
+            style: const TextStyle(
+              fontSize: 32, fontWeight: FontWeight.w800, height: 1.15))),
+        const SizedBox(height: 10),
+        NurChip(
+          label: '${s.subtitle}  ·  ${eng.nameAr}',
+          color: p.teal, fontSize: 11),
       ]),
-    child: Column(children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Flexible(child: AnimatedSwitcher( // S30-P2
-          duration: const Duration(milliseconds: 300),
+    );
+  }
+
+  // ── MODE CARD — cloud / on-device, status and options ──────────────────────
+  Widget _modeCard(S s) {
+    final p = _p;
+    final showAggressive = _localMode && _localReady && _engine == 'v11.0';
+    return NurCard(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      padding: const EdgeInsets.all(14),
+      accent: _localMode ? p.gold : p.teal,
+      child: Column(children: [
+        NurSegmented(
+          enabled: !_busy,
+          accent: _localMode ? p.gold : p.teal,
+          index: _localMode ? 1 : 0,
+          items: [
+            NurSegment(s.ar ? 'السحابة' : 'Cloud', Icons.cloud_outlined),
+            NurSegment(s.ar ? 'على الجهاز' : 'On-device',
+              Icons.offline_bolt_rounded),
+          ],
+          onChanged: (i) => _setLocalMode(i == 1)),
+        const SizedBox(height: 14),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            switchInCurve: Curves.easeOutCubic,
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.12), end: Offset.zero).animate(anim),
+                child: child)),
+            child: KeyedSubtree(
+              key: ValueKey<bool>(_localMode),
+              child: _localMode ? _localStatus(s) : _serverStatus(s)))),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Container(height: 1, color: p.border)),
+        NurOptionRow(
+          icon: Icons.palette_outlined,
+          title: s.ar ? 'تظليل الخلفية بلون المحرك' : 'Engine-colour backdrop',
+          active: _engineTintEnabled,
+          accent: _engineColor,
+          trailing: NurSwitch(
+            value: _engineTintEnabled,
+            accent: _engineColor,
+            onChanged: (v) {
+              setState(() => _engineTintEnabled = v);
+              SharedPreferences.getInstance()
+                .then((p) => p.setBool('engine_tint_enabled', v)); // S188-B
+            })),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: showAggressive
+            ? Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: NurOptionRow(
+                  icon: _aggressive ? Icons.waves_rounded : Icons.water_drop_outlined,
+                  title: _aggressive
+                    ? (s.ar ? 'وضع صارم (إزالة صدى عميقة)' : 'Aggressive (deep dereverberation)')
+                    : (s.ar ? 'وضع قياسي (محافظ على الصوت)' : 'Standard (voice-preserving)'),
+                  subtitle: _aggressive
+                    ? (s.ar ? 'لتسجيلات شديدة الصدى' : 'Best for heavily reverberant recordings')
+                    : (s.ar ? 'موصى به للتسجيلات العادية' : 'Recommended for most recordings'),
+                  active: _aggressive,
+                  accent: p.warn,
+                  trailing: NurSwitch(
+                    value: _aggressive,
+                    accent: p.warn,
+                    onChanged: _busy ? null : (v) {
+                      setState(() => _aggressive = v);
+                      SharedPreferences.getInstance().then(
+                        (p) => p.setBool('aggressive_mode', v)); // S174-B4
+                    })))
+            : const SizedBox(width: double.infinity)),
+      ]),
+    );
+  }
+
+  Widget _serverStatus(S s) {
+    final p = _p;
+    final offline = !_serverUp;
+    final col = _serverUp ? p.ok : _waking ? p.gold : p.err;
+    return Column(children: [
+      Row(children: [
+        PulseDot(color: col, size: 9, active: _serverUp || _waking),
+        const SizedBox(width: 6),
+        Expanded(child: Text(
+          _waking
+            ? s.waking
+            : _serverUp
+              ? (_latencyMs != null
+                  ? '${s.serverOnline} · ${_latencyMs}ms' // S30-S
+                  : s.serverOnline)
+              : s.serverOffline,
+          style: TextStyle(
+            color: col, fontSize: 13, fontWeight: FontWeight.w700))),
+        // S19: wake button — only when offline and not already waking
+        if (offline && !_waking)
+          PressScale(
+            scale: 0.92,
+            onTap: _wakeServer,
+            child: NurChip(
+              label: s.wakeServer, color: p.gold,
+              icon: Icons.bolt_rounded, filled: true)),
+      ]),
+      if (offline && !_waking) ...[
+        const SizedBox(height: 6),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Text(s.wakeHint,
+            style: TextStyle(color: p.textDim, fontSize: 11, height: 1.4))),
+      ],
+    ]);
+  }
+
+  Widget _localStatus(S s) {
+    final p = _p;
+    final String sub;
+    if (_localReady) {
+      sub = _localEngines.isEmpty
+        ? (s.ar ? 'جاهز — تشغيل بدون إنترنت' : 'Ready — processes fully offline')
+        : (s.ar
+            ? 'جاهز — ${_localEngines.length} محركات تعمل بدون إنترنت'
+            : 'Ready — ${_localEngines.length} engines run offline');
+    } else if (_prepError != null) {
+      sub = s.ar ? 'تعذّر التجهيز — اضغط للمحاولة مجدداً'
+                 : 'Preparation failed — tap to retry';
+    } else {
+      sub = _prepping
+        ? (s.ar ? 'يُجهّز المحرك المحلي… $_prepPct٪'
+                : 'Preparing the offline engine… $_prepPct%')
+        : (s.ar ? 'يبدأ التجهيز…' : 'Starting…');
+    }
+    final failed = !_localReady && _prepError != null;
+    final subCol = _localReady ? p.teal : failed ? p.err : p.gold;
+    return Column(children: [
+      Row(children: [
+        Icon(Icons.offline_bolt_rounded, color: p.gold, size: 20),
+        const SizedBox(width: 10),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(s.ar ? 'المحرك المحلي (بدون إنترنت)' : 'Local Engine (Offline)',
+            style: TextStyle(
+              color: p.text, fontSize: 13.5, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          GestureDetector(
+            onTap: failed && !_busy ? _autoPrepareOfflineEngine : null,
+            child: Text(sub,
+              style: TextStyle(
+                color: subCol, fontSize: 11.5,
+                decoration: failed ? TextDecoration.underline : null))),
+        ])),
+        NurIconButton(
+          icon: Icons.info_outline_rounded, size: 34,
+          onTap: () => Navigator.push(
+            context, _go(const LocalModeInfoScreen()))), // S146
+      ]),
+      if (!_localReady && _prepError == null) ...[
+        const SizedBox(height: 12),
+        NurProgressBar(
+          value: _prepping && _prepPct > 0 ? _prepPct / 100.0 : null,
+          height: 5, a: p.teal, b: p.gold),
+      ],
+    ]);
+  }
+
+  // ── ENGINES ────────────────────────────────────────────────────────────────
+  Widget _engineSection(S s) {
+    final p = _p;
+    final sel = _selectedEngine;
+    final col = _engineColor;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      NurSectionHeader(
+        s.chooseEngine, accent: col,
+        trailing: NurChip(
+          label: '≥${sel.score.toInt()}', color: col, filled: true)),
+      SizedBox(
+        height: 204,
+        child: ListView.separated(
+          controller: _engCtrl,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+          itemCount: _engines.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 12),
+          itemBuilder: (_, i) => _engineCard(_engines[i], s))),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 340),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          switchInCurve: Curves.easeOutCubic,
           transitionBuilder: (child, anim) => FadeTransition(
-            opacity: anim, child: child),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min, children: [
-            Text(
-              _status.isEmpty ? s.processing : _status,
-              key: ValueKey(_status),
-              style: const TextStyle( // S38-STATUS-STYLE
-                color: Color(0xFFCFD8DC),
-                fontSize: 13, letterSpacing: 0.2)),
-            const SizedBox(height: 10),
-            AnimatedBuilder(
-              animation: _audioBarsCtrl,
-              builder: (_, __) { // S62-PROG-BARS
-                const n = 20;
-                final v = _audioBarsCtrl.value;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(n, (i) {
-                    // Multi-frequency: primary + harmonic + slow swell
-                    final f1 = sin((v + i / n) * 6.2832 * 1.5);
-                    final f2 = sin((v * 1.7 + i / n) * 6.2832 * 0.8);
-                    final f3 = sin((v * 0.4 + i / n) * 6.2832 * 0.3);
-                    final wave = (f1 * 0.55 + f2 * 0.28 + f3 * 0.17);
-                    final h = 6.0 + 28.0 * (wave * 0.5 + 0.5);
-                    final lit = (i / n) < _progress;
-                    final bright = 0.55 + 0.45 * v;
-                    return Container(
-                      width: 3.0, height: h,
-                      margin: const EdgeInsets.only(right: 2.5),
-                      decoration: BoxDecoration(
-                        gradient: lit ? LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [
-                            _gold.withValues(alpha: bright),
-                            _goldLight.withValues(alpha: bright * 0.7)]) : null,
-                        color: lit ? null : _teal.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(2),
-                        boxShadow: lit ? [BoxShadow(
-                          color: _gold.withValues(alpha: 0.35 * v),
-                          blurRadius: 4)] : null));
-                  }));
-              }),
-          ]))),
-        // S20-A: '...' when merging — frozen '68%' looks like a crash
-        ShaderMask( // S38-PCT-SHADER
-          shaderCallback: (b) => const LinearGradient(
-            colors: [Color(0xFFD4AF37), Color(0xFFF0CF60)]).createShader(b),
-          child: Text(_isMerging ? '...' : '${(_progress * 100).toInt()}%',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold, fontSize: 18))),
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.06), end: Offset.zero).animate(anim),
+              child: child)),
+          child: KeyedSubtree(
+            key: ValueKey<String>(sel.id),
+            child: _engineDetails(sel, s, col, p)))),
+    ]);
+  }
+
+  Widget _engineCard(_EngineData e, S s) {
+    final p = _p;
+    final sel = _engine == e.id;
+    final col = _colorOf(e.id);
+    final blocked = _engineBlocked(e.id); // S250
+    final fallback = Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [col.withValues(alpha: 0.42), const Color(0xFF061214)])),
+      child: Align(
+        alignment: const Alignment(0, -0.35),
+        child: Icon(Icons.graphic_eq_rounded,
+          size: 46, color: col.withValues(alpha: 0.55))));
+    return AnimatedScale(
+      scale: sel ? 1.0 : 0.95,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutBack,
+      child: PressScale(
+        scale: 0.97,
+        onTap: () => _selectEngine(e, s),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+          width: _engCardW,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(
+              color: blocked
+                ? p.err.withValues(alpha: 0.45)
+                : sel ? col : p.border.withValues(alpha: 0.9),
+              width: sel ? 2 : 1),
+            boxShadow: sel
+              ? [BoxShadow(
+                  color: col.withValues(alpha: 0.38),
+                  blurRadius: 30, offset: const Offset(0, 10))]
+              : [BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 14, offset: const Offset(0, 6))]),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(fit: StackFit.expand, children: [
+              if (e.imgAsset != null)
+                Image.asset(e.imgAsset!, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => fallback)
+              else
+                fallback,
+              // legibility scrim
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    stops: const [0.25, 1.0],
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.86)]))),
+              if (sel)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter, end: Alignment.center,
+                      colors: [
+                        col.withValues(alpha: 0.30), Colors.transparent]))),
+              if (blocked)
+                Container(color: Colors.black.withValues(alpha: 0.5)),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Flexible(child: Wrap(spacing: 5, runSpacing: 5, children: [
+                      NurChip(
+                        label: e.localOnly ? 'LOCAL' : 'SERVER',
+                        color: e.localOnly ? p.teal : Colors.white70,
+                        fontSize: 9),
+                      if (e.badge.isNotEmpty)
+                        NurChip(
+                          label: e.badge, color: col,
+                          filled: true, fontSize: 9),
+                    ])),
+                    const SizedBox(width: 8),
+                    _scoreBadge(col, e.score),
+                  ]),
+                  const Spacer(),
+                  if (blocked)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(children: [
+                        Icon(Icons.cloud_off_rounded, size: 13, color: p.err),
+                        const SizedBox(width: 5),
+                        Flexible(child: Text(
+                          s.ar ? 'يتطلب إنترنت' : 'Needs internet',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: p.err, fontSize: 11))),
+                      ])),
+                  Text(s.ar ? e.nameAr : e.nameEn,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: sel ? Colors.white : Colors.white.withValues(alpha: 0.9),
+                      fontSize: 20, fontWeight: FontWeight.w800, height: 1.15,
+                      shadows: const [Shadow(color: Colors.black87, blurRadius: 10)])),
+                  const SizedBox(height: 3),
+                  Row(children: [
+                    Flexible(child: Text(s.ar ? e.nameEn : e.nameAr,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 11.5))),
+                    const SizedBox(width: 8),
+                    Text(e.id, style: TextStyle(
+                      color: col, fontSize: 11, fontWeight: FontWeight.w800)),
+                  ]),
+                ])),
+            ])))),
+    );
+  }
+
+  Widget _scoreBadge(Color col, double score) => Container(
+    width: 42, height: 42,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: Colors.black.withValues(alpha: 0.5),
+      border: Border.all(color: col.withValues(alpha: 0.8), width: 1.5),
+      boxShadow: [BoxShadow(color: col.withValues(alpha: 0.35), blurRadius: 10)]),
+    child: Center(child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Text('≥${score.toInt()}',
+          style: TextStyle(
+            color: col, fontSize: 11.5, fontWeight: FontWeight.w900))))));
+
+  Widget _engineDetails(_EngineData e, S s, Color col, NurPalette p) => NurCard(
+    margin: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+    padding: const EdgeInsets.all(16),
+    accent: col,
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: NurProgressBar(
+          value: e.score / 100, height: 7,
+          a: col.withValues(alpha: 0.6), b: col)),
+        const SizedBox(width: 10),
+        Text('${e.score.toInt()}/100', style: TextStyle(
+          color: col, fontSize: 12, fontWeight: FontWeight.w800)),
       ]),
-      const SizedBox(height: 6),
-      Center(child: SizedBox(width: 90, height: 90, // S46-MANDALA
-        child: RepaintBoundary(child: AnimatedBuilder( // S59-MANDALA-RB
-          animation: _geoRotCtrl,
-          builder: (_, __) => CustomPaint(
-            painter: _MandalaPainter(_geoRotCtrl.value)))))),
-      const SizedBox(height: 6),
-      ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        // S20-A: null = indeterminate (animated pulse) during server merge
-        child: LinearProgressIndicator(
-          value: _isMerging ? null : _progress, minHeight: 8,
-          backgroundColor: _tBorder,
-          valueColor: const AlwaysStoppedAnimation(Color(0xFFD4AF37)))),
-      // S28: Cancel button
-      const SizedBox(height: 10),
-      Container( // S38-CANCEL-STYLE
+      const SizedBox(height: 12),
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        for (final f in e.features)
+          NurChip(label: f, color: col, fontSize: 10.5),
+      ]),
+      const SizedBox(height: 12),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(
-            color: const Color(0xFF1B6B80).withValues(alpha: 0.35)),
-          borderRadius: BorderRadius.circular(8)),
-        child: TextButton.icon(
-          onPressed: _cancelProcessing,
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 4),
-            minimumSize: Size.zero),
-          icon: const Icon(Icons.cancel_outlined, size: 14,
-            color: Color(0xFF6B9EAE)),
-          label: Text(s.cancelBtn,
-            style: const TextStyle(
-              color: Color(0xFF6B9EAE), fontSize: 11)),
-        )),
-    ]),  // S37-PAREN-FIX (restored structural ) — S35 FIX-A2 over-stripped)
-  );  // S38-CONTAINER-CLOSE
+          color: col.withValues(alpha: p.dark ? 0.07 : 0.09),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: col.withValues(alpha: 0.25))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.auto_awesome_rounded, size: 13, color: col),
+            const SizedBox(width: 6),
+            Text(s.ar ? 'الجديد في هذه النسخة' : "What's New",
+              style: TextStyle(
+                color: col, fontSize: 11.5, fontWeight: FontWeight.w800)),
+          ]),
+          const SizedBox(height: 6),
+          Text(s.ar ? e.whatsNewAr : e.whatsNewEn,
+            textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+            style: TextStyle(color: p.textSub, fontSize: 12, height: 1.6)),
+        ])),
+    ]));
 
-  // ── RESULT + DOWNLOAD BUTTON (S19: better labels, fallback warning, open) ──
+
+  // ── FILE CARD — the upload portal ──────────────────────────────────────────
+  Widget _fileCard(S s) {
+    final p = _p;
+    final hasFile = _file != null;
+    final col = _engineColor;
+    return NurCard(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+      radius: 30,
+      accent: col,
+      glow: hasFile,
+      child: Column(children: [
+        PressScale(
+          scale: 0.98,
+          onTap: _busy ? null : _pickFile,
+          child: Column(children: [
+            AnimatedBuilder(
+              animation: _glowCtrl,
+              builder: (_, child) => Container(
+                width: 74, height: 74,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    col.withValues(alpha: 0.22), col.withValues(alpha: 0.04)]),
+                  border: Border.all(
+                    color: col.withValues(alpha: 0.40 + 0.35 * _glowCtrl.value),
+                    width: 1.6),
+                  boxShadow: [BoxShadow(
+                    color: col.withValues(alpha: 0.12 + 0.20 * _glowCtrl.value),
+                    blurRadius: 18 + 16 * _glowCtrl.value)]),
+                child: child),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 420),
+                switchInCurve: Curves.easeOutBack,
+                transitionBuilder: (c, a) => ScaleTransition(
+                  scale: a, child: FadeTransition(opacity: a, child: c)),
+                child: Icon(
+                  hasFile ? Icons.audio_file_rounded : Icons.upload_rounded,
+                  key: ValueKey<bool>(hasFile), color: col, size: 34))),
+            const SizedBox(height: 16),
+            NurWaveform(
+              animation: _waveCtrl,
+              bars: 34, height: 46,
+              energy: hasFile ? 0.9 : 0.14,
+              a: hasFile ? p.teal : p.textDim,
+              b: hasFile ? col : p.textDim),
+            const SizedBox(height: 14),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 320),
+              child: Text(
+                hasFile
+                  ? _file!.path.split('/').last // S46-PORTAL
+                  : (s.ar ? 'أسقط تلاوتك في هذا المحراب'
+                          : 'Drop your Quran audio into this sacred portal'),
+                key: ValueKey<String>(_file?.path ?? ''),
+                textAlign: TextAlign.center,
+                maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: hasFile ? p.text : p.textSub,
+                  fontSize: hasFile ? 14.5 : 15.5,
+                  fontWeight: FontWeight.w700, height: 1.35))),
+            const SizedBox(height: 10),
+            if (hasFile)
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8, runSpacing: 6, children: [
+                if (_sizeLabel.isNotEmpty)
+                  NurChip(
+                    label: _sizeLabel, color: p.textSub,
+                    icon: Icons.sd_storage_rounded),
+                if (_isLarge)
+                  NurChip(label: s.chunkedBadge, color: p.gold),
+                if (_fileBytes > 0)
+                  NurChip(
+                    label: '${s.estTime}: ${_estimatedTime()}',
+                    color: p.teal, icon: Icons.timer_outlined),
+              ])
+            else ...[
+              Text('mp3  ·  wav  ·  m4a',
+                style: TextStyle(
+                  color: p.teal, fontSize: 11, letterSpacing: 1.6,
+                  fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(s.sizeLimit,
+                style: TextStyle(color: p.textDim, fontSize: 11)),
+            ],
+          ])),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: hasFile
+            ? Padding(
+                padding: const EdgeInsets.only(top: 18),
+                child: NurButton(
+                  label: s.ar ? 'ارفع التلاوة' : 'Elevate This Recitation',
+                  icon: Icons.auto_awesome_rounded,
+                  accent: col,
+                  loading: _busy,
+                  onTap: _busy ? null : () => _process())) // S95
+            : const SizedBox(width: double.infinity)),
+      ]),
+    );
+  }
+
+  /// Slim progress card for the post-processing download phase (the busy phase
+  /// is covered by the overlay).
+  Widget _progressStrip(S s) {
+    final p = _p;
+    return NurCard(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(16),
+      accent: _engineColor,
+      child: Column(children: [
+        Row(children: [
+          Expanded(child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: Text(
+              _status.isEmpty ? s.processing : _status,
+              key: ValueKey<String>(_status),
+              maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: p.textSub, fontSize: 13)))),
+          const SizedBox(width: 10),
+          GradientText('${(_progress * 100).toInt()}%',
+            gradient: p.goldGradient,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+        ]),
+        const SizedBox(height: 12),
+        NurProgressBar(value: _progress, height: 8, a: p.teal, b: _engineColor),
+      ]),
+    );
+  }
+
+  // ── PROCESSING OVERLAY ─────────────────────────────────────────────────────
+  // Frosted scrim over the whole screen while _busy. Cancel and the game
+  // shortcut are deliberately NOT behind an AbsorbPointer.
+  Widget _processingOverlay(S s) {
+    final p = _p;
+    final col = _engineColor;
+    final determinate = !_isMerging && _progress > 0.05;
+    final status = _isMerging
+      ? (s.ar ? 'جارٍ دمج المقاطع…' : 'Merging chunks…')
+      : _status.isNotEmpty
+        ? _status
+        : (s.ar ? 'يُرجى الانتظار…' : 'Please wait…');
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      builder: (_, t, child) => Opacity(opacity: t, child: child),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          color: p.bgDeep.withValues(alpha: 0.80),
+          alignment: Alignment.center,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                NurOrb(
+                  animation: _waveCtrl,
+                  size: 268,
+                  energy: 1.0,
+                  progress: determinate ? _progress : -1,
+                  a: p.teal, b: col,
+                  child: determinate
+                    ? GradientText('${(_progress * 100).round()}%',
+                        gradient: p.goldGradient,
+                        style: const TextStyle(
+                          fontSize: 38, fontWeight: FontWeight.w900))
+                    : AnimatedBuilder(
+                        animation: _glowCtrl,
+                        builder: (_, __) => Icon(
+                          Icons.graphic_eq_rounded,
+                          size: 40 + 6 * _glowCtrl.value, color: col))),
+                const SizedBox(height: 18),
+                GradientText(s.ar ? 'جارٍ المعالجة' : 'Processing',
+                  gradient: p.goldGradient,
+                  style: const TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Text(status,
+                    key: ValueKey<String>(status),
+                    textAlign: TextAlign.center,
+                    maxLines: 3, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: p.textSub, fontSize: 13.5))),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: 260,
+                  child: NurProgressBar(
+                    value: determinate ? _progress : null,
+                    height: 6, a: p.teal, b: col)),
+                const SizedBox(height: 26),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 12, runSpacing: 12, children: [
+                  NurButton(
+                    label: s.cancelBtn,
+                    icon: Icons.close_rounded,
+                    filled: false, expand: false, height: 48,
+                    accent: p.textSub,
+                    onTap: _cancelProcessing),
+                  // S209: processing continues in the background — the game
+                  // is the "play while you wait" entry point.
+                  NurButton(
+                    label: s.playWhileWait,
+                    icon: Icons.sports_esports_rounded,
+                    expand: false, height: 48,
+                    accent: p.teal,
+                    onTap: () => Navigator.push(
+                      context, _go(const GameScreen()))),
+                ]),
+              ])))),
+      ),
+    );
+  }
+
+  // ── RESULT ─────────────────────────────────────────────────────────────────
   Widget _resultCard(S s) {
+    final p = _p;
     final score = double.tryParse(_result?['score']?.toString() ?? '0') ?? 0.0;
-
-    // S19 FIX: Score labels now have proper thresholds.
-    // Before: 75 showed "Very Good" (wrong). Now shows "Fair" correctly.
     final label = score >= 96 ? s.excellent
         : score >= 90 ? s.great
-        : score >= 85 ? s.good        // Very Good
-        : score >= 78 ? s.decent      // Good
-        : s.fair;                     // Fair — covers the 75 fallback case
-
-    final scoreColor = score >= 90 ? const Color(0xFF3FB950)
-        : score >= 80 ? _tGold
-        : const Color(0xFFF85149); // red for scores below 80
-
+        : score >= 85 ? s.good
+        : score >= 78 ? s.decent
+        : s.fair;
+    final sc = score >= 90 ? p.ok : score >= 80 ? p.gold : p.err;
     const engineNames = { // S141: added v11.x, removed dead v8.4/v8.9
       'v11.0': 'الصفاء — Purity', // S149
       'v11.1': 'الإتقان — Perfection',
@@ -3257,395 +1931,280 @@ class _HomeScreenState extends State<HomeScreen>
       'v7.0': 'Classic',
     };
     final engineName = engineNames[_engine] ?? _engine;
-    final filename   = ApiService.buildFilename(_engine);
-
-    // S19: "Open in Player" only available when we have a content:// URI (API 29+)
+    final filename = ApiService.buildFilename(_engine);
     final hasContentUri = _output?.path.startsWith('content://') ?? false;
+    final canOpen = hasContentUri || (_localMode && _output != null); // S142
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16,10,16,4),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: score < 80 ? _err.withValues(alpha: 0.05) : _ok.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: (score < 80 ? _err : _ok).withValues(alpha: 0.35),
-          width: 1.2),
-        boxShadow: [BoxShadow(
-          color: (score < 80
-              ? const Color(0xFFF85149)
-              : const Color(0xFF3FB950)).withValues(alpha: 0.12),
-          blurRadius: 24, offset: const Offset(0, 6))]),
+    return NurCard(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
+      radius: 32,
+      accent: sc,
+      glow: true,
       child: Column(children: [
-        // S30-R1: score arc gauge
         AnimatedBuilder(
-          animation: _resultCtrl,
+          animation: Listenable.merge([_resultCtrl, _glowCtrl]),
           builder: (_, __) {
             final t = Curves.easeOutCubic.transform(_resultCtrl.value);
-            final pulse = _resultCtrl.value > 0.85
+            final pop = _resultCtrl.value > 0.85
                 ? 1.0 + 0.05 * (1 - (_resultCtrl.value - 0.85) / 0.15)
                 : 1.0;
-            return Column(mainAxisSize: MainAxisSize.min, children: [
-              Stack(alignment: Alignment.center, children: [
-              // S45-KHATAM sacred geometry layer
-              AnimatedBuilder(
-                animation: _glowCtrl,
-                builder: (_, __) => CustomPaint(
-                  size: const Size(170, 170),
-                  painter: _KhatamPainter(
-                    t: _glowCtrl.value, color: scoreColor))),
-              // S141: outer burst removed (was identical duplicate of inner)
-              Stack(alignment: Alignment.center, children: [
-              // Burst particles on reveal
-              if (score >= 85) AnimatedBuilder(
-                animation: _resultCtrl,
-                builder: (_, __) => CustomPaint(
-                  size: const Size(170, 170),
-                  painter: _ScoreBurstPainter(
-                    progress: _resultCtrl.value,
-                    color: scoreColor))),
-              SizedBox(
-                width: 148, height: 148,
-                child: CustomPaint(
-                  painter: _ScoreArcPainter(
-                    progress: t, score: score, color: scoreColor,
-                    trackColor: _tBorder),
-                  child: Center(child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Transform.scale(
-                        scale: pulse,
-                        child: Text(
-                          (score * t).toStringAsFixed(1),
-                          style: TextStyle(
-                            color: scoreColor,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 40,
-                            letterSpacing: -1))),
-                      Text('/100', style: TextStyle(
-                        color: scoreColor.withValues(alpha: 0.55),
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold)),
-                    ])),
-                )),
-              ]), // end burst Stack
-              ]), // end burst Stack
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                decoration: BoxDecoration(
-                  color: scoreColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: scoreColor.withValues(alpha: 0.4))),
-                child: Text(label, style: TextStyle(
-                  color: scoreColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13, letterSpacing: 0.5))),
-            ]);
+            return SizedBox(
+              width: 224, height: 224,
+              child: Stack(alignment: Alignment.center, children: [
+                if (score >= 85)
+                  CustomPaint(
+                    size: const Size(224, 224),
+                    painter: BurstPainter(
+                      progress: _resultCtrl.value, color: sc)),
+                CustomPaint(
+                  size: const Size(200, 200),
+                  painter: ScoreRingPainter(
+                    progress: (score / 100) * t,
+                    a: Color.lerp(sc, p.teal, 0.45)!,
+                    b: Color.lerp(sc, Colors.white, 0.25)!,
+                    track: p.border,
+                    glow: _glowCtrl.value)),
+                Transform.scale(
+                  scale: pop,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text((score * t).toStringAsFixed(1),
+                      style: TextStyle(
+                        color: sc, fontSize: 46,
+                        fontWeight: FontWeight.w900, letterSpacing: -1)),
+                    Text('/100', style: TextStyle(
+                      color: sc.withValues(alpha: 0.6),
+                      fontSize: 13, fontWeight: FontWeight.w700)),
+                  ])),
+              ]));
           }),
-        const SizedBox(height: 14),
-
-        // Engine used
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1200),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: _tGold.withValues(alpha: 0.3))),
-          child: Text('$_engine — $engineName',
-            style: const TextStyle(
-              color: Color(0xFFD4AF37), fontSize: 11))),
-        const SizedBox(height: 12),
-
-        // S30-R2: metrics 2×2 grid
-        _metricGrid(),
-        const SizedBox(height: 12),
-
-        // S30-R4: section divider
-        Container(height: 1,
-          color: _tBorder,
-          margin: const EdgeInsets.only(bottom: 14)),
-
-        // S19 FALLBACK WARNING: shown when score ≤ 78
-        if (score < 78) ...[  // S32-BUG3-FIX: 78 = Good label, not fallback
+        const SizedBox(height: 6),
+        NurChip(label: label, color: sc, filled: true, fontSize: 13),
+        const SizedBox(height: 10),
+        NurChip(
+          label: '$_engine — $engineName',
+          color: p.gold, icon: Icons.memory_rounded),
+        const SizedBox(height: 16),
+        _metricGrid(s),
+        if (score < 78) ...[ // S32-BUG3-FIX: 78 = Good label, not fallback
+          const SizedBox(height: 12),
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF200D0D),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: const Color(0xFFF85149).withValues(alpha: 0.4))),
+              color: p.err.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: p.err.withValues(alpha: 0.4))),
             child: Text(s.fallbackWarning,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFFF85149),
-                fontSize: 11, height: 1.5))),
+              style: TextStyle(color: p.err, fontSize: 12, height: 1.5))),
         ],
-
-        // Download button
-        SizedBox(width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _reDownload,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3FB950),
-              foregroundColor: const Color(0xFF000000),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-              elevation: 2),
-            icon: const Icon(Icons.download_rounded, size: 22),
-            label: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(s.downloadBtn,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(height: 2),
-                Text(filename,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.black.withValues(alpha: 0.6))),
-              ]),
-          )),
-
-        // S30-R3: Open + Share in one row
-        if (hasContentUri || (_localMode && _output != null)) ...[ // S142: include local file:// outputs
-          const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        NurButton(
+          label: s.downloadBtn,
+          icon: Icons.download_rounded,
+          accent: p.ok,
+          onTap: _reDownload),
+        const SizedBox(height: 6),
+        Text(filename, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: p.textDim, fontSize: 10.5)),
+        if (canOpen) ...[
+          const SizedBox(height: 10),
           Row(children: [
-            if (hasContentUri || (_localMode && _output != null)) Expanded( // S142
-              child: OutlinedButton.icon(
-                onPressed: _openInPlayer,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF58A6FF),
-                  side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-                icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
-                label: Text(s.openInPlayer,
-                  style: const TextStyle(fontSize: 12)))),
-            if (hasContentUri)
-              const SizedBox(width: 8), // S143: spacer only when Share shows
-            if (hasContentUri) Expanded( // S143: share requires content:// URI — local paths crash API24+
-              child: OutlinedButton.icon(
-                onPressed: _shareFile,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _tSub,
-                  side: const BorderSide(color: Color(0xFF30363D), width: 0.8),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-                icon: const Icon(Icons.share_rounded, size: 16),
-                label: Text(s.shareBtn,
-                  style: const TextStyle(fontSize: 12)))),
+            Expanded(child: NurButton(
+              label: s.openInPlayer,
+              icon: Icons.play_circle_outline_rounded,
+              filled: false, height: 46, accent: p.info,
+              onTap: _openInPlayer)),
+            if (hasContentUri) ...[ // S143: share requires content:// URI
+              const SizedBox(width: 10),
+              Expanded(child: NurButton(
+                label: s.shareBtn,
+                icon: Icons.share_rounded,
+                filled: false, height: 46, accent: p.textSub,
+                onTap: _shareFile)),
+            ],
           ]),
-          // S250 — hand the restored file straight to the Audio Editor. Before
-          // this, "polish the result a bit" meant opening the editor and then
-          // hunting for the output again in the system file picker; a
-          // content:// URI (what _output becomes after a save to Downloads)
-          // can't even be opened that way, so the cacheDir copy is preferred.
+          // S250 — hand the restored file straight to the Audio Editor.
           if (_editableOutputPath() != null) ...[
-            const SizedBox(height: 8),
-            SizedBox(width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(context, PageRouteBuilder(
-                  pageBuilder: (_, __, ___) =>
-                      AudioEditorScreen(initialPath: _editableOutputPath()),
-                  transitionsBuilder: (_, anim, __, child) =>
-                      FadeTransition(opacity: anim, child: child),
-                  transitionDuration: const Duration(milliseconds: 220),
-                )),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _teal,
-                  side: BorderSide(color: _teal.withValues(alpha: 0.7), width: 0.8),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-                icon: const Icon(Icons.equalizer_rounded, size: 16),
-                label: Text(s.ar ? 'تحرير في محرر الصوت' : 'Open in Audio Editor',
-                  style: const TextStyle(fontSize: 12)))),
+            const SizedBox(height: 10),
+            NurButton(
+              label: s.ar ? 'تحرير في محرر الصوت' : 'Open in Audio Editor',
+              icon: Icons.equalizer_rounded,
+              filled: false, height: 46, accent: p.teal,
+              onTap: () => Navigator.push(context, _go(
+                AudioEditorScreen(initialPath: _editableOutputPath())))),
           ],
         ],
-        // Saved indicator
         if (_output != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.check_circle_outline,
-              color: Color(0xFF3FB950), size: 14),
-            const SizedBox(width: 4),
-            Text(s.savedTo,
-              style: const TextStyle(
-                color: Color(0xFF3FB950), fontSize: 11)),
+            Icon(Icons.check_circle_rounded, color: p.ok, size: 15),
+            const SizedBox(width: 6),
+            Text(s.savedTo, style: TextStyle(
+              color: p.ok, fontSize: 12, fontWeight: FontWeight.w700)),
           ]),
         ],
-        // S28: Process Another File button
         const SizedBox(height: 12),
-        SizedBox(width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _resetForNewFile,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF58A6FF),
-              side: const BorderSide(color: Color(0xFF58A6FF), width: 0.8),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12))),
-            icon: const Icon(Icons.refresh_rounded, size: 18), // S30-X1
-            label: Text(s.processAnother,
-              style: const TextStyle(fontSize: 13)),
-          )),
+        NurButton(
+          label: s.processAnother,
+          icon: Icons.refresh_rounded,
+          filled: false, height: 46, accent: p.info,
+          onTap: _resetForNewFile),
       ]),
     );
   }
 
-  // S30-R2: 2×2 metric grid
-  Widget _metricGrid() => GestureDetector(
-    onTap: _copyMetrics,
-    child: Container(
-      decoration: BoxDecoration(
-        color: _tCard,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _tBorder)),
-      child: Column(children: [
-        IntrinsicHeight(child: Row(children: [
-          Expanded(child: _metricTile(
-            'LUFS',  _result?['lufs']?.toString()  ?? '—', -6.29)),
-          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
-          Expanded(child: _metricTile(
-            'RMS',   _result?['rms']?.toString()   ?? '—', -10.01)),
-        ])),
-        const Divider(height: 1, color: Color(0xFF21262D)),
-        IntrinsicHeight(child: Row(children: [
-          Expanded(child: _metricTile(
-            'Crest', _result?['crest']?.toString() ?? '—', 10.25)),
-          const VerticalDivider(width: 1, color: Color(0xFF21262D)),
-          Expanded(child: _metricTile(
-            'LRA',   _result?['lra']?.toString()   ?? '—', 4.19)),
-        ])),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 5),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.copy_rounded, size: 10,
-              color: Color(0xFF484F58)),
-            SizedBox(width: 4),
-            Text('tap to copy',
-              style: TextStyle(color: Color(0xFF484F58), fontSize: 9)),
+  // S30-R2: 2×2 metric grid — tap to copy
+  Widget _metricGrid(S s) {
+    final p = _p;
+    return PressScale(
+      scale: 0.985,
+      onTap: _copyMetrics,
+      child: Container(
+        decoration: BoxDecoration(
+          color: p.dark ? Colors.black.withValues(alpha: 0.22) : p.bgDeep,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: p.border)),
+        child: Column(children: [
+          IntrinsicHeight(child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: _metricTile('LUFS',
+              _result?['lufs']?.toString() ?? '—', -6.29, 0)),
+            VerticalDivider(width: 1, color: p.border),
+            Expanded(child: _metricTile('RMS',
+              _result?['rms']?.toString() ?? '—', -10.01, 1)),
           ])),
-      ]),
-    ),
-  );
+          Divider(height: 1, color: p.border),
+          IntrinsicHeight(child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: _metricTile('Crest',
+              _result?['crest']?.toString() ?? '—', 10.25, 2)),
+            VerticalDivider(width: 1, color: p.border),
+            Expanded(child: _metricTile('LRA',
+              _result?['lra']?.toString() ?? '—', 4.19, 3)),
+          ])),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.copy_rounded, size: 11, color: p.textDim),
+              const SizedBox(width: 5),
+              Text(s.ar ? 'اضغط للنسخ' : 'tap to copy',
+                style: TextStyle(color: p.textDim, fontSize: 10.5)),
+            ])),
+        ])));
+  }
 
-  Widget _metricTile(String label, String value, double target) {
+  Widget _metricTile(String label, String value, double target, int index) {
+    final p = _p;
     final num = double.tryParse(value);
     String delta = '';
     String arrow = '';
-    Color tileColor = _tDim;
+    Color tone = p.textDim;
     if (num != null && value != '—') {
       final diff = num - target;
       delta = '${diff >= 0 ? "+" : ""}${diff.toStringAsFixed(2)}';
       if (diff.abs() <= 0.5) {
-        arrow = '✓'; tileColor = const Color(0xFF3FB950);
+        arrow = '✓'; tone = p.ok;
       } else if (diff > 0) {
-        arrow = '▲'; tileColor = _tGold;
+        arrow = '▲'; tone = p.gold;
       } else {
-        arrow = '▼'; tileColor = const Color(0xFF58A6FF);
+        arrow = '▼'; tone = p.info;
       }
     }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(label, style: const TextStyle(
-            color: Color(0xFF8B949E),
-            fontSize: 10, letterSpacing: 0.5)),
+    return EntranceFade(
+      index: index + 2,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text(label, style: TextStyle(
+            color: p.textDim, fontSize: 11, letterSpacing: 0.6,
+            fontWeight: FontWeight.w700)),
           const SizedBox(height: 5),
-          Text(value, style: const TextStyle(
-            color: Color(0xFFD4AF37),
-            fontWeight: FontWeight.bold, fontSize: 18)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(value, style: TextStyle(
+              color: p.gold, fontWeight: FontWeight.w900, fontSize: 21))),
           if (delta.isNotEmpty) ...[
-            const SizedBox(height: 3),
+            const SizedBox(height: 4),
             Row(mainAxisSize: MainAxisSize.min, children: [
               Text(arrow, style: TextStyle(
-                color: tileColor, fontSize: 9,
-                fontWeight: FontWeight.bold)),
-              const SizedBox(width: 2),
+                color: tone, fontSize: 10, fontWeight: FontWeight.w900)),
+              const SizedBox(width: 3),
               Text(delta, style: TextStyle(
-                color: tileColor, fontSize: 9,
-                fontWeight: FontWeight.w600)),
+                color: tone, fontSize: 10.5, fontWeight: FontWeight.w700)),
             ]),
           ],
-        ]),
-    );
+        ])));
   }
 
-  // ── BOTTOM ROW ─────────────────────────────────────────────────────────────
-  // S105: Enhancement report card ──────────────────────────────────────────
+  // S105: Enhancement report card ────────────────────────────────────────────
   Widget _reportCard(S s) {
     if (_result == null) return const SizedBox.shrink();
+    final p = _p;
     final lufs  = double.tryParse(_result!['lufs']?.toString()  ?? '') ?? -99;
     final rms   = double.tryParse(_result!['rms']?.toString()   ?? '') ?? -99;
     final crest = double.tryParse(_result!['crest']?.toString() ?? '') ?? 0;
     final lra   = double.tryParse(_result!['lra']?.toString()   ?? '') ?? 0;
 
-    // Deltas from 1425H reference
+    // Deltas from the 1425H reference
     final dLufs  = lufs  - (-6.29);
     final dRms   = rms   - (-10.01);
     final dCrest = crest - 10.25;
     final dLra   = lra   - 4.19;
 
-    final List<Map<String, dynamic>> items = [];
+    final items = <_Insight>[];
 
-    // Loudness
     if (dLufs.abs() <= 1.0) {
-      items.add({'icon': Icons.check_circle_outline, 'color': const Color(0xFF3FB950),
-        'ar': 'مستوى الصوت مطابق للمرجع ١٤٢٥هـ', 'en': 'Loudness matches 1425H reference'});
+      items.add(_Insight(Icons.check_circle_outline, p.ok,
+        'مستوى الصوت مطابق للمرجع ١٤٢٥هـ', 'Loudness matches 1425H reference'));
     } else if (dLufs < -1.0) {
-      items.add({'icon': Icons.volume_up_rounded, 'color': const Color(0xFFD4AF37),
-        'ar': 'رُفع مستوى الصوت ${dLufs.abs().toStringAsFixed(1)} وحدة نحو الهدف',
-        'en': 'Loudness boosted ${dLufs.abs().toStringAsFixed(1)} LU toward target'});
+      items.add(_Insight(Icons.volume_up_rounded, p.gold,
+        'رُفع مستوى الصوت ${dLufs.abs().toStringAsFixed(1)} وحدة نحو الهدف',
+        'Loudness boosted ${dLufs.abs().toStringAsFixed(1)} LU toward target'));
     } else {
-      items.add({'icon': Icons.volume_down_rounded, 'color': const Color(0xFF58A6FF),
-        'ar': 'خُفّض مستوى الصوت ${dLufs.abs().toStringAsFixed(1)} وحدة نحو الهدف',
-        'en': 'Loudness reduced ${dLufs.abs().toStringAsFixed(1)} LU toward target'});
+      items.add(_Insight(Icons.volume_down_rounded, p.info,
+        'خُفّض مستوى الصوت ${dLufs.abs().toStringAsFixed(1)} وحدة نحو الهدف',
+        'Loudness reduced ${dLufs.abs().toStringAsFixed(1)} LU toward target'));
     }
 
-    // Dynamics / Crest
     if (dCrest.abs() <= 1.0) {
-      items.add({'icon': Icons.equalizer_rounded, 'color': const Color(0xFF3FB950),
-        'ar': 'الديناميكية متوازنة ومطابقة للمرجع', 'en': 'Dynamics balanced and on target'});
+      items.add(_Insight(Icons.equalizer_rounded, p.ok,
+        'الديناميكية متوازنة ومطابقة للمرجع', 'Dynamics balanced and on target'));
     } else if (dCrest > 1.0) {
-      items.add({'icon': Icons.trending_up_rounded, 'color': const Color(0xFF3FB950),
-        'ar': 'تحسّنت الديناميكية — الصوت أكثر حيوية', 'en': 'Dynamics improved — audio more vibrant'});
+      items.add(_Insight(Icons.trending_up_rounded, p.ok,
+        'تحسّنت الديناميكية — الصوت أكثر حيوية',
+        'Dynamics improved — audio more vibrant'));
     } else {
-      items.add({'icon': Icons.compress_rounded, 'color': const Color(0xFFD4AF37),
-        'ar': 'ضُغطت الديناميكية قليلاً — مقبول للتلاوة', 'en': 'Dynamics slightly compressed — acceptable for recitation'});
+      items.add(_Insight(Icons.compress_rounded, p.gold,
+        'ضُغطت الديناميكية قليلاً — مقبول للتلاوة',
+        'Dynamics slightly compressed — acceptable for recitation'));
     }
 
-    // Loudness range
     if (dLra.abs() <= 0.8) {
-      items.add({'icon': Icons.graphic_eq_rounded, 'color': const Color(0xFF3FB950),
-        'ar': 'نطاق الصوت مثالي ومتوازن', 'en': 'Loudness range ideal and balanced'});
+      items.add(_Insight(Icons.graphic_eq_rounded, p.ok,
+        'نطاق الصوت مثالي ومتوازن', 'Loudness range ideal and balanced'));
     } else if (dLra > 0.8) {
-      items.add({'icon': Icons.unfold_more_rounded, 'color': const Color(0xFF58A6FF),
-        'ar': 'توسّع النطاق الصوتي — التباين بين الهادئ والقوي أكبر',
-        'en': 'Loudness range expanded — more contrast between soft and loud'});
+      items.add(_Insight(Icons.unfold_more_rounded, p.info,
+        'توسّع النطاق الصوتي — التباين بين الهادئ والقوي أكبر',
+        'Loudness range expanded — more contrast between soft and loud'));
     } else {
-      items.add({'icon': Icons.unfold_less_rounded, 'color': const Color(0xFFD4AF37),
-        'ar': 'النطاق الصوتي ضيّق — تلاوة ذات مستوى ثابت', 'en': 'Narrow loudness range — consistent level recitation'});
+      items.add(_Insight(Icons.unfold_less_rounded, p.gold,
+        'النطاق الصوتي ضيّق — تلاوة ذات مستوى ثابت',
+        'Narrow loudness range — consistent level recitation'));
     }
 
-    // RMS / Overall energy
     if (dRms.abs() <= 1.5) {
-      items.add({'icon': Icons.sensors_rounded, 'color': const Color(0xFF3FB950),
-        'ar': 'طاقة الصوت الكلية مطابقة للمرجع', 'en': 'Overall energy matches reference'});
+      items.add(_Insight(Icons.sensors_rounded, p.ok,
+        'طاقة الصوت الكلية مطابقة للمرجع', 'Overall energy matches reference'));
     } else if (dRms < -1.5) {
-      items.add({'icon': Icons.bolt_rounded, 'color': const Color(0xFFD4AF37),
-        'ar': 'طاقة الصوت أقل من المرجع — التسجيل خافت', 'en': 'Energy below reference — recording was quiet'});
+      items.add(_Insight(Icons.bolt_rounded, p.gold,
+        'طاقة الصوت أقل من المرجع — التسجيل خافت',
+        'Energy below reference — recording was quiet'));
     } else {
-      items.add({'icon': Icons.flash_on_rounded, 'color': const Color(0xFF58A6FF),
-        'ar': 'طاقة الصوت فوق المرجع — التسجيل قوي', 'en': 'Energy above reference — recording was loud'});
+      items.add(_Insight(Icons.flash_on_rounded, p.info,
+        'طاقة الصوت فوق المرجع — التسجيل قوي',
+        'Energy above reference — recording was loud'));
     }
 
     final score = ((_result!['score'] as num?)?.toDouble() ?? 0);
@@ -3653,299 +2212,478 @@ class _HomeScreenState extends State<HomeScreen>
     final Color vColor;
     if (score >= 90) {
       verdict = s.ar ? '✨ جودة استثنائية — يُضاهي مستوى الإذاعة' : '✨ Exceptional — broadcast quality';
-      vColor = const Color(0xFF3FB950);
+      vColor = p.ok;
     } else if (score >= 80) {
       verdict = s.ar ? '🌟 جيد جداً — مناسب للنشر والمشاركة' : '🌟 Very good — suitable for sharing';
-      vColor = const Color(0xFFD4AF37);
+      vColor = p.gold;
     } else if (score >= 70) {
       verdict = s.ar ? '👍 جيد — تحسّن ملموس عن الأصل' : '👍 Good — noticeable improvement';
-      vColor = const Color(0xFF58A6FF);
+      vColor = p.info;
     } else {
       verdict = s.ar ? '⚠️ التسجيل صعب — جرّب محرك مختلف' : '⚠️ Difficult recording — try a different engine';
-      vColor = const Color(0xFFF85149);
+      vColor = p.err;
     }
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF070F0C),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF21262D))),
+    return NurCard(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(16),
+      accent: vColor,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Header
         Row(children: [
-          const Icon(Icons.analytics_outlined, color: Color(0xFF8B949E), size: 13),
-          const SizedBox(width: 6),
+          Icon(Icons.analytics_outlined, color: p.textSub, size: 16),
+          const SizedBox(width: 8),
           Text(s.ar ? 'تقرير التحسين' : 'Enhancement Report',
-            style: const TextStyle(color: Color(0xFF8B949E),
-              fontSize: 10, letterSpacing: 1.4, fontWeight: FontWeight.w600)),
+            style: TextStyle(
+              color: p.text, fontSize: 14, fontWeight: FontWeight.w800)),
         ]),
-        const SizedBox(height: 10),
-        // Verdict
+        const SizedBox(height: 12),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: vColor.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: vColor.withValues(alpha: 0.3))),
+            color: vColor.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: vColor.withValues(alpha: 0.35))),
           child: Text(verdict, textAlign: TextAlign.center,
-            style: TextStyle(color: vColor,
-              fontSize: 11, fontWeight: FontWeight.w600))),
-        const SizedBox(height: 10),
-        // Insight items
-        ...items.map((item) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(item['icon'] as IconData,
-              color: item['color'] as Color, size: 13),
-            const SizedBox(width: 7),
-            Expanded(child: Text(
-              s.ar ? item['ar'] as String : item['en'] as String,
-              style: TextStyle(
-                color: (item['color'] as Color).withValues(alpha: 0.85),
-                fontSize: 11, height: 1.4))),
-          ]))),
+            style: TextStyle(
+              color: vColor, fontSize: 12.5, fontWeight: FontWeight.w800))),
+        const SizedBox(height: 12),
+        for (var i = 0; i < items.length; i++)
+          EntranceFade(
+            index: i,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 9),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(
+                  width: 26, height: 26,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: items[i].color.withValues(alpha: 0.12)),
+                  child: Icon(items[i].icon, color: items[i].color, size: 15)),
+                const SizedBox(width: 10),
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(s.ar ? items[i].ar : items[i].en,
+                    style: TextStyle(
+                      color: p.textSub, fontSize: 12.5, height: 1.45)))),
+              ]))),
+      ]),
+    );
+  }
+
+  // ── A/B COMPARISON ─────────────────────────────────────────────────────────
+  Widget _abCard(S s) {
+    if (_file == null || _output == null) return const SizedBox.shrink();
+    final p = _p;
+    final progress = (_abPos / _abDur).clamp(0.0, 1.0);
+    final active = _abIsB ? p.gold : p.teal;
+
+    String fmt(double ms) {
+      final t = Duration(milliseconds: ms.toInt());
+      return '${t.inMinutes}:${(t.inSeconds % 60).toString().padLeft(2, '0')}';
+    }
+
+    Widget trackBtn({
+      required bool on, required Color col, required String title,
+      required String sub, required VoidCallback onTap,
+    }) => Expanded(child: PressScale(
+      scale: 0.96,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: on
+            ? LinearGradient(
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                colors: [col.withValues(alpha: 0.28), col.withValues(alpha: 0.10)])
+            : null,
+          color: on ? null : col.withValues(alpha: 0.04),
+          border: Border.all(
+            color: on ? col : col.withValues(alpha: 0.22), width: on ? 1.6 : 1),
+          boxShadow: on && _abPlaying
+            ? [BoxShadow(color: col.withValues(alpha: 0.32), blurRadius: 18)]
+            : const []),
+        child: Column(children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (c, a) =>
+              ScaleTransition(scale: a, child: c),
+            child: Icon(
+              on && _abPlaying
+                ? Icons.pause_circle_rounded
+                : Icons.play_circle_rounded,
+              key: ValueKey<bool>(on && _abPlaying),
+              color: col, size: 34)),
+          const SizedBox(height: 4),
+          Text(title, style: TextStyle(
+            color: on ? p.text : p.textSub,
+            fontSize: 13, fontWeight: FontWeight.w800)),
+          Text(sub, style: TextStyle(color: p.textDim, fontSize: 10.5)),
+        ]))));
+
+    return NurCard(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(16),
+      accent: active,
+      child: Column(children: [
+        Row(children: [
+          Icon(Icons.compare_arrows_rounded, color: active, size: 18),
+          const SizedBox(width: 8),
+          Text(s.ar ? 'مقارنة قبل / بعد' : 'Before / After',
+            style: TextStyle(
+              color: p.text, fontSize: 14, fontWeight: FontWeight.w800)),
+          const Spacer(),
+          NurChip(
+            label: _abIsB
+              ? (s.ar ? 'المُحسَّن' : 'Enhanced')
+              : (s.ar ? 'الأصلي' : 'Original'),
+            color: active, filled: _abPlaying, fontSize: 10.5),
+        ]),
+        const SizedBox(height: 14),
+        Row(children: [
+          trackBtn( // A — original
+            on: !_abIsB, col: p.teal,
+            title: s.ar ? 'الأصلي' : 'Original', sub: 'A',
+            onTap: () async {
+              if (_abIsB) { await _abToggleTrack(); } else { await _abTogglePlay(); }
+            }),
+          const SizedBox(width: 12),
+          trackBtn( // B — enhanced
+            on: _abIsB, col: p.gold,
+            title: s.ar ? 'المُحسَّن' : 'Enhanced', sub: 'B',
+            onTap: () async {
+              if (!_abIsB) { await _abToggleTrack(); } else { await _abTogglePlay(); }
+            }),
+        ]),
+        const SizedBox(height: 14),
+        NurWaveform(
+          animation: _waveCtrl,
+          bars: 44, height: 34,
+          progress: progress,
+          energy: _abPlaying ? 0.95 : 0.25,
+          a: active, b: Color.lerp(active, Colors.white, 0.3)),
+        const SizedBox(height: 6),
+        Row(children: [
+          Text(fmt(_abPos), style: TextStyle(
+            color: active, fontSize: 11, fontWeight: FontWeight.w700)),
+          const Spacer(),
+          Text(fmt(_abDur), style: TextStyle(color: p.textDim, fontSize: 11)),
+        ]),
+      ]),
+    );
+  }
+
+  // ── TOOLS ──────────────────────────────────────────────────────────────────
+  Widget _toolTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final p = _p;
+    return NurCard(
+      padding: const EdgeInsets.all(14),
+      radius: 22,
+      accent: color,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center, children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: [color.withValues(alpha: 0.30), color.withValues(alpha: 0.10)]),
+            border: Border.all(color: color.withValues(alpha: 0.45))),
+          child: Icon(icon, color: color, size: 21)),
+        const SizedBox(height: 12),
+        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: p.text, fontSize: 13.5, fontWeight: FontWeight.w800, height: 1.25)),
+        if (subtitle != null) ...[
+          const SizedBox(height: 3),
+          Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: p.textDim, fontSize: 11, height: 1.3)),
+        ],
       ]));
   }
 
-  Widget _bottomRow(S s) => Padding(
-    padding: const EdgeInsets.fromLTRB(16,10,16,4),
-    child: Material( // S30-P4
-      color: _bgSurface,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.push(context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const HistoryScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 220),
-          )),
-        splashColor: _tGold.withValues(alpha: 0.12),
-        highlightColor: _tGold.withValues(alpha: 0.06),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            border: Border.all(color: _tBorder)),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.history_rounded, color: _textB, size: 18),
-            const SizedBox(width: 8),
-            Text(s.history, style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 13)),
-          ]),
-        ),
-      ),
-    ),
-  );
-
-
-  // ── AUDIO EDITOR CARD ───────────────────────────────────────────────── S152
-  Widget _audioEditorCard(S s) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-    child: Material(
-      color: _bgCard,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.push(context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const AudioEditorScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 220),
-          )),
-        splashColor: _teal.withValues(alpha: 0.12),
-        highlightColor: _teal.withValues(alpha: 0.06),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-          decoration: BoxDecoration(
-            border: Border.all(color: _teal.withValues(alpha: 0.25))),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.equalizer_rounded, color: _teal, size: 18),
-            const SizedBox(width: 8),
-            // S241: was hardcoded Arabic — leaked محرر الصوت into English mode
-            Text(s.ar ? 'محرر الصوت' : 'Audio Editor',
-                style: const TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
-            const Spacer(),
-            const Icon(Icons.chevron_left_rounded,
-                color: Color(0xFF484F58), size: 18),
-          ]),
-        ),
-      ),
-    ),
-  );
-
-  // ── ENGINE CODE CARD — S234 (own screen, split out of Audio Editor tabs) ───
-  Widget _engineCodeCard(S s) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-    child: Material(
-      color: _bgCard,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.push(context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const EngineCodeScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 220),
-          )),
-        splashColor: _gold.withValues(alpha: 0.12),
-        highlightColor: _gold.withValues(alpha: 0.06),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-          decoration: BoxDecoration(
-            border: Border.all(color: _gold.withValues(alpha: 0.25))),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.code_rounded, color: _gold, size: 18),
-            const SizedBox(width: 8),
-            Text(LangProvider.strings(context).ar ? 'كود محركات المعالجة' : 'Engine Source Code',
-                style: const TextStyle(color: Color(0xFF8AACBA), fontSize: 13)),
-            const Spacer(),
-            const Icon(Icons.chevron_left_rounded,
-                color: Color(0xFF484F58), size: 18),
-          ]),
-        ),
-      ),
-    ),
-  );
-
-  // ── AI TOOLS CARD — S184 ──────────────────────────────────────────────────
-  Widget _aiToolsCard(S s) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-    child: Material(
-      color: const Color(0xFF1A1800),
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.push(context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const AiToolsScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 220))),
-        splashColor: const Color(0xFFE8A020).withValues(alpha: 0.14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: const Color(0xFFE8A020).withValues(alpha: 0.30))),
-          child: Row(children: [
-            const Icon(Icons.warning_amber_rounded,
-                color: Color(0xFFE8A020), size: 18),
-            const SizedBox(width: 8),
-            // S239: was hardcoded Arabic regardless of app language
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(s.ar ? 'أدوات الذكاء الاصطناعي' : 'AI Tools',
-                  style: const TextStyle(color: Color(0xFFE8A020),
-                      fontSize: 13, fontWeight: FontWeight.w600)),
-              Text(s.ar ? 'الخيار الأخير — استخدم بحذر ⚠️'
-                        : 'Last resort — use with care ⚠️',
-                  style: const TextStyle(color: Color(0xFF8B6020), fontSize: 10)),
-            ]),
-            const Spacer(),
-            const Icon(Icons.chevron_left_rounded,
-                color: Color(0xFF484F58), size: 18),
-          ]),
-        ),
-      ),
-    ),
-  );
-
-  // ── DONATION CARD ──────────────────────────────────────────────────────────
-  Widget _donationCard(S s) => Padding(
-    padding: const EdgeInsets.fromLTRB(16,4,16,4),
-    child: Material( // S30-P5
-      color: const Color(0xFF1A1500),
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          launchUrl(
-            Uri.parse('https://buymeacoffee.com/tilawa'),
-            mode: LaunchMode.externalApplication);
-        },
-        splashColor: _tGold.withValues(alpha: 0.18),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: _tGold.withValues(alpha: 0.3))),
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(Icons.volunteer_activism,
-            color: Color(0xFFD4AF37), size: 18),
-          const SizedBox(width: 8),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(s.donation, style: const TextStyle(
-              color: Color(0xFFD4AF37),
-              fontWeight: FontWeight.bold, fontSize: 13)),
-            Text(s.donationDesc, style: const TextStyle(
-              color: Color(0xFF8B949E), fontSize: 10)),
-          ]),
-        ]),
-      ),
-    ),
-  ),
-  );
-}
-
-// S30-P5-close
-// ── S30-R1: Score arc painter ──────────────────────────────────────────────────
-class _ScoreArcPainter extends CustomPainter {
-  final double progress;
-  final double score;
-  final Color  color;
-  final Color  trackColor; // S32-fix: passed from State, was incorrectly _tBorder
-  _ScoreArcPainter({
-    required this.progress,
-    required this.score,
-    required this.color,
-    required this.trackColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2 - 12.0;
-    const start = pi * 0.75;   // 135° — bottom-left
-    const sweep = pi * 1.5;    // 270° arc
-
-    // Background track
-    canvas.drawArc(
-      Rect.fromCircle(center: c, radius: r),
-      start, sweep, false,
-      Paint()
-        ..color = trackColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 12
-        ..strokeCap = StrokeCap.round,
-    );
-
-    // Score fill
-    if (progress > 0.01) {
-      canvas.drawArc(
-        Rect.fromCircle(center: c, radius: r),
-        start, sweep * (score / 100) * progress, false,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 12
-          ..strokeCap = StrokeCap.round,
-      );
-    }
+  Widget _toolsSection(S s) {
+    final p = _p;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      NurSectionHeader(s.ar ? 'الأدوات' : 'Tools', accent: p.teal),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(children: [
+          IntrinsicHeight(child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: _toolTile(
+              icon: Icons.history_rounded, title: s.history, color: p.info,
+              onTap: () => Navigator.push(context, _go(const HistoryScreen())))),
+            const SizedBox(width: 12),
+            Expanded(child: _toolTile(
+              icon: Icons.equalizer_rounded,
+              title: s.ar ? 'محرر الصوت' : 'Audio Editor', // S152
+              color: p.teal,
+              onTap: () => Navigator.push(
+                context, _go(const AudioEditorScreen())))),
+          ])),
+          const SizedBox(height: 12),
+          IntrinsicHeight(child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: _toolTile(
+              icon: Icons.code_rounded,
+              title: s.ar ? 'كود محركات المعالجة' : 'Engine Source Code', // S234
+              color: p.gold,
+              onTap: () => Navigator.push(
+                context, _go(const EngineCodeScreen())))),
+            const SizedBox(width: 12),
+            Expanded(child: _toolTile(
+              icon: Icons.warning_amber_rounded, // S184
+              title: s.ar ? 'أدوات الذكاء الاصطناعي' : 'AI Tools',
+              subtitle: s.ar ? 'الخيار الأخير — استخدم بحذر'
+                             : 'Last resort — use with care',
+              color: p.warn,
+              onTap: () => Navigator.push(
+                context, _go(const AiToolsScreen())))),
+          ])),
+          const SizedBox(height: 12),
+          NurCard(
+            padding: const EdgeInsets.all(16),
+            radius: 22,
+            accent: p.gold,
+            glow: true,
+            onTap: () {
+              HapticFeedback.lightImpact();
+              launchUrl(Uri.parse('https://buymeacoffee.com/tilawa'),
+                mode: LaunchMode.externalApplication);
+            },
+            child: Row(children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle, gradient: p.goldGradient),
+                child: Icon(Icons.volunteer_activism_rounded,
+                  color: p.onGold, size: 22)),
+              const SizedBox(width: 14),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(s.donation, style: TextStyle(
+                  color: p.text, fontSize: 14.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(s.donationDesc, style: TextStyle(
+                  color: p.textSub, fontSize: 11.5)),
+              ])),
+              Icon(Icons.arrow_forward_ios_rounded, size: 14, color: p.gold),
+            ])),
+        ])),
+    ]);
   }
 
-  @override
-  bool shouldRepaint(_ScoreArcPainter o) =>
-      o.progress != progress || o.color != color || o.trackColor != trackColor;
+  // ── INFO SHEET ─────────────────────────────────────────────────────────────
+  void _showInfoSheet(BuildContext ctx) {
+    final s = LangProvider.strings(ctx);
+    showNurSheet<void>(ctx, builder: (c, ctrl) {
+      final p = NurPalette.of(c);
+      Widget label(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, top: 6),
+        child: Text(t, style: TextStyle(
+          color: p.textSub, fontSize: 12, fontWeight: FontWeight.w800,
+          letterSpacing: 0.4)));
+
+      Widget linkTile({
+        required IconData icon, required Color color,
+        required String title, required String handle, required String url,
+      }) => NurCard(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(14),
+        radius: 20,
+        accent: color,
+        onTap: () => launchUrl(Uri.parse(url),
+          mode: LaunchMode.externalApplication),
+        child: Row(children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(
+              color: color, borderRadius: BorderRadius.circular(13)),
+            child: Icon(icon, color: Colors.white, size: 24)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: TextStyle(
+              color: p.text, fontWeight: FontWeight.w800, fontSize: 13.5)),
+            const SizedBox(height: 2),
+            Text(handle, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: p.textDim, fontSize: 11.5)),
+          ])),
+          Icon(Icons.open_in_new_rounded, color: p.textDim, size: 16),
+        ]));
+
+      return Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: ListView(
+          controller: ctrl,
+          padding: const EdgeInsets.fromLTRB(18, 6, 18, 40),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(children: [
+                Icon(Icons.info_outline_rounded, color: p.gold, size: 20),
+                const SizedBox(width: 8),
+                GradientText(s.ar ? 'عن التطبيق' : 'About',
+                  gradient: p.goldGradient,
+                  style: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w800)),
+              ])),
+            label(s.ar ? 'قناة يوتيوب' : 'YouTube Channel'),
+            linkTile(
+              icon: Icons.play_arrow_rounded, color: const Color(0xFFE52D27),
+              title: s.ar ? 'قناة يوتيوب' : 'YouTube Channel',
+              handle: '@carm-tv2hv', url: 'https://youtube.com/@carm-tv2hv'),
+            label(s.ar ? 'قناة تيليغرام' : 'Telegram Channel'),
+            linkTile(
+              icon: Icons.send_rounded, color: const Color(0xFF2AABEE),
+              title: s.ar ? 'قناة التيليغرام' : 'Telegram Channel',
+              handle: '@TilawaEhnacher', url: 'https://t.me/TilawaEhnacher'),
+            label(s.ar ? 'الموقع الإلكتروني' : 'Website'),
+            linkTile(
+              icon: Icons.language_rounded, color: p.gold,
+              title: s.ar ? 'الموقع الإلكتروني الرسمي' : 'Official Website',
+              handle: 'hammer24678-star.github.io/tilawa-enhancer-',
+              url: 'https://hammer24678-star.github.io/tilawa-enhancer-/'),
+            label(s.ar ? 'المرجع الصوتي' : 'Reference Standard'),
+            NurCard(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(16),
+              radius: 20,
+              accent: p.ok,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  s.ar ? 'الشيخ ياسر الدوسري — 1425هـ'
+                       : 'Sheikh Yasser Al-Dossari — 1425H',
+                  style: TextStyle(
+                    color: p.ok, fontWeight: FontWeight.w800, fontSize: 13.5)),
+                const SizedBox(height: 8),
+                Text('LUFS=-6.29  ·  RMS=-10.01  ·  Crest=10.25  ·  LRA=4.19',
+                  style: TextStyle(color: p.textSub, fontSize: 12, height: 1.7)),
+                const SizedBox(height: 6),
+                Text(
+                  s.ar ? 'ثلاثة ملفات مرجعية: الأعراف · الفتح · فاطر'
+                       : 'Three reference files: Al-Araf · Al-Fath · Fatir',
+                  style: TextStyle(color: p.textDim, fontSize: 11)),
+              ])),
+            label(s.ar ? 'مقارنة المحركات' : 'Engine Comparison'),
+            NurCard(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(16),
+              radius: 20,
+              accent: p.gold,
+              child: Column(children: [
+                for (final e in _engines)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Column(children: [
+                      Row(children: [
+                        Text(e.id, style: TextStyle(
+                          color: _colorOf(e.id),
+                          fontWeight: FontWeight.w800, fontSize: 12.5)),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(s.ar ? e.nameAr : e.nameEn,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: p.textSub, fontSize: 11.5))),
+                        Text('≥${e.score.toInt()}', style: TextStyle(
+                          color: _colorOf(e.id),
+                          fontWeight: FontWeight.w800, fontSize: 12.5)),
+                      ]),
+                      const SizedBox(height: 6),
+                      TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0, end: e.score / 100),
+                        duration: const Duration(milliseconds: 900),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, v, __) => NurProgressBar(
+                          value: v, height: 7,
+                          a: _colorOf(e.id).withValues(alpha: 0.55),
+                          b: _colorOf(e.id))),
+                    ])),
+              ])),
+            label(s.ar ? 'من المطوِّر' : 'Developer Notes'),
+            NurCard(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(18),
+              radius: 22,
+              accent: p.gold,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                GradientText('﷽',
+                  gradient: p.goldGradient,
+                  style: const TextStyle(fontSize: 26, height: 1.4)),
+                const SizedBox(height: 10),
+                Text(
+                  s.ar
+                    ? 'هذا التطبيق وُلد من حبٍّ خالص لكتاب الله.\n\n'
+                      'أكثر من ٦٠ جلسة، مئات الإصلاحات، ومحرك واحد لا يهدأ: '
+                      'أن تُسمع التلاوة كما ينبغي لها أن تُسمع.\n\n'
+                      'لا فريق، لا ميزانية — فقط هاتف، وطرفية، ومحبة للقرآن الكريم. '
+                      'كل محرك بُني كأنه عبادة، وكل معامل ضُبط كأنه دعاء.\n\n'
+                      'الهدف لم يتغيّر: أن يُعاد للصوت القرآني جماله الأصيل،'
+                      ' حتى وإن جاء من تسجيل قديم أو ملف تالف.'
+                    : 'This app was born from pure love for the Book of Allah.\n\n'
+                      'Over 60 sessions, hundreds of fixes, one relentless goal: '
+                      'to make Quranic recitation sound as it deserves to be heard.\n\n'
+                      'No team, no budget — just a phone, Termux, and a deep love for the Quran. '
+                      'Every engine was built like an act of worship, every parameter tuned like a prayer.\n\n'
+                      'The mission never changed: restore the original beauty of the Quranic voice, '
+                      'even from an old recording or a damaged file.',
+                  style: TextStyle(color: p.textSub, fontSize: 12.5, height: 1.8)),
+                const SizedBox(height: 14),
+                NurChip(
+                  label: s.ar
+                    ? 'المرجع: الشيخ ياسر الدوسري · ١٤٢٥هـ · LUFS=-6.29'
+                    : 'Reference: Yasser Al-Dossari · 1425H · LUFS=-6.29',
+                  color: p.gold, icon: Icons.gps_fixed_rounded, fontSize: 10.5),
+              ])),
+            NurCard(
+              padding: const EdgeInsets.all(14),
+              radius: 20,
+              child: Row(children: [
+                ClipOval(child: Image.asset('assets/images/logo.png',
+                  width: 46, height: 46, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 46, height: 46, color: p.surfaceHi,
+                    child: Icon(Icons.music_note, color: p.gold, size: 22)))),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  GradientText('محسِّن التلاوة',
+                    gradient: p.goldGradient,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 15)),
+                  Text(s.version, style: TextStyle(
+                    color: p.textDim, fontSize: 11.5)),
+                ])),
+              ])),
+          ]));
+    });
+  }
 }
 
-// ── Engine data class (S21: rich model — score, features, what's-new) ───────────
+/// One line of the enhancement report.
+class _Insight {
+  final IconData icon;
+  final Color color;
+  final String ar, en;
+  const _Insight(this.icon, this.color, this.ar, this.en);
+}
+
+// ── Engine data class (S21: rich model — score, features, what's-new) ─────────
 class _EngineData {
   final String id, nameAr, nameEn, badge, bc;
   final double score;
@@ -3956,280 +2694,4 @@ class _EngineData {
   const _EngineData(this.id, this.nameAr, this.nameEn, this.score,
       this.badge, this.bc, this.features, this.whatsNewAr, this.whatsNewEn,
       {this.imgAsset, this.localOnly = false});
-}
-
-// ── Sacred Cosmos painters ────────────────────────────────────────────────────
-
-class _StarParticle {
-  final double x, y, size, phase, speed, twinkle;
-  _StarParticle(Random r)
-      : x = r.nextDouble(), y = r.nextDouble(),
-        size = 1.4 + r.nextDouble() * 2.8,
-        phase = r.nextDouble() * 6.2832,
-        speed = 0.15 + r.nextDouble() * 0.6,
-        twinkle = 0.4 + r.nextDouble() * 1.6;
-}
-
-class _StarsPainter extends CustomPainter {
-  final double t;
-  final List<_StarParticle> stars;
-  final double dim;  // S190: 1.0 normal, lower while processing
-  _StarsPainter(this.t, this.stars, {this.dim = 1.0});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.0);
-    for (int idx = 0; idx < stars.length; idx++) { // S142: O(n) not O(n²)
-      final s = stars[idx];
-      final a = t * 6.2832 * s.speed + s.phase;
-      final x = s.x * size.width  + sin(a)        * size.width  * 0.016;
-      final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
-      final alpha = sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5;
-      final op = 0.22 + 0.78 * alpha;
-      final sz = s.size * (0.55 + 0.45 * alpha);
-      final sc = idx % 5 == 0 ? _teal
-          : idx % 3 == 0 ? const Color(0xFFF0E8C8)
-          : _gold;
-      // Soft bloom
-      p.maskFilter = MaskFilter.blur(BlurStyle.normal, sz * 2.5);
-      p.color = sc.withValues(alpha: op * 0.25 * dim);
-      canvas.drawCircle(Offset(x, y), sz * 2.0, p);
-      // Sharp core
-      p.maskFilter = null;
-      p.color = sc.withValues(alpha: op * dim);
-      canvas.drawCircle(Offset(x, y), sz, p);
-    }
-  }
-  @override bool shouldRepaint(_StarsPainter o) => o.t != t || o.dim != dim;
-}
-
-// S45-MANDALA-CLASS — 8-petal spinning mandala for processing screen
-class _MandalaPainter extends CustomPainter {
-  final double t; // 0..1 geoRotCtrl value
-  const _MandalaPainter(this.t);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2, cy = size.height / 2;
-    final r  = size.width / 2 - 4;
-    final angle = t * pi * 2;
-    final p = Paint()..style = PaintingStyle.stroke;
-    // 8 overlapping petal circles
-    p.color = const Color(0xFFC8A048).withValues(alpha: 0.50);
-    p.strokeWidth = 0.9;
-    for (int i = 0; i < 8; i++) {
-      final a = (i / 8) * pi * 2 + angle;
-      canvas.drawCircle(
-        Offset(cx + r * 0.52 * cos(a), cy + r * 0.52 * sin(a)),
-        r * 0.40, p);
-    }
-    // Outer gold ring
-    p.color = const Color(0xFFD4AF37).withValues(alpha: 0.38);
-    p.strokeWidth = 1.0;
-    canvas.drawCircle(Offset(cx, cy), r, p);
-    // Counter-rotating hexagon
-    p.color = const Color(0xFF1DB898).withValues(alpha: 0.32);
-    p.strokeWidth = 0.8;
-    final hex = Path();
-    for (int i = 0; i < 6; i++) {
-      final a = (i / 6) * pi * 2 - angle * 0.5;
-      final x = cx + r * 0.50 * cos(a);
-      final y = cy + r * 0.50 * sin(a);
-      if (i == 0) {
-        hex.moveTo(x, y);
-      } else {
-        hex.lineTo(x, y);
-      }
-    }
-    hex.close();
-    canvas.drawPath(hex, p);
-    // 8-point inner star
-    p.color = const Color(0xFFD4AF37).withValues(alpha: 0.45);
-    p.strokeWidth = 1.0;
-    final star = Path();
-    for (int i = 0; i < 16; i++) {
-      final a = (i / 16) * pi * 2 + angle * 0.25;
-      final rr = i.isEven ? r * 0.28 : r * 0.14;
-      final x = cx + rr * cos(a), y = cy + rr * sin(a);
-      if (i == 0) {
-        star.moveTo(x, y);
-      } else {
-        star.lineTo(x, y);
-      }
-    }
-    star.close();
-    canvas.drawPath(star, p);
-    canvas.drawCircle(Offset(cx, cy), 3,
-      Paint()..color = const Color(0xFFD4AF37).withValues(alpha: 0.72)
-             ..style = PaintingStyle.fill);
-  }
-  @override bool shouldRepaint(_MandalaPainter o) => o.t != t;
-}
-
-// S45-KHATAM-CLASS — two rotated squares star for result screen
-class _KhatamPainter extends CustomPainter {
-  final double t;     // glow animation 0..1
-  final Color color;
-  const _KhatamPainter({required this.t, required this.color});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2, cy = size.height / 2;
-    final r  = size.width / 2 - 10;
-    final p  = Paint()..style = PaintingStyle.stroke;
-    // Square 1
-    p.color = color.withValues(alpha: 0.12 + 0.10 * t);
-    p.strokeWidth = 1.0;
-    final sq1 = Path();
-    for (int i = 0; i < 4; i++) {
-      final a = (i / 4) * pi * 2 - pi / 4;
-      if (i == 0) {
-        sq1.moveTo(cx + r * cos(a), cy + r * sin(a));
-      } else {
-        sq1.lineTo(cx + r * cos(a), cy + r * sin(a));
-      }
-    }
-    sq1.close();
-    canvas.drawPath(sq1, p);
-    // Square 2 (rotated 45°)
-    final sq2 = Path();
-    for (int i = 0; i < 4; i++) {
-      final a = (i / 4) * pi * 2 + pi / 4;
-      if (i == 0) {
-        sq2.moveTo(cx + r * cos(a), cy + r * sin(a));
-      } else {
-        sq2.lineTo(cx + r * cos(a), cy + r * sin(a));
-      }
-    }
-    sq2.close();
-    canvas.drawPath(sq2, p);
-    // Pulsing outer glow ring
-    p.color = color.withValues(alpha: 0.07 + 0.07 * t);
-    p.strokeWidth = 0.7;
-    canvas.drawCircle(Offset(cx, cy), r + 8, p);
-    // Inner circle
-    p.color = color.withValues(alpha: 0.08 + 0.06 * t);
-    p.strokeWidth = 0.5;
-    canvas.drawCircle(Offset(cx, cy), r * 0.40, p);
-  }
-  @override bool shouldRepaint(_KhatamPainter o) =>
-      o.t != t || o.color != color;
-}
-
-// S40-INCENSE — rising gold particle dots from HTML design
-class _IncensePainter extends CustomPainter {
-  // S58-PARTICLES — 18 rising dots, engine-tinted, matches JSX Particles()
-  final double t;
-  final Color engCol;
-  final double dim;  // S190: 1.0 normal, lower while processing/tint-off
-  _IncensePainter(this.t, this.engCol, {this.dim = 1.0});
-  static const _xs = [
-    0.08, 0.15, 0.22, 0.30, 0.38, 0.45,
-    0.52, 0.58, 0.65, 0.72, 0.80, 0.88,
-    0.18, 0.35, 0.55, 0.68, 0.78, 0.42,
-  ];
-  static const _teal = Color(0xFF1DB898);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()..style = PaintingStyle.fill;
-    for (int i = 0; i < _xs.length; i++) {
-      // stagger each particle with a fixed offset so they cover full height
-      final phase = ((t + i / _xs.length) % 1.0);
-      final drift = sin(phase * 6.2832 * 1.8 + i * 1.3) * 22;
-      final dx = _xs[i] * size.width + drift;
-      final dy = size.height * (1.0 - phase);
-      // fade in at bottom, fade out near top (matches JSX: 10%→50%→100%)
-      final op = phase < 0.10 ? phase / 0.10
-          : phase > 0.72 ? (1.0 - phase) / 0.28 : 0.55;
-      final isTeal = i % 5 == 3;
-      final baseCol = isTeal ? _teal : engCol;
-      p.color = baseCol.withValues(alpha: op * 0.52 * dim);
-      final r = (i % 3 == 0) ? 2.0 : 1.4;
-      canvas.drawCircle(Offset(dx, dy), r, p);
-    }
-  }
-  @override bool shouldRepaint(_IncensePainter o) =>
-      o.t != t || o.engCol != engCol || o.dim != dim;
-}
-
-class _GeoPainter extends CustomPainter {
-  final double dim;  // S190: 1.0 normal, lower while processing
-  const _GeoPainter({this.dim = 1.0});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = const Color(0xFFC8A048).withValues(alpha: 0.07 * dim)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    const cell = 120.0;
-    final cols = (size.width / cell).ceil() + 2;
-    final rows = (size.height / (cell * 0.866)).ceil() + 2;
-    for (int row = 0; row < rows; row++) {
-      for (int col = 0; col < cols; col++) {
-        final cx = col * cell + (row.isOdd ? cell * 0.5 : 0) - cell * 0.5;
-        final cy = row * cell * 0.866 - cell * 0.5;
-        _star8(canvas, Offset(cx, cy), cell * 0.27, p);
-      }
-    }
-  }
-  @override
-  bool shouldRepaint(_GeoPainter o) => o.dim != dim;
-  void _star8(Canvas canvas, Offset c, double r, Paint p) {
-    final path = Path();
-    for (int i = 0; i < 8; i++) {
-      final oa = i * pi / 4 - pi / 2;
-      final ia = oa + pi / 8;
-      final ox = c.dx + r * cos(oa); final oy = c.dy + r * sin(oa);
-      final ix = c.dx + r * 0.38 * cos(ia); final iy = c.dy + r * 0.38 * sin(ia);
-      if (i == 0) {
-        path.moveTo(ox, oy);
-      } else {
-        path.lineTo(ox, oy);
-      }
-      path.lineTo(ix, iy);
-    }
-    path.close();
-    canvas.drawPath(path, p);
-  }
-}
-
-// ── Score burst painter ───────────────────────────────────────────────────────
-class _ScoreBurstPainter extends CustomPainter {
-  final double progress;
-  final Color color;
-  const _ScoreBurstPainter({required this.progress, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (progress < 0.3 || progress > 0.95) return;
-    final t = ((progress - 0.3) / 0.65).clamp(0.0, 1.0);
-    final opacity = (1.0 - t) * 0.7;
-    final paint = Paint()
-      ..color = color.withValues(alpha: opacity)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5);
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    const count = 12;
-    for (int i = 0; i < count; i++) {
-      final angle = i * 6.2832 / count;
-      final r1 = 46 + 6 * t;
-      final r2 = 46 + 22 * t;
-      canvas.drawLine(
-        Offset(cx + r1 * cos(angle), cy + r1 * sin(angle)),
-        Offset(cx + r2 * cos(angle), cy + r2 * sin(angle)),
-        paint);
-    }
-    // Dot particles
-    paint.style = PaintingStyle.fill;
-    paint.strokeWidth = 0;
-    for (int i = 0; i < count; i++) {
-      final angle = i * 6.2832 / count + pi / count;
-      final r = 42 + 28 * t;
-      canvas.drawCircle(
-        Offset(cx + r * cos(angle), cy + r * sin(angle)),
-        1.8 * (1 - t), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ScoreBurstPainter o) => o.progress != progress;
 }

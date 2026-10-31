@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'state/lang_provider.dart';
+import 'design/nur.dart';
 import 'services/local_engine_service.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/home_screen.dart';
@@ -43,40 +44,9 @@ void main() async {
     langAr: langAr, seenWelcome: seenWelcome, isDark: isDark));
 }
 
-// ── S31-F4: Theme helpers & ThemeProvider ─────────────────────────────────────
-ThemeData _buildDarkTheme() => ThemeData(
-  colorScheme: const ColorScheme.dark(
-    primary:    Color(0xFFD4AF37),
-    surface:    Color(0xFF0F2420), // S40-MAIN
-    onSurface:  Color(0xFFE2CFA0),
-    secondary:  Color(0xFF1DB898),
-  ),
-  useMaterial3: true,
-  fontFamily: 'Tajawal',  // S241: custom typeface (bundled, offline)
-  scaffoldBackgroundColor: const Color(0xFF020D0C),
-  appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFF020D0C),
-    foregroundColor: Color(0xFFD4AF37),
-    elevation: 0,
-  ),
-);
-
-ThemeData _buildLightTheme() => ThemeData(
-  colorScheme: const ColorScheme.light(
-    primary: Color(0xFFB8941F),   // deeper gold for light bg
-    surface: Color(0xFFF3EED9),   // warm parchment
-    onSurface: Color(0xFF1A1400),
-  ),
-  useMaterial3: true,
-  fontFamily: 'Tajawal',  // S241: custom typeface (bundled, offline)
-  scaffoldBackgroundColor: const Color(0xFFFAF7EE),
-  cardColor: const Color(0xFFF3EED9),
-  appBarTheme: const AppBarTheme(
-    backgroundColor: Color(0xFFFAF7EE),
-    foregroundColor: Color(0xFFB8941F),
-    elevation: 0,
-  ),
-);
+// ── Theme ─────────────────────────────────────────────────────────────────────
+// The app-wide ThemeData (palette, typography, transitions, component themes)
+// lives in design/nur_theme.dart — see buildNurTheme().
 
 // InheritedWidget so any screen can read and toggle the theme
 class ThemeProvider extends InheritedNotifier<ValueNotifier<bool>> {
@@ -150,12 +120,29 @@ class _TilawaAppState extends State<TilawaApp> {
               valueListenable: _themeNotifier,
               builder: (context, isDark, __) {
                 final s = S(ar: _langNotifier.value);
+                final p = isDark ? NurPalette.night : NurPalette.day;
                 return MaterialApp(
                   title: s.appName,
                   debugShowCheckedModeBanner: false,
                   themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
-                  darkTheme: _buildDarkTheme(),
-                  theme: _buildLightTheme(),
+                  darkTheme: buildNurTheme(dark: true),
+                  theme: buildNurTheme(dark: false),
+                  themeAnimationDuration: const Duration(milliseconds: 520),
+                  themeAnimationCurve: Curves.easeInOutCubic,
+                  scrollBehavior: const NurScrollBehavior(),
+                  builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+                    value: SystemUiOverlayStyle(
+                      statusBarColor: Colors.transparent,
+                      statusBarIconBrightness:
+                          isDark ? Brightness.light : Brightness.dark,
+                      statusBarBrightness:
+                          isDark ? Brightness.dark : Brightness.light,
+                      systemNavigationBarColor: p.bgDeep,
+                      systemNavigationBarIconBrightness:
+                          isDark ? Brightness.light : Brightness.dark,
+                    ),
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                   home: widget.seenWelcome
                       ? const HomeScreen()
                       : const WelcomeScreen(),
