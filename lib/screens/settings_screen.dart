@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/local_engine_service.dart'; // S237
 import '../state/lang_provider.dart';
 import '../main.dart' show ThemeProvider; // S31-F4b
+import '../design/nur.dart';
 import 'setup_screen.dart'; // S237
 import 'welcome_screen.dart'; // S31-F1
 
@@ -77,237 +78,170 @@ class SettingsScreen extends StatelessWidget {
       'C'),
   ];
 
-  // ── S31-F2c / S32: theme color helpers ────────────────────────────────────
-  bool  _isDark(BuildContext ctx)  => ThemeProvider.isDark(ctx);
-  Color _cBg(BuildContext ctx)     => _isDark(ctx) ? const Color(0xFF020D0C) : const Color(0xFFFAF7EE); // S46-SET
-  Color _cCard(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color _cBorder(BuildContext ctx) => _isDark(ctx) ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
-  Color _cText(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-  Color _cSub(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
-  Color _cDim(BuildContext ctx)    => _isDark(ctx) ? const Color(0xFF484F58) : const Color(0xFF8B7B5A);
-  Color _cGold(BuildContext ctx)   => _isDark(ctx) ? const Color(0xFFD4AF37) : const Color(0xFFB8941F);
-
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     final isAr = s.ar;
+    final p = NurPalette.of(context);
 
-    final cBg     = _cBg(context);
-    final cSub    = _cSub(context);
-    final cDim    = _cDim(context);
-    final cGold   = _cGold(context);
-    return Scaffold(
-      backgroundColor: cBg,
-      appBar: AppBar(
-        title: ShaderMask(
-            shaderCallback: (b) => const LinearGradient(
-              colors: [Color(0xFFD4AF37), Color(0xFFF0CF60)]).createShader(b),
-            child: Text(s.settings, style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.bold))),
-        backgroundColor: cBg,
-        iconTheme: IconThemeData(color: cGold),
-        elevation: 0,
-        actions: [
-          // Language toggle — uses InheritedWidget, instant rebuild
-          GestureDetector(
-            onTap: () => LangProvider.toggle(context),
-            child: Container(
-              margin: const EdgeInsets.only(right: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _isDark(context) ? const Color(0xFF1A1500) : const Color(0xFFF3EED9),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: cGold, width: 0.8)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(isAr ? 'EN' : 'ع',
-                  style: TextStyle(
-                    color: cGold,
-                    fontWeight: FontWeight.bold, fontSize: 13)),
-                const SizedBox(width: 4),
-                Icon(Icons.language,
-                  color: cGold, size: 14),
-              ]))),
-        ]),
+    return NurScaffold(
+      title: s.settings,
+      icon: Icons.tune_rounded,
+      actions: [
+        NurIconButton(
+          icon: Icons.language_rounded,
+          tooltip: isAr ? 'English' : 'العربية',
+          onTap: () => LangProvider.toggle(context)),
+      ],
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
         children: [
-          // ── Language toggle ────────────────────────────────────────────────
-          _section(context, s.language),
-          Container(
-            margin: const EdgeInsets.only(bottom: 18), // S61-LANG-PILL
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0A1A10),
-                         Color(0xFF061810)]),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: const Color(0xFFD4AF37).withValues(alpha: 0.3))),
-            child: Row(children: [
-              _langPill(context, s.arabic,  active: isAr,
-                onTap: () { if (!isAr) LangProvider.toggle(context); }),
-              _langPill(context, s.english, active: !isAr,
-                onTap: () { if (isAr) LangProvider.toggle(context); }),
+          // ── Language ───────────────────────────────────────────────────────
+          EntranceFade(index: 0, child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              NurSectionHeader(s.language,
+                padding: const EdgeInsets.fromLTRB(4, 12, 4, 10)),
+              NurSegmented(
+                items: [
+                  NurSegment(s.arabic, Icons.translate_rounded),
+                  NurSegment(s.english, Icons.language_rounded),
+                ],
+                index: isAr ? 0 : 1,
+                onChanged: (i) {
+                  final wantAr = i == 0;
+                  if (wantAr != isAr) LangProvider.toggle(context);
+                }),
             ])),
-
-          // ── S31-F4b: Dark / Light mode toggle ─────────────────────────────
-          _themeTile(context, s),
-          const SizedBox(height: 4),
-          // ── S31-F1: Show Tutorial button ───────────────────────────────────
-          _tutorialTile(context, s),
-          const SizedBox(height: 4),
-          // ── S237: Local Engine health + cache management ──────────────────
-          _section(context, isAr ? 'المحرك المحلي' : 'LOCAL ENGINE'),
-          const _LocalEngineHealthCard(),
           const SizedBox(height: 14),
+
+          // ── Dark / Light ───────────────────────────────────────────────────
+          EntranceFade(index: 1, child: _themeTile(context, s)),
+          const SizedBox(height: 12),
+          // ── Show Tutorial ──────────────────────────────────────────────────
+          EntranceFade(index: 2, child: _tutorialTile(context, s)),
+
+          // ── Local engine health ────────────────────────────────────────────
+          EntranceFade(index: 3, child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              NurSectionHeader(isAr ? 'المحرك المحلي' : 'LOCAL ENGINE',
+                accent: p.teal,
+                padding: const EdgeInsets.fromLTRB(4, 24, 4, 10)),
+              const _LocalEngineHealthCard(),
+            ])),
+          const SizedBox(height: 14),
+
           // ── Target info ────────────────────────────────────────────────────
-          Container(
-            margin: const EdgeInsets.only(bottom: 20),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 14, vertical: 10),
-            decoration: BoxDecoration( // S61-TARGET
-              gradient: const LinearGradient(
-                colors: [Color(0xFF061810), Color(0xFF0A2015)]),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFF1DB898), width: 0.8),
-              boxShadow: const [BoxShadow(
-                color: Color(0xFF1DB898),
-                blurRadius: 12, spreadRadius: 0,
-                offset: Offset(0, 0))]),
+          EntranceFade(index: 4, child: NurCard(
+            radius: 16,
+            accent: p.teal,
+            glow: true,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Text(s.target,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF1DB898),
-                fontSize: 11, letterSpacing: 0.5))),
+              style: TextStyle(
+                color: p.teal, fontSize: 12, height: 1.4, letterSpacing: 0.4)))),
 
           // ── Engine History ─────────────────────────────────────────────────
-          _section(context, s.engineHistory),
-          ..._history.map((e) => _eCard(context, e, isAr)),
+          NurSectionHeader(s.engineHistory,
+            padding: const EdgeInsets.fromLTRB(4, 26, 4, 10)),
+          ..._history.asMap().entries.map((en) => EntranceFade(
+            index: en.key < 6 ? en.key : 6,
+            child: _eCard(context, en.value, isAr))),
 
           // ── About ──────────────────────────────────────────────────────────
-          const SizedBox(height: 8),
-          _section(context, s.about),
-          Container(
-            padding: const EdgeInsets.all(18), // S61-ABOUT-CARD
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF0A1A10), Color(0xFF061015)]),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: const Color(0xFFD4AF37).withValues(alpha: 0.25)),
-              boxShadow: [BoxShadow(
-                color: const Color(0xFFD4AF37).withValues(alpha: 0.08),
-                blurRadius: 20)]),
-            child: Column(children: [
-              // Small logo in About
-              Container(
-                width: 60, height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(
-                    color: const Color(0xFFD4AF37).withValues(alpha: 0.2),
-                    blurRadius: 12)]),
-                child: ClipOval(child: Image.asset(
-                  'assets/images/logo.png', fit: BoxFit.cover,
-                  errorBuilder: (_,__,___) => Container(
-                    color: const Color(0xFF1A1500),
-                    child: const Icon(Icons.music_note,
-                      color: Color(0xFFD4AF37), size: 30))))),
-              const SizedBox(height: 12),
-              Text('محسِّن التلاوة', style: TextStyle(
-                color: cGold,
-                fontWeight: FontWeight.bold, fontSize: 18)),
-              const SizedBox(height: 4),
-              Text(s.version,
-                style: TextStyle(
-                  color: cSub, fontSize: 12)),
-              const SizedBox(height: 2),
-              Text('Yasser Al-Dossari · 1425H',
-                style: TextStyle(
-                  color: cDim, fontSize: 11)),
-            ])),
+          NurSectionHeader(s.about,
+            padding: const EdgeInsets.fromLTRB(4, 22, 4, 10)),
+          NurCard(
+            radius: 22,
+            accent: p.gold,
+            glow: true,
+            padding: const EdgeInsets.all(20),
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(children: [
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: p.gold.withValues(alpha: 0.5)),
+                    boxShadow: [BoxShadow(
+                      color: p.gold.withValues(alpha: 0.28), blurRadius: 18)]),
+                  child: ClipOval(child: Image.asset(
+                    'assets/images/logo.png', fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: p.surfaceHi,
+                      child: Icon(Icons.music_note_rounded,
+                        color: p.gold, size: 30))))),
+                const SizedBox(height: 14),
+                GradientText('محسِّن التلاوة',
+                  gradient: p.goldGradient,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 20)),
+                const SizedBox(height: 4),
+                Text(s.version,
+                  style: TextStyle(color: p.textSub, fontSize: 12)),
+                const SizedBox(height: 2),
+                Text('Yasser Al-Dossari · 1425H',
+                  style: TextStyle(color: p.textDim, fontSize: 11)),
+              ]))),
+
           // S28: Privacy policy link
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           GestureDetector(
             onTap: () => launchUrl(
               Uri.parse('https://profound-cactus-00498c.netlify.app/privacy_policy.html'),
               mode: LaunchMode.externalApplication),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const Icon(Icons.privacy_tip_outlined,
-                  color: Color(0xFF484F58), size: 14),
+                Icon(Icons.privacy_tip_outlined, color: p.textDim, size: 14),
                 const SizedBox(width: 6),
                 Text(s.privacyPolicy,
-                  style: const TextStyle(
-                    color: Color(0xFF484F58),
+                  style: TextStyle(
+                    color: p.textDim,
                     fontSize: 12,
                     decoration: TextDecoration.underline,
-                    decorationColor: Color(0xFF484F58))),
+                    decorationColor: p.textDim)),
               ]))),
-          const SizedBox(height: 40),
         ],
       ),
     );
   }
 
-  Widget _section(BuildContext ctx, String title) => Padding(
-    padding: const EdgeInsets.only(bottom: 8, top: 4),
-    child: Text(title, style: TextStyle(
-      color: _cSub(ctx), fontSize: 11, letterSpacing: 1.5)));
-
   // S31-F4b
   Widget _themeTile(BuildContext context, S s) {
     return ValueListenableBuilder<bool>(
       valueListenable: ThemeProvider.of(context),
-      builder: (ctx, dark, _) => Container(
-        margin: const EdgeInsets.only(bottom: 18),
-        decoration: BoxDecoration(
-          color: _cCard(ctx),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _cBorder(ctx))),
-        child: SwitchListTile(
-          secondary: Icon(
-            dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-            color: const Color(0xFFD4AF37)),
-          title: Text(
-            s.ar ? 'الوضع الداكن' : 'Dark Mode',
-            style: TextStyle(color: _cText(ctx), fontSize: 14)),
-          subtitle: Text(
-            dark
+      builder: (ctx, dark, _) {
+        final p = NurPalette.of(ctx);
+        return NurCard(
+          radius: 18,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          onTap: () => ThemeProvider.toggle(ctx),
+          child: NurOptionRow(
+            icon: dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+            accent: p.gold,
+            active: dark,
+            title: s.ar ? 'الوضع الداكن' : 'Dark Mode',
+            subtitle: dark
               ? (s.ar ? 'الوضع الحالي' : 'Currently active')
               : (s.ar ? 'الوضع الفاتح نشط' : 'Light mode active'),
-            style: TextStyle(color: _cSub(ctx), fontSize: 11)),
-          value: dark,
-          activeThumbColor: const Color(0xFFD4AF37),
-          onChanged: (_) => ThemeProvider.toggle(ctx),
-        ),
-      ),
-    );
+            trailing: NurSwitch(
+              value: dark,
+              accent: p.gold,
+              onChanged: (_) => ThemeProvider.toggle(ctx))));
+      });
   }
 
   // S31-F1-btn
-  Widget _tutorialTile(BuildContext context, S s) => Container(
-    margin: const EdgeInsets.only(bottom: 18),
-    decoration: BoxDecoration(
-      color: _cCard(context),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: _cBorder(context))),
-    child: ListTile(
-      leading: const Icon(Icons.play_lesson_rounded,
-        color: Color(0xFFD4AF37)),
-      title: Text(
-        s.ar ? 'عرض شاشة الترحيب' : 'Show Welcome Screen',
-        style: TextStyle(color: _cText(context), fontSize: 14)),
-      subtitle: Text(
-        s.ar ? 'عرض دليل البداية مرة أخرى' : 'Re-show the onboarding guide',
-        style: TextStyle(color: _cSub(context), fontSize: 11)),
-      trailing: const Icon(Icons.arrow_forward_ios_rounded,
-        size: 14, color: Color(0xFF484F58)),
+  Widget _tutorialTile(BuildContext context, S s) {
+    final p = NurPalette.of(context);
+    return NurCard(
+      radius: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       onTap: () async {
         final prefs = await SharedPreferences.getInstance();
         // S251: this cleared seen_welcome_v3, but main.dart has read
@@ -323,99 +257,64 @@ class SettingsScreen extends StatelessWidget {
             transitionDuration: const Duration(milliseconds: 400),
           ));
       },
-    ));
-
-  Widget _langPill(BuildContext context, String label,
-      {required bool active, required VoidCallback onTap}) =>
-    Expanded(child: GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 280),
-        curve: Curves.easeOutBack,
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFD4AF37) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10)),
-        child: Text(label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: active ? const Color(0xFF0A0C10) : _cSub(context),
-            fontWeight: active ? FontWeight.bold : FontWeight.normal,
-            fontSize: 14)))));
+      child: NurOptionRow(
+        icon: Icons.play_lesson_rounded,
+        accent: p.teal,
+        title: s.ar ? 'عرض شاشة الترحيب' : 'Show Welcome Screen',
+        subtitle: s.ar ? 'عرض دليل البداية مرة أخرى' : 'Re-show the onboarding guide',
+        trailing: Icon(
+          s.ar ? Icons.arrow_back_ios_new_rounded : Icons.arrow_forward_ios_rounded,
+          size: 14, color: p.textDim)));
+  }
 
   Widget _eCard(BuildContext ctx, _EHist e, bool isAr) {
-    Color bc() => e.bc == 'gold' ? const Color(0xFFD4AF37)
-        : e.bc == 'green' ? const Color(0xFF3FB950)
-        : e.bc == 'blue'  ? const Color(0xFF58A6FF)
-        : const Color(0xFF484F58);
-    Color bg() => e.bc == 'gold' ? const Color(0xFF1A1200)
-        : e.bc == 'green' ? const Color(0xFF0D2015)
-        : e.bc == 'blue'  ? const Color(0xFF0D1B2E)
-        : const Color(0xFF161B22);
-
+    final p = NurPalette.of(ctx);
+    final bc = e.bc == 'gold' ? p.gold
+        : e.bc == 'green' ? p.ok
+        : e.bc == 'blue'  ? p.info
+        : p.textDim;
     final isLatest = e.badge == 'LATEST';
     final desc = isAr ? e.ar : e.en;
 
-    final ec = _cCard(ctx);
-    final eb = _cBorder(ctx);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isLatest ? const Color(0xFF1A1200) : ec,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isLatest
-            ? _cGold(ctx)
-            : eb,
-          width: isLatest ? 1.2 : 0.8)),
+    return NurCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      radius: 18,
+      accent: p.gold,
+      selected: isLatest,
+      padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Text(e.v, style: TextStyle(
-            color: isLatest ? const Color(0xFFD4AF37) : const Color(0xFFC9D1D9),
-            fontWeight: FontWeight.bold, fontSize: 15)),
+            color: isLatest ? p.gold : p.text,
+            fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(width: 8),
           Expanded(child: Text(e.name,
-            style: TextStyle(
-              color: _cSub(ctx), fontSize: 12))),
-          if (e.badge.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: bg(), borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: bc().withValues(alpha: 0.5))),
-              child: Text(e.badge, style: TextStyle(
-                color: bc(), fontSize: 9, fontWeight: FontWeight.bold))),
-          const SizedBox(width: 8),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: p.textSub, fontSize: 12))),
+          if (e.badge.isNotEmpty) ...[
+            NurChip(label: e.badge, color: bc, fontSize: 9, filled: isLatest),
+            const SizedBox(width: 8),
+          ],
           Text(e.score, style: TextStyle(
-            color: isLatest ? const Color(0xFFD4AF37) : const Color(0xFF8B949E),
-            fontSize: 11, fontWeight: FontWeight.bold)),
+            color: isLatest ? p.gold : p.textSub,
+            fontSize: 11, fontWeight: FontWeight.w700)),
         ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Text(desc,
           textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-          style: TextStyle(
-            color: _cSub(ctx), fontSize: 11, height: 1.5)),
+          style: TextStyle(color: p.textSub, fontSize: 12, height: 1.55)),
         if (e.rating.isNotEmpty) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(children: [
             Text(isAr ? 'تقييم المطوِّر:' : 'Dev Rating:',
-              style: const TextStyle(
-                color: Color(0xFF484F58), fontSize: 9,
-                letterSpacing: 0.5)),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: _ratingColor(e.rating).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(
-                  color: _ratingColor(e.rating).withValues(alpha: 0.5))),
-              child: Text(e.rating,
-                style: TextStyle(
-                  color: _ratingColor(e.rating),
-                  fontSize: 11, fontWeight: FontWeight.w900,
-                  letterSpacing: 1.0))),
+              style: TextStyle(
+                color: p.textDim, fontSize: 10, letterSpacing: 0.5)),
+            const SizedBox(width: 8),
+            NurChip(
+              label: e.rating,
+              color: _ratingColor(e.rating),
+              fontSize: 11,
+              filled: true),
           ]),
         ],
       ]));
@@ -452,15 +351,15 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
   bool _loading  = false;
   bool _clearing = false;
 
-  static const _gold = Color(0xFFD4AF37);
-  static const _teal = Color(0xFF1DB898);
-  static const _red  = Color(0xFFD94040);
+  static const _gold = Color(0xFFD9B13F);
+  static const _teal = Color(0xFF2FD4B0);
+  static const _red  = Color(0xFFFF6B6B);
 
-  bool get _dark => ThemeProvider.isDark(context);
-  Color get _cCard   => _dark ? const Color(0xFF0F2420) : const Color(0xFFF3EED9);
-  Color get _cBorder => _dark ? const Color(0xFF1A4035) : const Color(0xFFD4C99A);
-  Color get _cText   => _dark ? const Color(0xFFC9D1D9) : const Color(0xFF1A1400);
-  Color get _cSub    => _dark ? const Color(0xFF8B949E) : const Color(0xFF6B5E40);
+  NurPalette get _p => NurPalette.of(context);
+  Color get _cCard   => _p.surface;
+  Color get _cBorder => _p.border;
+  Color get _cText   => _p.text;
+  Color get _cSub    => _p.textSub;
 
   @override
   void initState() {
@@ -535,11 +434,11 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
         (st['numpy'] == true) && (st['deepFilter'] == true) &&
         ((st['engines'] as num? ?? 0) > 0);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: _cCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _cBorder)),
+    return NurCard(
+      radius: 20,
+      accent: st == null ? _cSub : allCoreOk ? _teal : _red,
+      glow: st != null,
+      padding: EdgeInsets.zero,
       child: Column(children: [
         ListTile(
           leading: Icon(
