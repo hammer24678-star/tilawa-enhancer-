@@ -300,6 +300,17 @@
     box-shadow:0 0 18px rgba(61,240,255,.25), inset 0 0 18px rgba(61,240,255,.05);
     transition:all .15s ease;
   }
+  /* The end screen's buttons were unstyled browser defaults (only #startBtn
+     had a rule). Retry is the primary action; Return to Hangar is secondary. */
+  #retryBtn, #continueBtn{
+    font-family:'Orbitron',sans-serif; font-weight:700; letter-spacing:3px; font-size:13px;
+    background:transparent; border:2px solid var(--cyan); color:var(--cyan);
+    padding:13px 28px; border-radius:2px; cursor:pointer; min-height:44px;
+    width:100%; max-width:300px;
+    transition:all .15s ease;
+  }
+  #retryBtn{box-shadow:0 0 18px rgba(61,240,255,.25), inset 0 0 18px rgba(61,240,255,.05);}
+  #continueBtn{border-color:var(--dim); color:var(--dim); font-size:11px; letter-spacing:2px;}
   #overlay button:active{transform:scale(.96);}
   .menuBtn{
     font-family:'Orbitron',sans-serif; font-weight:700; letter-spacing:.5px; font-size:9px;
@@ -631,6 +642,7 @@
       <h1 id="endTitle">DRIFTER LOST</h1>
       <div class="score-final" id="finalScore">0</div>
       <div id="runSummary"></div>
+      <button id="retryBtn" data-i18n="playAgain">PLAY AGAIN</button>
       <button id="continueBtn" data-i18n="returnHangar">RETURN TO HANGAR</button>
     </div>
   </div>
@@ -663,7 +675,7 @@
   const overlay = $('overlay'), menuView = $('menuView'), endView = $('endView');
   const metaStatsEl = $('metaStats'), shipSummaryEl = $('shipSummary');
   const leaderboardBox = $('leaderboardBox'), runSummaryEl = $('runSummary');
-  const startBtn = $('startBtn'), continueBtn = $('continueBtn');
+  const startBtn = $('startBtn'), continueBtn = $('continueBtn'), retryBtn = $('retryBtn');
   const finalScoreEl = $('finalScore'), endTitleEl = $('endTitle');
   const waveBanner = $('wave-banner'), hintEl = $('hint'), ctxHintEl = $('ctxHint');
   const joyBase = $('joyBase'), joyKnob = $('joyKnob');
@@ -687,7 +699,7 @@
       paused:'PAUSED', resume:'RESUME', settings:'SETTINGS', back:'BACK',
       retreat:'RETREAT TO HANGAR', upgrades:'UPGRADES', hangar:'HANGAR',
       bestiary:'BESTIARY', achievements:'ACHIEVEMENTS', launch:'LAUNCH',
-      returnHangar:'RETURN TO HANGAR', chooseRelic:'CHOOSE A RELIC',
+      playAgain:'PLAY AGAIN', returnHangar:'RETURN TO HANGAR', chooseRelic:'CHOOSE A RELIC',
       relicSub:'RUN-ONLY · RESETS ON YOUR NEXT LAUNCH',
       diffEasy:'EASY', diffNormal:'NORMAL', diffHard:'HARD',
       best:'BEST', shards:'SHARDS', shardsShort:'SH', wave:'WAVE',
@@ -706,7 +718,7 @@
       sectorClear:'SECTOR CLEAR', newBest:'NEW BEST SCORE',
       shardsEarned:'SHARDS EARNED', bossesDefeated:'BOSSES DEFEATED',
       enemiesDestroyed:'ENEMIES DESTROYED', reached:'REACHED',
-      lostInWreck:'LOST IN THE WRECK', wagered:'WAGER',
+      lostInWreck:'LOST IN THE WRECK', wagered:'WAGER', bestComboRow:'BEST COMBO', grazesRow:'GRAZES',
       drifterLost:'DRIFTER LOST', runComplete:'RUN COMPLETE',
       revived:'REVIVED', boom:'BOOM',
       menuBlurb:'Mouse aims and WASD moves on desktop — or twin-stick drag on mobile: left side steers, right side aims. Dash for a burst of speed and brief invulnerability. Every third wave offers a run-only relic; a named encounter awakens every five. Shards persist between runs and buy frames, upgrades and the ascension track.',
@@ -741,7 +753,7 @@
       paused:'متوقّف', resume:'متابعة', settings:'الإعدادات', back:'رجوع',
       retreat:'العودة إلى الحظيرة', upgrades:'الترقيات', hangar:'الحظيرة',
       bestiary:'موسوعة الأعداء', achievements:'الإنجازات', launch:'انطلاق',
-      returnHangar:'العودة إلى الحظيرة', chooseRelic:'اختر أثراً',
+      playAgain:'العب مجدداً', returnHangar:'العودة إلى الحظيرة', chooseRelic:'اختر أثراً',
       relicSub:'لهذه الجولة فقط · يُعاد ضبطه في الانطلاقة التالية',
       diffEasy:'سهل', diffNormal:'عادي', diffHard:'صعب',
       best:'الأفضل', shards:'الشظايا', shardsShort:'شظية', wave:'الموجة',
@@ -760,7 +772,7 @@
       sectorClear:'القطاع آمن', newBest:'رقم قياسي جديد',
       shardsEarned:'الشظايا المكتسبة', bossesDefeated:'الزعماء المهزومون',
       enemiesDestroyed:'الأعداء المُدمَّرون', reached:'وصلت إلى',
-      lostInWreck:'ضاع في الحطام', wagered:'الرهان',
+      lostInWreck:'ضاع في الحطام', wagered:'الرهان', bestComboRow:'أعلى كومبو', grazesRow:'المراوغات',
       drifterLost:'فُقد الطوّاف', runComplete:'اكتملت الجولة',
       revived:'عاد للحياة', boom:'انفجار',
       menuBlurb:'الفأرة تصوّب و WASD تحرّك على الحاسوب — أو السحب المزدوج على الجوال: اليسار يقود واليمين يصوّب. الاندفاع يمنحك دفعة سرعة ومناعة قصيرة. كل ثالث موجة يُعرض أثر لهذه الجولة فقط، وكل خمس موجات يستيقظ خصم مُسمّى. الشظايا تبقى بين الجولات وتشتري الهياكل والترقيات ومسار الصعود.',
@@ -6966,6 +6978,8 @@ void main(){
       [T('enemiesDestroyed'), runStats.kills],
       [T('bossesDefeated'), bossesDefeated]
     ];
+    if(runStats.maxCombo > 1) rows.push([T('bestComboRow'), 'x' + runStats.maxCombo]);
+    if(runStats.grazes > 0)   rows.push([T('grazesRow'), runStats.grazes]);
     if(lostToWreck > 0) rows.push([T('lostInWreck'), '-' + lostToWreck]);
     if(wagered > 0) rows.push([T('wagered'), runStats.won ? ('+' + wagered*2) : ('-' + wagered)]);
     if(isNewBest) rows.unshift([T('newBest'), '']);
@@ -7259,14 +7273,16 @@ void main(){
   // --------------------------------------------------------------------------
   // Event wiring
   // --------------------------------------------------------------------------
-  startBtn.addEventListener('click', () => {
+  const launchRun = () => {
     unlockAudio();
     overlay.classList.add('hidden');
     finalScoreEl.classList.remove('show');
     menuView.style.display = 'flex';
     endView.style.display = 'none';
     resetGame();
-  });
+  };
+  startBtn.addEventListener('click', launchRun);
+  retryBtn.addEventListener('click', launchRun);
   continueBtn.addEventListener('click', () => {
     endView.style.display = 'none';
     menuView.style.display = 'flex';
