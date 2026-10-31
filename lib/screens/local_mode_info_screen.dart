@@ -2,24 +2,25 @@
 // S147-POLISH — Sacred Cosmos art style, fully polished
 // Fixes: orbit overlap, rising particles, Arabic numerals, RTL layout, footer
 
-import 'dart:math' show pi, sin, cos, Random;
+import 'dart:math' show pi, sin, cos;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../design/nur.dart';
 import '../state/lang_provider.dart';
 
 // ── Sacred Cosmos tokens ──────────────────────────────────────────────────────
-const _bgDeep    = Color(0xFF020D17);
-const _bgCard    = Color(0xFF0F2420);
-const _gold      = Color(0xFFD4AF37);
-const _goldLight = Color(0xFFF0CF60);
+const _bgDeep    = Color(0xFF050E10);
+const _bgCard    = Color(0xFF0B1A1D);
+const _gold      = Color(0xFFD9B13F);
+const _goldLight = Color(0xFFF5DC85);
 const _goldMuted = Color(0xFF3A2B08);
-const _teal      = Color(0xFF1DB898);
-const _textA     = Color(0xFFE2CFA0);
-const _textB     = Color(0xFF8AACBA);
-const _textC     = Color(0xFF3D5A65);
-const _ok        = Color(0xFF2ABF6E);
-const _err       = Color(0xFFD94040);
-const _jade      = Color(0xFF0D2B22);
+const _teal      = Color(0xFF2FD4B0);
+const _textA     = Color(0xFFEAF2EE);
+const _textB     = Color(0xFF9DB6B6);
+const _textC     = Color(0xFF5E7B7C);
+const _ok        = Color(0xFF3DDC97);
+const _err       = Color(0xFFFF6B6B);
+const _jade      = Color(0xFF122529);
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 class LocalModeInfoScreen extends StatefulWidget {
@@ -32,36 +33,25 @@ class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
     with TickerProviderStateMixin {
 
   late final AnimationController _glowCtrl;
-  late final AnimationController _starCtrl;
   late final AnimationController _geoRotCtrl;
   late final AnimationController _orbitCtrl;
-  late final AnimationController _particleCtrl; // rising incense dots
   late final AnimationController _entranceCtrl;
 
-  late final List<_StarParticle> _starList;
   late final List<Animation<double>>  _cardFades;
   late final List<Animation<Offset>>  _cardSlides;
 
   @override
   void initState() {
     super.initState();
-    final rng = Random(9421);
-    _starList = List.generate(22, (_) => _StarParticle(rng));
 
     _glowCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 2800))
       ..repeat(reverse: true);
-    _starCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 14))
-      ..repeat();
     _geoRotCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 80))
       ..repeat();
     _orbitCtrl = AnimationController(
         vsync: this, duration: const Duration(seconds: 12))
-      ..repeat();
-    _particleCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 6))
       ..repeat();
     _entranceCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 900))
@@ -87,10 +77,8 @@ class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
   @override
   void dispose() {
     _glowCtrl.dispose();
-    _starCtrl.dispose();
     _geoRotCtrl.dispose();
     _orbitCtrl.dispose();
-    _particleCtrl.dispose();
     _entranceCtrl.dispose();
     super.dispose();
   }
@@ -100,80 +88,57 @@ class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
     final s  = LangProvider.strings(context);
     final ar = s.ar;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Directionality(
-        textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
-        child: Scaffold(
-          backgroundColor: _bgDeep,
-          body: Stack(children: [
+    // This screen's text colours are tuned for the night palette, so it
+    // always renders in it (like the old dark-only version did).
+    return Theme(
+      data: buildNurTheme(dark: true),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Directionality(
+          textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: _bgDeep,
+            body: NurBackdrop(
+              accent: _teal,
+              child: SafeArea(child: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
 
-            // ── Layer 0: geo pattern ───────────────────────────────────────
-            Positioned.fill(child: RepaintBoundary(
-              child: CustomPaint(painter: _GeoPainter()))),
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _backBtn(context, ar)))),
 
-            // ── Layer 1: stars ─────────────────────────────────────────────
-            Positioned.fill(child: RepaintBoundary(
-              child: AnimatedBuilder(
-                animation: _starCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _StarsPainter(_starCtrl.value, _starList))))),
+                SliverToBoxAdapter(child: _hero(ar)),
 
-            // ── Layer 2: rising incense particles ──────────────────────────
-            Positioned.fill(child: RepaintBoundary(
-              child: AnimatedBuilder(
-                animation: _particleCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _IncensePainter(_particleCtrl.value, _gold))))),
-
-            // ── Layer 3: content ───────────────────────────────────────────
-            SafeArea(child: CustomScrollView(slivers: [
-
-              SliverToBoxAdapter(child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: _backBtn(context, ar))),
-
-              SliverToBoxAdapter(child: _hero(ar)),
-
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
-                sliver: SliverList(delegate: SliverChildListDelegate([
-                  _animCard(0, _whatIsCard(ar)),
-                  const SizedBox(height: 12),
-                  _animCard(1, _enginesCard(ar)),
-                  const SizedBox(height: 12),
-                  _animCard(2, _privacyCard(ar)),
-                  const SizedBox(height: 12),
-                  _animCard(3, _setupCard(ar)),
-                  const SizedBox(height: 12),
-                  _animCard(4, _troubleshootCard(ar)),
-                  const SizedBox(height: 8),
-                  _footerVerse(ar),
-                ]))),
-            ])),
-          ]),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+                  sliver: SliverList(delegate: SliverChildListDelegate([
+                    _animCard(0, _whatIsCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(1, _enginesCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(2, _privacyCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(3, _setupCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(4, _troubleshootCard(ar)),
+                    const SizedBox(height: 8),
+                    _footerVerse(ar),
+                  ]))),
+              ])),
+            ),
+          ),
         ),
       ),
     );
   }
 
   // ── Back button ───────────────────────────────────────────────────────────
-  Widget _backBtn(BuildContext ctx, bool ar) => GestureDetector(
-    onTap: () => Navigator.of(ctx).pop(),
-    child: AnimatedBuilder(
-      animation: _glowCtrl,
-      builder: (_, __) => Container(
-        padding: const EdgeInsets.all(9),
-        decoration: BoxDecoration(
-          color: _bgCard, shape: BoxShape.circle,
-          border: Border.all(
-            color: _teal.withValues(alpha: 0.28 + 0.22 * _glowCtrl.value)),
-          boxShadow: [BoxShadow(
-            color: _teal.withValues(alpha: 0.08 + 0.08 * _glowCtrl.value),
-            blurRadius: 10)]),
-        child: Icon(
-          ar ? Icons.arrow_forward_ios_rounded : Icons.arrow_back_ios_rounded,
-          color: _textB, size: 18))));
+  Widget _backBtn(BuildContext ctx, bool ar) => NurIconButton(
+    icon: ar ? Icons.arrow_forward_ios_rounded : Icons.arrow_back_ios_new_rounded,
+    onTap: () => Navigator.of(ctx).pop());
 
   // ── Hero ──────────────────────────────────────────────────────────────────
   Widget _hero(bool ar) => Padding(
@@ -561,15 +526,11 @@ class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
 
   // ── Shared card shell ─────────────────────────────────────────────────────
   Widget _card({required Color accentColor, required Widget child}) =>
-    Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _bgCard.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accentColor.withValues(alpha: 0.22)),
-        boxShadow: [BoxShadow(
-          color: accentColor.withValues(alpha: 0.05), blurRadius: 20)]),
-      child: child);
+    NurCard(
+      radius: 22,
+      accent: accentColor,
+      padding: const EdgeInsets.all(18),
+      child: SizedBox(width: double.infinity, child: child));
 
   Widget _cardTitle(IconData icon, Color col, String title) =>
     Row(children: [
@@ -694,109 +655,3 @@ class _EngineOrbitPainter extends CustomPainter {
   @override bool shouldRepaint(_EngineOrbitPainter o) => o.t != t || o.g != g;
 }
 
-// ── Rising incense particles (same as home_screen.dart _IncensePainter) ───────
-class _IncensePainter extends CustomPainter {
-  final double t;
-  final Color engCol;
-  _IncensePainter(this.t, this.engCol);
-  static const _xs = [
-    0.08, 0.15, 0.22, 0.30, 0.38, 0.45,
-    0.52, 0.58, 0.65, 0.72, 0.80, 0.88,
-    0.18, 0.35, 0.55, 0.68, 0.78, 0.42,
-  ];
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()..style = PaintingStyle.fill;
-    for (int i = 0; i < _xs.length; i++) {
-      final phase = ((t + i / _xs.length) % 1.0);
-      final drift = sin(phase * 6.2832 * 1.8 + i * 1.3) * 22;
-      final dx = _xs[i] * size.width + drift;
-      final dy = size.height * (1.0 - phase);
-      final op = phase < 0.10 ? phase / 0.10
-          : phase > 0.72 ? (1.0 - phase) / 0.28 : 0.55;
-      final isTeal = i % 5 == 3;
-      final baseCol = isTeal ? _teal : engCol;
-      p.color = baseCol.withValues(alpha: op * 0.52);
-      final r = (i % 3 == 0) ? 2.0 : 1.4;
-      canvas.drawCircle(Offset(dx, dy), r, p);
-    }
-  }
-  @override bool shouldRepaint(_IncensePainter o) => o.t != t || o.engCol != engCol;
-}
-
-// ── Shared painters ───────────────────────────────────────────────────────────
-class _StarParticle {
-  final double x, y, size, phase, speed, twinkle;
-  _StarParticle(Random r)
-      : x = r.nextDouble(), y = r.nextDouble(),
-        size = 1.4 + r.nextDouble() * 2.8,
-        phase = r.nextDouble() * 6.2832,
-        speed = 0.15 + r.nextDouble() * 0.6,
-        twinkle = 0.4 + r.nextDouble() * 1.6;
-}
-
-class _StarsPainter extends CustomPainter {
-  final double t;
-  final List<_StarParticle> stars;
-  _StarsPainter(this.t, this.stars);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint();
-    for (int idx = 0; idx < stars.length; idx++) {
-      final s = stars[idx];
-      final a = t * 6.2832 * s.speed + s.phase;
-      final x = s.x * size.width  + sin(a) * size.width  * 0.016;
-      final y = s.y * size.height + cos(a * 0.71) * size.height * 0.012;
-      final alpha = sin(t * 6.2832 * s.twinkle + s.phase) * 0.5 + 0.5;
-      final op = 0.22 + 0.78 * alpha;
-      final sz = s.size * (0.55 + 0.45 * alpha);
-      final sc = idx % 5 == 0 ? _teal
-          : idx % 3 == 0 ? const Color(0xFFF0E8C8) : _gold;
-      p.maskFilter = MaskFilter.blur(BlurStyle.normal, sz * 2.5);
-      p.color = sc.withValues(alpha: op * 0.25);
-      canvas.drawCircle(Offset(x, y), sz * 2.0, p);
-      p.maskFilter = null;
-      p.color = sc.withValues(alpha: op);
-      canvas.drawCircle(Offset(x, y), sz, p);
-    }
-  }
-  @override bool shouldRepaint(_StarsPainter o) => o.t != t;
-}
-
-class _GeoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = const Color(0xFFC8A048).withValues(alpha: 0.05)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.7;
-    const cell = 120.0;
-    final cols = (size.width / cell).ceil() + 2;
-    final rows = (size.height / (cell * 0.866)).ceil() + 2;
-    for (int row = 0; row < rows; row++) {
-      for (int col = 0; col < cols; col++) {
-        final cx = col * cell + (row.isOdd ? cell * 0.5 : 0) - cell * 0.5;
-        final cy = row * cell * 0.866 - cell * 0.5;
-        _star8(canvas, Offset(cx, cy), cell * 0.27, p);
-      }
-    }
-  }
-  void _star8(Canvas canvas, Offset c, double r, Paint p) {
-    final path = Path();
-    for (int i = 0; i < 8; i++) {
-      final oa = i * pi / 4 - pi / 2;
-      final ia = oa + pi / 8;
-      final ox = c.dx + r * cos(oa); final oy = c.dy + r * sin(oa);
-      final ix = c.dx + r * 0.38 * cos(ia); final iy = c.dy + r * 0.38 * sin(ia);
-      if (i == 0) {
-        path.moveTo(ox, oy);
-      } else {
-        path.lineTo(ox, oy);
-      }
-      path.lineTo(ix, iy);
-    }
-    path.close();
-    canvas.drawPath(path, p);
-  }
-  @override bool shouldRepaint(_GeoPainter _) => false;
-}
