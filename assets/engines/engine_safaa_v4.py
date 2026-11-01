@@ -167,6 +167,70 @@ def _cleanup(*paths):
         except Exception:
             pass
 
+def _read_wav_native(path):
+    """
+    Read a mono WAV that is already at SR straight into float32 — no ffmpeg.
+
+    Every intermediate this engine writes is mono 24-bit WAV at SR, and every
+    stage then used to pay for a whole ffmpeg process (plus a second 32-bit
+    temp file) just to read it back. Under proot each exec is expensive, so
+    this is the cheapest speed-up in the pipeline. Anything it does not fully
+    understand (other rate, stereo, odd codec, streamed/zero sizes) returns
+    None and the caller falls back to the ffmpeg path, so behaviour for those
+    inputs is unchanged. The scaling matches ffmpeg's: s16/32768, s24/2^23,
+    s32/2^31, f32 as-is.
+    """
+    import struct
+    try:
+        with open(path, 'rb') as f:
+            hdr = f.read(12)
+            if len(hdr) < 12 or hdr[:4] != b'RIFF' or hdr[8:12] != b'WAVE':
+                return None
+            fmt = raw = None
+            while True:
+                ch = f.read(8)
+                if len(ch) < 8:
+                    break
+                cid, csz = ch[:4], struct.unpack('<I', ch[4:])[0]
+                if cid == b'fmt ':
+                    fmt = f.read(csz)
+                    if csz & 1: f.read(1)
+                elif cid == b'data':
+                    if csz in (0, 0xFFFFFFFF):
+                        return None          # streamed / unknown length
+                    raw = f.read(csz)
+                    if len(raw) != csz:
+                        return None          # truncated
+                    break
+                else:
+                    f.seek(csz + (csz & 1), 1)
+        if fmt is None or raw is None or len(fmt) < 16:
+            return None
+        tag, chans, rate, _, _, bits = struct.unpack('<HHIIHH', fmt[:16])
+        if tag == 0xFFFE and len(fmt) >= 26:
+            tag = struct.unpack('<H', fmt[24:26])[0]
+        if chans != 1 or rate != SR:
+            return None
+        if tag == 1 and bits == 16:
+            n = len(raw) // 2
+            return np.frombuffer(raw, '<i2', n).astype(np.float32) / 32768.0
+        if tag == 1 and bits == 24:
+            n = len(raw) // 3
+            b = np.frombuffer(raw, np.uint8, n * 3).reshape(n, 3).astype(np.int32)
+            v = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
+            v = np.where(v & 0x800000, v - 0x1000000, v)
+            return v.astype(np.float32) / 8388608.0
+        if tag == 1 and bits == 32:
+            n = len(raw) // 4
+            return (np.frombuffer(raw, '<i4', n).astype(np.float64) / 2147483648.0).astype(np.float32)
+        if tag == 3 and bits == 32:
+            n = len(raw) // 4
+            return np.frombuffer(raw, '<f4', n).astype(np.float32)
+    except Exception:
+        return None
+    return None
+
+
 def _decode(path, st=None):
     """
     Float32 mono at SR. [B2/I9]
@@ -176,6 +240,10 @@ def _decode(path, st=None):
     """
     if not NUMPY_OK:
         return None
+    if str(path).lower().endswith('.wav'):
+        fast = _read_wav_native(path)
+        if fast is not None:
+            return fast
     t = None
     try:
         if SF_OK:
@@ -1111,6 +1179,18 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
     if s_orig is None:
         _L(st, '  ERROR: decode failed'); return st
 
+    # A stage that is skipped hands back the same path it was given, and each
+    # stage that does run writes a fresh, uniquely named temp file (never in
+    # place), so a path uniquely identifies its contents for this run. Cache the
+    # decode per path instead of re-decoding an unchanged file for every stage.
+    _dcache = {}
+    def _dec_cur(path):
+        if path not in _dcache:
+            _dcache[path] = _decode(path)
+        d = _dcache[path]
+        # hand each caller its own array, as a fresh decode would have
+        return d.copy() if d is not None else None
+
     try:
         cur = input_path
 
@@ -1128,13 +1208,13 @@ def process(input_path, output_path, source_tier='TIER_UNKNOWN',
         # S3 WPE
         cur = _wpe(cur, rt60, st)
         # S4 DF3 (parallel)
-        _s4 = _decode(cur); s4 = _s4 if _s4 is not None else s_orig
+        _s4 = _dec_cur(cur); s4 = _s4 if _s4 is not None else s_orig
         cur = _df3(cur, s4, rt60, st, aggressive=aggressive)
         # S5 JALAA (DRR-weighted, corrected late window)
-        _s5 = _decode(cur); s5 = _s5 if _s5 is not None else s_orig
+        _s5 = _dec_cur(cur); s5 = _s5 if _s5 is not None else s_orig
         cur = _jalaa(cur, s5, rt60, st.drr_before, st)
         # S6 Tail NR (JALAA-aware)
-        _s6 = _decode(cur); s6 = _s6 if _s6 is not None else s_orig
+        _s6 = _dec_cur(cur); s6 = _s6 if _s6 is not None else s_orig
         cur = _tailnr(cur, s6, rt60, st)
         # S6.5 Wind noise removal — v4 addition
         cur = _windnr(cur, s_orig, rt60, st)
