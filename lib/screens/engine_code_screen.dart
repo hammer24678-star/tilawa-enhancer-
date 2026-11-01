@@ -1,4 +1,4 @@
-// engine_code_screen.dart — S234 · S239 v2 "full engine source browser"
+// engine_code_screen.dart — S234 · S239 v2 "full engine source browser" · Nur
 // Standalone screen (own Home-screen card, own route) that shows/copies/
 // downloads the bundled engine sources. S234 only exposed the Studio Engine
 // DSP script; S239 adds every bundled restoration/analysis engine
@@ -10,19 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import '../state/lang_provider.dart';
 
-const _bg      = Color(0xFF020D17);
-const _surface = Color(0xFF0C1E28);
-const _card    = Color(0xFF0F2420);
-const _gold    = Color(0xFFD4AF37);
-const _goldDim = Color(0xFF3A2B08);
-const _teal    = Color(0xFF1DB898);
-const _red     = Color(0xFFD94040);
-const _textA   = Color(0xFFE2CFA0);
-const _textB   = Color(0xFF8AACBA);
-const _textDim = Color(0xFF3D5A65);
-const _border  = Color(0xFF1A2E20);
+import '../design/nur.dart';
+import '../state/lang_provider.dart';
 
 class _EngineFile {
   final String asset;   // full rootBundle path
@@ -77,17 +67,37 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
   static const _chunkLines = 200;
 
   final Map<String, String> _cache = {};
+  final TextEditingController _searchCtl = TextEditingController();
   _EngineFile _sel = _files.first;
   String _query = '';
+  late Future<String> _future = _load(_sel);
+
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchCtl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
 
   Future<String> _load(_EngineFile f) async =>
       _cache[f.asset] ??= await rootBundle.loadString(f.asset);
 
-  void _snack(String msg, {Color color = _gold}) {
+  void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
+    final p = NurPalette.of(context);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: TextStyle(color: color == _gold ? _bg : Colors.white)),
-      backgroundColor: color == _gold ? _gold : color,
+      content: Text(msg, style: TextStyle(color: error ? Colors.white : p.onGold)),
+      backgroundColor: error ? p.err : p.gold,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2)));
   }
@@ -100,7 +110,7 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
       if (!mounted) return;
       _snack(ar ? '✓ تم نسخ ${_sel.fileName}' : '✓ ${_sel.fileName} copied');
     } catch (e) {
-      _snack('Error: $e', color: _red);
+      _snack('Error: $e', error: true);
     }
   }
 
@@ -119,52 +129,69 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
       _snack(ar ? '✓ تم الحفظ في التنزيلات' : '✓ Saved to Downloads');
     } catch (e) {
       if (!mounted) return;
-      _snack('Error: $e', color: _red);
+      _snack('Error: $e', error: true);
     }
   }
 
-  Widget _pill(String label, IconData icon, VoidCallback onTap, {bool gold = false}) =>
-    GestureDetector(onTap: onTap,
-      child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: gold ? _goldDim.withValues(alpha: 0.35) : _surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: gold ? _gold.withValues(alpha: 0.6) : _border)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: gold ? _gold : _textB, size: 14),
-          const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: gold ? _gold : _textB, fontSize: 11.5,
-              fontWeight: FontWeight.w700)),
-        ])));
+  void _select(_EngineFile f) {
+    HapticFeedback.selectionClick();
+    _searchCtl.clear();
+    setState(() {
+      _sel = f;
+      _query = '';
+      _future = _load(f);
+    });
+  }
 
-  Widget _fileChip(_EngineFile f, bool ar) {
+  Widget _fileChip(NurPalette p, _EngineFile f, bool ar) {
     final sel = f.asset == _sel.asset;
-    return GestureDetector(
-      onTap: () {
-        if (sel) return;
-        HapticFeedback.selectionClick();
-        setState(() { _sel = f; _query = ''; });
-      },
-      child: Container(
-        margin: const EdgeInsetsDirectional.only(end: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: sel ? _goldDim.withValues(alpha: 0.45) : _card,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: sel ? _gold : _border, width: sel ? 1.4 : 1)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(ar ? f.nameAr : f.nameEn,
-              style: TextStyle(color: sel ? _gold : _textB, fontSize: 11.5,
-                  fontWeight: sel ? FontWeight.w800 : FontWeight.w500)),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-            decoration: BoxDecoration(
-              color: sel ? _gold.withValues(alpha: 0.14) : _surface,
-              borderRadius: BorderRadius.circular(6)),
-            child: Text(f.tag, style: TextStyle(
-                color: sel ? _gold : _textDim, fontSize: 8.5,
-                fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
-        ])));
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 8),
+      child: PressScale(
+        scale: 0.94,
+        onTap: sel ? null : () => _select(f),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: sel
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      p.gold.withValues(alpha: 0.30),
+                      p.gold.withValues(alpha: 0.12),
+                    ])
+                : LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [p.surfaceHi, p.surface]),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: sel ? p.gold : p.border, width: sel ? 1.4 : 1),
+            boxShadow: sel
+                ? [BoxShadow(color: p.gold.withValues(alpha: 0.25), blurRadius: 14)]
+                : null),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(ar ? f.nameAr : f.nameEn,
+                style: TextStyle(
+                    color: sel ? p.gold : p.textSub,
+                    fontSize: 12,
+                    fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: sel ? p.gold.withValues(alpha: 0.18) : p.bgDeep,
+                borderRadius: BorderRadius.circular(7)),
+              child: Text(f.tag,
+                  style: TextStyle(
+                      color: sel ? p.gold : p.textDim,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace'))),
+          ]))));
   }
 
   // Search results — matched lines with their 1-based line numbers.
@@ -180,129 +207,241 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
     return out;
   }
 
+  Widget _searchField(NurPalette p, bool ar) => AnimatedContainer(
+    duration: const Duration(milliseconds: 260),
+    curve: Curves.easeOutCubic,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: _focus.hasFocus
+          ? [BoxShadow(color: p.gold.withValues(alpha: 0.22), blurRadius: 18)]
+          : const []),
+    child: TextField(
+    controller: _searchCtl,
+    focusNode: _focus,
+    onChanged: (v) => setState(() => _query = v),
+    style: TextStyle(color: p.text, fontSize: 13),
+    cursorColor: p.gold,
+    decoration: InputDecoration(
+      hintText: ar ? 'ابحث في الكود…' : 'Search in code…',
+      hintStyle: TextStyle(color: p.textDim, fontSize: 12),
+      prefixIcon: Icon(Icons.search_rounded, color: p.textDim, size: 20),
+      suffixIcon: _query.isEmpty
+          ? null
+          : IconButton(
+              icon: Icon(Icons.close_rounded, color: p.textSub, size: 18),
+              onPressed: () {
+                _searchCtl.clear();
+                setState(() => _query = '');
+              }),
+      filled: true,
+      fillColor: p.surface,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 12),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: p.border)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: p.gold, width: 1.4)),
+    )));
+
+  Widget _codeBody(NurPalette p, bool ar, AsyncSnapshot<String> snap) {
+    if (snap.connectionState != ConnectionState.done) {
+      return _CodeLoading(
+          key: const ValueKey('loading'),
+          label: ar ? 'جارٍ تحميل الكود…' : 'Loading source…');
+    }
+    if (snap.hasError) {
+      return _CodeError(
+        key: const ValueKey('error'),
+        message: ar ? 'تعذر تحميل الكود' : 'Could not load source',
+        retryLabel: ar ? 'إعادة المحاولة' : 'Retry',
+        onRetry: () => setState(() => _future = _load(_sel)));
+    }
+    final src = snap.data ?? '';
+    final lines = src.split('\n');
+    final kb = (src.length / 1024).toStringAsFixed(0);
+    final searching = _query.trim().isNotEmpty;
+    final matches = searching ? _matches(lines) : const <MapEntry<int, String>>[];
+    final panelColor = p.dark ? const Color(0xFF030A0B) : p.surface;
+    return Column(key: const ValueKey('code'), children: [
+      // stats strip
+      Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+        child: Row(children: [
+          Icon(Icons.description_outlined, color: p.textDim, size: 14),
+          const SizedBox(width: 6),
+          Expanded(child: Text(_sel.fileName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textDirection: TextDirection.ltr,
+              style: TextStyle(color: p.textDim, fontSize: 11,
+                  fontFamily: 'monospace'))),
+          const SizedBox(width: 8),
+          Flexible(child: NurChip(
+              color: p.teal,
+              fontSize: 10.5,
+              label: searching
+                  ? (ar ? '${matches.length} نتيجة' : '${matches.length} matches')
+                  : '${lines.length} ${ar ? "سطر" : "lines"} · $kb KB')),
+        ])),
+      Expanded(child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: panelColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: searching ? p.gold.withValues(alpha: 0.5) : p.border),
+          boxShadow: [BoxShadow(
+              color: Colors.black.withValues(alpha: p.dark ? 0.35 : 0.06),
+              blurRadius: 18, offset: const Offset(0, 8))]),
+        child: Column(children: [
+          // thin "recitation light" rule across the top of the panel
+          Container(
+            height: 2.5,
+            decoration: BoxDecoration(gradient: p.lightGradient)),
+          Expanded(child: Directionality(
+            // Code is always LTR regardless of app language.
+            textDirection: TextDirection.ltr,
+            child: searching
+                ? _searchResultsView(p, matches, ar)
+                : _chunkedCodeView(p, lines))),
+        ]))),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ar = LangProvider.strings(context).ar;
-    return Directionality(
-      textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
-      child: Scaffold(
-        backgroundColor: _bg,
-        appBar: AppBar(
-          backgroundColor: _bg,
-          foregroundColor: _textA,
-          elevation: 0,
-          title: Text(ar ? 'كود محركات المعالجة' : 'Engine Source Code',
-              style: const TextStyle(color: _textA, fontSize: 15, fontWeight: FontWeight.w700)),
-        ),
-        body: Column(children: [
-          // ── engine picker ────────────────────────────────────────────────
-          SizedBox(height: 40,
+    final p = NurPalette.of(context);
+    return NurScaffold(
+      title: ar ? 'كود محركات المعالجة' : 'Engine Source Code',
+      icon: Icons.code_rounded,
+      body: Column(children: [
+        // ── engine picker ──────────────────────────────────────────────────
+        EntranceFade(
+          index: 0,
+          child: SizedBox(height: 46,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              children: _files.map((f) => Center(child: _fileChip(f, ar))).toList())),
-          const SizedBox(height: 8),
-          // ── actions + search ─────────────────────────────────────────────
-          Padding(padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-            child: Row(children: [
-              _pill(ar ? 'نسخ' : 'Copy', Icons.copy_rounded, _copySrc),
-              const SizedBox(width: 8),
-              _pill(ar ? 'تنزيل' : 'Download', Icons.download_rounded, _downloadSrc, gold: true),
-              const SizedBox(width: 10),
-              Expanded(child: SizedBox(height: 34,
-                child: TextField(
-                  onChanged: (v) => setState(() => _query = v),
-                  style: const TextStyle(color: _textA, fontSize: 12),
-                  decoration: InputDecoration(
-                    hintText: ar ? 'ابحث في الكود…' : 'Search in code…',
-                    hintStyle: const TextStyle(color: _textDim, fontSize: 11),
-                    prefixIcon: const Icon(Icons.search_rounded, color: _textDim, size: 16),
-                    filled: true, fillColor: _card, isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                    enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(17),
-                        borderSide: const BorderSide(color: _border)),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(17),
-                        borderSide: const BorderSide(color: _gold)),
-                  )))),
-            ])),
-          // ── code view ────────────────────────────────────────────────────
-          Expanded(child: FutureBuilder<String>(
-            future: _load(_sel),
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done) {
-                return const Center(
-                    child: CircularProgressIndicator(color: _gold, strokeWidth: 2.4));
-              }
-              if (snap.hasError) {
-                return Center(child: Text(
-                    ar ? 'تعذر تحميل الكود' : 'Could not load source',
-                    style: const TextStyle(color: _red)));
-              }
-              final src = snap.data ?? '';
-              final lines = src.split('\n');
-              final kb = (src.length / 1024).toStringAsFixed(0);
-              final searching = _query.trim().isNotEmpty;
-              final matches = searching ? _matches(lines) : const <MapEntry<int, String>>[];
-              return Column(children: [
-                // stats strip
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                  child: Row(children: [
-                    Expanded(child: Text(_sel.fileName,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: _textDim, fontSize: 10.5,
-                            fontFamily: 'monospace'))),
-                    Text(searching
-                        ? (ar ? '${matches.length} نتيجة' : '${matches.length} matches')
-                        : '${lines.length} ${ar ? "سطر" : "lines"} · $kb KB',
-                        style: const TextStyle(color: _teal, fontSize: 10.5,
-                            fontWeight: FontWeight.w700, fontFamily: 'monospace')),
-                  ])),
-                Expanded(child: Container(
-                  margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: _card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _border)),
-                  // Code is always LTR regardless of app language.
-                  child: Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: searching
-                        ? _searchResultsView(matches, ar)
-                        : _chunkedCodeView(lines)))),
-              ]);
-            })),
-        ]),
-      ));
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: _files.map((f) => Center(child: _fileChip(p, f, ar))).toList()))),
+        const SizedBox(height: 8),
+        // ── actions + search ───────────────────────────────────────────────
+        EntranceFade(
+          index: 1,
+          child: Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Column(children: [
+              _searchField(p, ar),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: NurButton(
+                    label: ar ? 'نسخ' : 'Copy',
+                    icon: Icons.copy_rounded,
+                    filled: false,
+                    height: 44,
+                    onTap: _copySrc)),
+                const SizedBox(width: 10),
+                Expanded(child: NurButton(
+                    label: ar ? 'تنزيل' : 'Download',
+                    icon: Icons.download_rounded,
+                    height: 44,
+                    onTap: _downloadSrc)),
+              ]),
+            ]))),
+        // ── code view ──────────────────────────────────────────────────────
+        Expanded(child: EntranceFade(
+          index: 2,
+          child: FutureBuilder<String>(
+            future: _future,
+            builder: (context, snap) => AnimatedSwitcher(
+              duration: const Duration(milliseconds: 260),
+              layoutBuilder: (current, previous) => Stack(
+                fit: StackFit.expand,
+                children: [...previous, if (current != null) current]),
+              child: KeyedSubtree(
+                key: ValueKey('${_sel.asset}|${snap.connectionState == ConnectionState.done}|${snap.hasError}'),
+                child: _codeBody(p, ar, snap)))))),
+      ]),
+    );
   }
 
   // Chunked virtualized rendering — one SelectableText per ~200 lines keeps
-  // even the 15k-line الاسترداد source smooth on mid-range phones.
-  Widget _chunkedCodeView(List<String> lines) {
+  // even the 15k-line الاسترداد source smooth on mid-range phones. A fixed
+  // gutter (outside the horizontal scroll) carries the line numbers.
+  Widget _chunkedCodeView(NurPalette p, List<String> lines) {
     final chunks = (lines.length / _chunkLines).ceil().clamp(1, 1 << 20);
+    final style = TextStyle(color: p.text, fontSize: 11.5,
+        fontFamily: 'monospace', height: 1.5);
     return Scrollbar(thumbVisibility: true,
       child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: chunks,
         itemBuilder: (_, i) {
           final start = i * _chunkLines;
           final end = (start + _chunkLines).clamp(0, lines.length);
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SelectableText(
-              lines.sublist(start, end).join('\n'),
-              style: const TextStyle(color: _textB, fontSize: 11.5,
-                  fontFamily: 'monospace', height: 1.5)));
+          final nums = [for (var n = start + 1; n <= end; n++) '$n'].join('\n');
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                  color: p.border.withValues(alpha: 0.18),
+                  border: Border(right: BorderSide(color: p.border))),
+              child: Text(nums,
+                  textAlign: TextAlign.end,
+                  style: style.copyWith(color: p.textDim))),
+            Expanded(child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SelectableText(
+                lines.sublist(start, end).join('\n'),
+                style: style))),
+          ]);
         }));
   }
 
-  Widget _searchResultsView(List<MapEntry<int, String>> matches, bool ar) {
-    if (matches.isEmpty) {
-      return Center(child: Text(ar ? 'لا نتائج' : 'No matches',
-          style: const TextStyle(color: _textDim, fontSize: 12)));
+  // Wraps every case-insensitive occurrence of the query in a gold highlight.
+  TextSpan _highlight(NurPalette p, String line, TextStyle base) {
+    final q = _query.trim().toLowerCase();
+    final low = line.toLowerCase();
+    if (q.isEmpty || low.length != line.length) {
+      return TextSpan(text: line, style: base);
     }
+    final spans = <TextSpan>[];
+    var pos = 0;
+    while (true) {
+      final at = low.indexOf(q, pos);
+      if (at < 0) break;
+      if (at > pos) spans.add(TextSpan(text: line.substring(pos, at)));
+      spans.add(TextSpan(
+          text: line.substring(at, at + q.length),
+          style: TextStyle(
+              color: p.gold,
+              fontWeight: FontWeight.w800,
+              backgroundColor: p.gold.withValues(alpha: 0.18))));
+      pos = at + q.length;
+    }
+    if (pos < line.length) spans.add(TextSpan(text: line.substring(pos)));
+    return TextSpan(style: base, children: spans);
+  }
+
+  Widget _searchResultsView(
+      NurPalette p, List<MapEntry<int, String>> matches, bool ar) {
+    if (matches.isEmpty) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.search_off_rounded, color: p.textDim, size: 34),
+          const SizedBox(height: 10),
+          Text(ar ? 'لا نتائج' : 'No matches',
+              style: TextStyle(color: p.textSub, fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+        ])));
+    }
+    final base = TextStyle(color: p.text, fontSize: 11.5,
+        fontFamily: 'monospace', height: 1.4);
     return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: matches.length,
       itemBuilder: (_, i) {
         final m = matches[i];
@@ -311,13 +450,104 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(width: 48, child: Text('${m.key}',
-                  style: const TextStyle(color: _gold, fontSize: 10.5,
+              SizedBox(width: 54, child: Text('${m.key}',
+                  style: TextStyle(color: p.gold, fontSize: 10.5,
                       fontFamily: 'monospace'))),
-              SelectableText(m.value,
-                  style: const TextStyle(color: _textB, fontSize: 11.5,
-                      fontFamily: 'monospace', height: 1.4)),
+              SelectableText.rich(_highlight(p, m.value, base)),
             ])));
       });
+  }
+}
+
+/// Animated loading state: breathing orb + indeterminate bar.
+class _CodeLoading extends StatefulWidget {
+  final String label;
+  const _CodeLoading({super.key, required this.label});
+
+  @override
+  State<_CodeLoading> createState() => _CodeLoadingState();
+}
+
+class _CodeLoadingState extends State<_CodeLoading>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(seconds: 3))
+    ..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = NurPalette.of(context);
+    return Center(child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        NurOrb(
+          animation: _c,
+          size: 130,
+          child: Icon(Icons.code_rounded, color: p.gold, size: 30)),
+        const SizedBox(height: 18),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: const NurProgressBar(value: null, height: 5)),
+        const SizedBox(height: 12),
+        Text(widget.label,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: p.textSub, fontSize: 12.5)),
+      ])));
+  }
+}
+
+/// Polished error state with a retry action.
+class _CodeError extends StatelessWidget {
+  final String message;
+  final String retryLabel;
+  final VoidCallback onRetry;
+  const _CodeError({
+    super.key,
+    required this.message,
+    required this.retryLabel,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = NurPalette.of(context);
+    return Center(child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0.6, end: 1),
+          duration: const Duration(milliseconds: 520),
+          curve: Curves.easeOutBack,
+          builder: (_, v, child) => Transform.scale(scale: v, child: child),
+          child: Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: p.err.withValues(alpha: 0.12),
+              border: Border.all(color: p.err.withValues(alpha: 0.5)),
+              boxShadow: [BoxShadow(
+                  color: p.err.withValues(alpha: 0.25), blurRadius: 22)]),
+            child: Icon(Icons.error_outline_rounded, color: p.err, size: 30))),
+        const SizedBox(height: 14),
+        Text(message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: p.err, fontSize: 14,
+                fontWeight: FontWeight.w700)),
+        const SizedBox(height: 16),
+        NurButton(
+            label: retryLabel,
+            icon: Icons.refresh_rounded,
+            filled: false,
+            accent: p.err,
+            expand: false,
+            height: 44,
+            onTap: onRetry),
+      ])));
   }
 }
