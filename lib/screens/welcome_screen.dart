@@ -1,8 +1,8 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../design/nur.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../design/nur.dart';
 import '../state/lang_provider.dart';
 import 'home_screen.dart';
 
@@ -19,8 +19,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
   int _page = 0;
-  int _dir = 1; // +1 moving forward, -1 moving back (drives the slide)
-  int _mode = 0; // 0 = local card highlighted, 1 = server (visual only)
 
   @override
   void initState() {
@@ -48,10 +46,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   void _goPage(int p) {
     if (p == _page || p < 0 || p > 2) return;
     HapticFeedback.selectionClick();
-    setState(() {
-      _dir = p > _page ? 1 : -1;
-      _page = p;
-    });
+    _fadeCtrl.reset();
+    setState(() => _page = p);
+    _fadeCtrl.forward();
   }
 
   Future<void> _finish() async {
@@ -59,7 +56,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('seen_welcome_v5', true); // S108
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(nurRoute(const HomeScreen()));
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const HomeScreen(),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
   }
 
   @override
@@ -200,6 +204,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     required String badge,
     required Color badgeColor,
     required String title,
+    required Color titleColor,
+    required double titleSize,
     required String body,
     required Color bodyColor,
     required bool ar,
@@ -211,14 +217,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       NurChip(label: badge, color: badgeColor, icon: badgeIcon, fontSize: 10),
       const SizedBox(width: 12),
       Expanded(child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: ar
+          ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          Directionality(
-            textDirection: TextDirection.ltr,
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: NurChip(label: badge, color: accent, fontSize: 10))),
-          const SizedBox(height: 6),
           Text(title,
             textAlign: ar ? TextAlign.right : TextAlign.left,
             style: TextStyle(color: titleColor,

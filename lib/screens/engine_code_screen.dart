@@ -1,4 +1,4 @@
-// engine_code_screen.dart — S234 · S239 v2 "full engine source browser" · Nur
+// engine_code_screen.dart — S234 · S239 v2 "full engine source browser"
 // Standalone screen (own Home-screen card, own route) that shows/copies/
 // downloads the bundled engine sources. S234 only exposed the Studio Engine
 // DSP script; S239 adds every bundled restoration/analysis engine
@@ -66,27 +66,8 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
   static const _chunkLines = 200;
 
   final Map<String, String> _cache = {};
-  final TextEditingController _searchCtl = TextEditingController();
   _EngineFile _sel = _files.first;
   String _query = '';
-  late Future<String> _future = _load(_sel);
-
-  final FocusNode _focus = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _focus.addListener(() {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchCtl.dispose();
-    _focus.dispose();
-    super.dispose();
-  }
 
   Future<String> _load(_EngineFile f) async =>
       _cache[f.asset] ??= await rootBundle.loadString(f.asset);
@@ -184,109 +165,6 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
       }
     }
     return out;
-  }
-
-  Widget _searchField(NurPalette p, bool ar) => AnimatedContainer(
-    duration: const Duration(milliseconds: 260),
-    curve: Curves.easeOutCubic,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: _focus.hasFocus
-          ? [BoxShadow(color: p.gold.withValues(alpha: 0.22), blurRadius: 18)]
-          : const []),
-    child: TextField(
-    controller: _searchCtl,
-    focusNode: _focus,
-    onChanged: (v) => setState(() => _query = v),
-    style: TextStyle(color: p.text, fontSize: 13),
-    cursorColor: p.gold,
-    decoration: InputDecoration(
-      hintText: ar ? 'ابحث في الكود…' : 'Search in code…',
-      hintStyle: TextStyle(color: p.textDim, fontSize: 12),
-      prefixIcon: Icon(Icons.search_rounded, color: p.textDim, size: 20),
-      suffixIcon: _query.isEmpty
-          ? null
-          : IconButton(
-              icon: Icon(Icons.close_rounded, color: p.textSub, size: 18),
-              onPressed: () {
-                _searchCtl.clear();
-                setState(() => _query = '');
-              }),
-      filled: true,
-      fillColor: p.surface,
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 12),
-      enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: p.border)),
-      focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: p.gold, width: 1.4)),
-    )));
-
-  Widget _codeBody(NurPalette p, bool ar, AsyncSnapshot<String> snap) {
-    if (snap.connectionState != ConnectionState.done) {
-      return _CodeLoading(
-          key: const ValueKey('loading'),
-          label: ar ? 'جارٍ تحميل الكود…' : 'Loading source…');
-    }
-    if (snap.hasError) {
-      return _CodeError(
-        key: const ValueKey('error'),
-        message: ar ? 'تعذر تحميل الكود' : 'Could not load source',
-        retryLabel: ar ? 'إعادة المحاولة' : 'Retry',
-        onRetry: () => setState(() => _future = _load(_sel)));
-    }
-    final src = snap.data ?? '';
-    final lines = src.split('\n');
-    final kb = (src.length / 1024).toStringAsFixed(0);
-    final searching = _query.trim().isNotEmpty;
-    final matches = searching ? _matches(lines) : const <MapEntry<int, String>>[];
-    final panelColor = p.dark ? const Color(0xFF030A0B) : p.surface;
-    return Column(key: const ValueKey('code'), children: [
-      // stats strip
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-        child: Row(children: [
-          Icon(Icons.description_outlined, color: p.textDim, size: 14),
-          const SizedBox(width: 6),
-          Expanded(child: Text(_sel.fileName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textDirection: TextDirection.ltr,
-              style: TextStyle(color: p.textDim, fontSize: 11,
-                  fontFamily: 'monospace'))),
-          const SizedBox(width: 8),
-          Flexible(child: NurChip(
-              color: p.teal,
-              fontSize: 10.5,
-              label: searching
-                  ? (ar ? '${matches.length} نتيجة' : '${matches.length} matches')
-                  : '${lines.length} ${ar ? "سطر" : "lines"} · $kb KB')),
-        ])),
-      Expanded(child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: panelColor,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: searching ? p.gold.withValues(alpha: 0.5) : p.border),
-          boxShadow: [BoxShadow(
-              color: Colors.black.withValues(alpha: p.dark ? 0.35 : 0.06),
-              blurRadius: 18, offset: const Offset(0, 8))]),
-        child: Column(children: [
-          // thin "recitation light" rule across the top of the panel
-          Container(
-            height: 2.5,
-            decoration: BoxDecoration(gradient: p.lightGradient)),
-          Expanded(child: Directionality(
-            // Code is always LTR regardless of app language.
-            textDirection: TextDirection.ltr,
-            child: searching
-                ? _searchResultsView(p, matches, ar)
-                : _chunkedCodeView(p, lines))),
-        ]))),
-    ]);
   }
 
   @override
@@ -393,11 +271,8 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
   // even the 15k-line الاسترداد source smooth on mid-range phones.
   Widget _chunkedCodeView(List<String> lines, NurPalette p) {
     final chunks = (lines.length / _chunkLines).ceil().clamp(1, 1 << 20);
-    final style = TextStyle(color: p.text, fontSize: 11.5,
-        fontFamily: 'monospace', height: 1.5);
     return Scrollbar(thumbVisibility: true,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: chunks,
         itemBuilder: (_, i) {
           final start = i * _chunkLines;
@@ -416,41 +291,7 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
       return Center(child: Text(ar ? 'لا نتائج' : 'No matches',
           style: TextStyle(color: p.textDim, fontSize: 12)));
     }
-    final spans = <TextSpan>[];
-    var pos = 0;
-    while (true) {
-      final at = low.indexOf(q, pos);
-      if (at < 0) break;
-      if (at > pos) spans.add(TextSpan(text: line.substring(pos, at)));
-      spans.add(TextSpan(
-          text: line.substring(at, at + q.length),
-          style: TextStyle(
-              color: p.gold,
-              fontWeight: FontWeight.w800,
-              backgroundColor: p.gold.withValues(alpha: 0.18))));
-      pos = at + q.length;
-    }
-    if (pos < line.length) spans.add(TextSpan(text: line.substring(pos)));
-    return TextSpan(style: base, children: spans);
-  }
-
-  Widget _searchResultsView(
-      NurPalette p, List<MapEntry<int, String>> matches, bool ar) {
-    if (matches.isEmpty) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.search_off_rounded, color: p.textDim, size: 34),
-          const SizedBox(height: 10),
-          Text(ar ? 'لا نتائج' : 'No matches',
-              style: TextStyle(color: p.textSub, fontSize: 13,
-                  fontWeight: FontWeight.w700)),
-        ])));
-    }
-    final base = TextStyle(color: p.text, fontSize: 11.5,
-        fontFamily: 'monospace', height: 1.4);
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       itemCount: matches.length,
       itemBuilder: (_, i) {
         final m = matches[i];
@@ -467,98 +308,5 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
                       fontFamily: 'monospace', height: 1.4)),
             ])));
       });
-  }
-}
-
-/// Animated loading state: breathing orb + indeterminate bar.
-class _CodeLoading extends StatefulWidget {
-  final String label;
-  const _CodeLoading({super.key, required this.label});
-
-  @override
-  State<_CodeLoading> createState() => _CodeLoadingState();
-}
-
-class _CodeLoadingState extends State<_CodeLoading>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(seconds: 3))
-    ..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = NurPalette.of(context);
-    return Center(child: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        NurOrb(
-          animation: _c,
-          size: 130,
-          child: Icon(Icons.code_rounded, color: p.gold, size: 30)),
-        const SizedBox(height: 18),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 220),
-          child: const NurProgressBar(value: null, height: 5)),
-        const SizedBox(height: 12),
-        Text(widget.label,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: p.textSub, fontSize: 12.5)),
-      ])));
-  }
-}
-
-/// Polished error state with a retry action.
-class _CodeError extends StatelessWidget {
-  final String message;
-  final String retryLabel;
-  final VoidCallback onRetry;
-  const _CodeError({
-    super.key,
-    required this.message,
-    required this.retryLabel,
-    required this.onRetry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final p = NurPalette.of(context);
-    return Center(child: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0.6, end: 1),
-          duration: const Duration(milliseconds: 520),
-          curve: Curves.easeOutBack,
-          builder: (_, v, child) => Transform.scale(scale: v, child: child),
-          child: Container(
-            width: 64, height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: p.err.withValues(alpha: 0.12),
-              border: Border.all(color: p.err.withValues(alpha: 0.5)),
-              boxShadow: [BoxShadow(
-                  color: p.err.withValues(alpha: 0.25), blurRadius: 22)]),
-            child: Icon(Icons.error_outline_rounded, color: p.err, size: 30))),
-        const SizedBox(height: 14),
-        Text(message,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: p.err, fontSize: 14,
-                fontWeight: FontWeight.w700)),
-        const SizedBox(height: 16),
-        NurButton(
-            label: retryLabel,
-            icon: Icons.refresh_rounded,
-            filled: false,
-            accent: p.err,
-            expand: false,
-            height: 44,
-            onTap: onRetry),
-      ])));
   }
 }

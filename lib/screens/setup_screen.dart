@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../design/nur.dart';
 import '../services/local_engine_service.dart';
-import '../state/lang_provider.dart';
 
 /// S65 — First-run screen: downloads Alpine + Python + ffmpeg + DeepFilter.
 /// ~200MB one-time download. Shows progress with retry and skip-to-server.

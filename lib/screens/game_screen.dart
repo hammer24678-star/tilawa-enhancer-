@@ -7,9 +7,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import '../design/nur.dart';
 import '../state/lang_provider.dart';
 
+const _gGold = Color(0xFFD4AF37);
+const _gCyan = Color(0xFF3DF0FF);
 const _gBg   = Color(0xFF070914); // matches Nova Drift's own --bg
 
 class GameScreen extends StatefulWidget {
@@ -89,153 +90,57 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
-    // The game is always dark (it matches Nova Drift's own palette), so the
-    // chrome around it is pinned to the night theme regardless of app theme.
-    final night = buildNurTheme(dark: true);
-    final Widget overlay = _failed
-        ? _GameError(
-            key: const ValueKey('error'),
-            message: s.gameLoadError,
-            backLabel: s.ar ? 'رجوع' : 'Back',
-            onBack: () => Navigator.of(context).pop())
-        : _loading
-            ? _GameLoading(
-                key: const ValueKey('loading'),
-                label: s.ar ? 'جارٍ تحميل اللعبة…' : 'Loading game…')
-            : const SizedBox.shrink(key: ValueKey('none'));
     return PopScope(
       canPop: true,
       child: Scaffold(
         backgroundColor: _gBg,
         body: Stack(children: [
           WebViewWidget(controller: _controller),
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: !(_loading || _failed),
-              child: Theme(
-                data: night,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 420),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  layoutBuilder: (current, previous) => Stack(
-                    fit: StackFit.expand,
-                    children: [...previous, if (current != null) current]),
-                  child: overlay)))),
+          if (_loading)
+            Container(
+              color: _gBg,
+              alignment: Alignment.center,
+              child: const CircularProgressIndicator(
+                color: _gGold, strokeWidth: 2.4)),
+          if (_failed)
+            Container(
+              color: _gBg,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.all(32),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.satellite_alt_rounded,
+                  color: _gCyan, size: 40),
+                const SizedBox(height: 16),
+                Text(s.gameLoadError,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF8B949E), fontSize: 13)),
+                const SizedBox(height: 20),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back_rounded, color: _gGold, size: 16),
+                  label: Text(s.ar ? 'رجوع' : 'Back',
+                    style: const TextStyle(color: _gGold, fontSize: 13))),
+              ])),
           // Minimal exit affordance — bottom-left, clear of the game's own
           // UI (settings gear top-left, pause top-right, dash button
           // bottom-right, on-screen joysticks anchored to touch points).
           Positioned(
             left: 10, bottom: 10,
             child: SafeArea(
-              child: Theme(
-                data: night,
-                child: Opacity(
-                  opacity: 0.78,
-                  child: NurIconButton(
-                    icon: Icons.close_rounded,
-                    size: 36,
-                    color: NurPalette.night.gold,
-                    tooltip: s.ar ? 'رجوع' : 'Back',
-                    onTap: () => Navigator.of(context).pop()))))),
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 34, height: 34,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.35),
+                    border: Border.all(
+                      color: _gGold.withValues(alpha: 0.35), width: 0.8)),
+                  child: const Icon(Icons.close_rounded,
+                    color: _gGold, size: 16)))),
+          ),
         ]),
       ),
     );
-  }
-}
-
-/// Loading overlay: the Nur backdrop, a breathing orb and an indeterminate bar.
-class _GameLoading extends StatefulWidget {
-  final String label;
-  const _GameLoading({super.key, required this.label});
-
-  @override
-  State<_GameLoading> createState() => _GameLoadingState();
-}
-
-class _GameLoadingState extends State<_GameLoading>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(seconds: 3))
-    ..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = NurPalette.of(context);
-    return NurBackdrop(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            NurOrb(
-              animation: _c,
-              size: 170,
-              child: Icon(Icons.rocket_launch_rounded, color: p.gold, size: 34)),
-            const SizedBox(height: 22),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220),
-              child: const NurProgressBar(value: null, height: 5)),
-            const SizedBox(height: 14),
-            Text(widget.label,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: p.textSub, fontSize: 13)),
-          ]))));
-  }
-}
-
-/// Error overlay shown when the game asset itself fails to load.
-class _GameError extends StatelessWidget {
-  final String message;
-  final String backLabel;
-  final VoidCallback onBack;
-  const _GameError({
-    super.key,
-    required this.message,
-    required this.backLabel,
-    required this.onBack,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final p = NurPalette.of(context);
-    return NurBackdrop(
-      accent: p.err,
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0.6, end: 1),
-              duration: const Duration(milliseconds: 560),
-              curve: Curves.easeOutBack,
-              builder: (_, v, child) => Transform.scale(scale: v, child: child),
-              child: Container(
-                width: 76, height: 76,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: p.err.withValues(alpha: 0.12),
-                  border: Border.all(color: p.err.withValues(alpha: 0.5)),
-                  boxShadow: [BoxShadow(
-                      color: p.err.withValues(alpha: 0.28), blurRadius: 26)]),
-                child: Icon(Icons.satellite_alt_rounded, color: p.err, size: 34))),
-            const SizedBox(height: 18),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: p.textSub, fontSize: 13.5, height: 1.6)),
-            const SizedBox(height: 22),
-            NurButton(
-                label: backLabel,
-                icon: Icons.arrow_back_rounded,
-                filled: false,
-                expand: false,
-                height: 46,
-                onTap: onBack),
-          ]))));
   }
 }

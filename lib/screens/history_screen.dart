@@ -1,9 +1,6 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import '../design/nur.dart';
 import 'package:flutter/services.dart'; // S30-P8
-import '../design/nur.dart';
 import '../state/lang_provider.dart';
 import '../services/api_service.dart';
 
@@ -46,7 +43,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final jobId    = job['job_id'] as String;
     final filename = job['filename'] as String? ?? ApiService.buildFilename(job['engine'] ?? 'v8.0');
     final s = LangProvider.strings(context);
-    final p = NurPalette.of(context);
 
     HapticFeedback.lightImpact(); // S30-P8
     setState(() => _downloading.add(jobId));
@@ -60,14 +56,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
           s.ar
             ? '✅ تم الحفظ في Downloads\n📁 ${file.path}'
             : '✅ Saved to Downloads\n📁 ${file.path}',
-          style: TextStyle(fontSize: 12, color: p.text),
+          style: const TextStyle(fontSize: 12),
         ),
-        backgroundColor: p.surface,
-        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF0D2015),
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: s.ar ? 'حسناً' : 'OK',
-          textColor: p.ok,
+          textColor: const Color(0xFF3FB950),
           onPressed: () {},
         ),
       ));
@@ -75,13 +70,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() => _expired.add(jobId));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(s.jobExpired,
-          style: TextStyle(fontSize: 12, color: p.text)),
-        backgroundColor: p.surface,
-        behavior: SnackBarBehavior.floating,
+          style: const TextStyle(fontSize: 12)),
+        backgroundColor: const Color(0xFF200D0D),
         duration: const Duration(seconds: 5),
         action: SnackBarAction(
           label: s.ar ? 'حذف' : 'Remove',
-          textColor: p.err,
+          textColor: const Color(0xFFF85149),
           onPressed: () => _removeJob(jobId),
         ),
       ));
@@ -89,10 +83,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           s.ar ? '❌ فشل التحميل\n$error' : '❌ Download failed\n$error',
-          style: TextStyle(fontSize: 12, color: p.text),
+          style: const TextStyle(fontSize: 12),
         ),
-        backgroundColor: p.surface,
-        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF200D0D),
         duration: const Duration(seconds: 6),
       ));
     }
@@ -248,11 +241,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // S28-T2: show original source name if stored, else fall back
-                  Text(
-                    job['original_name'] as String?
-                      ?? ApiService.buildFilename(engine),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  Text(score.toStringAsFixed(0),
                     style: TextStyle(
                       color: isExpired ? p.textDim : scoreColor,
                       fontWeight: FontWeight.w800, fontSize: 16, height: 1.0)),

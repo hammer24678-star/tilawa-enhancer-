@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // S31-F1
 import 'package:url_launcher/url_launcher.dart';
-import '../design/nur.dart';
 import '../services/local_engine_service.dart'; // S237
 import '../state/lang_provider.dart';
 import '../main.dart' show ThemeProvider; // S31-F4b
@@ -321,108 +320,19 @@ class SettingsScreen extends StatelessWidget {
       ]));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final p = NurPalette.of(context);
-    final e = widget.entry;
-    final isAr = widget.isAr;
-    final isLatest = e.badge == 'LATEST';
-    final desc = isAr ? e.ar : e.en;
-    final bc = _badgeColor(p, e.bc);
-
-    final details = Column(
-      key: const ValueKey<String>('open'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 12),
-        Text(desc, style: TextStyle(
-          color: p.textSub, fontSize: 12, height: 1.6)),
-        if (e.rating.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8, runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(isAr ? 'تقييم المطوِّر:' : 'Dev Rating:',
-                style: TextStyle(
-                  color: p.textDim, fontSize: 11, letterSpacing: 0.5)),
-              NurChip(
-                label: e.rating,
-                color: _ratingColor(p, e.rating),
-                filled: true,
-                fontSize: 12),
-            ]),
-        ],
-      ]);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: NurCard(
-        accent: isLatest ? p.gold : p.teal,
-        selected: isLatest,
-        radius: 18,
-        padding: const EdgeInsets.all(14),
-        onTap: () => setState(() => _open = !_open),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            isLatest
-              ? GradientText(e.v,
-                  gradient: p.goldGradient,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 16))
-              : Text(e.v, style: TextStyle(
-                  color: p.text, fontWeight: FontWeight.w800, fontSize: 16)),
-            const SizedBox(width: 10),
-            Expanded(child: Text(e.name,
-              maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: p.textSub, fontSize: 12.5))),
-            const SizedBox(width: 8),
-            AnimatedRotation(
-              turns: _open ? 0.5 : 0.0,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              child: Icon(Icons.keyboard_arrow_down_rounded,
-                color: p.textDim, size: 22)),
-          ]),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 6, children: [
-            if (e.badge.isNotEmpty)
-              NurChip(label: e.badge, color: bc, fontSize: 10),
-            NurChip(
-              label: e.score,
-              color: isLatest ? p.gold : p.textSub,
-              icon: Icons.bolt_rounded,
-              fontSize: 11),
-          ]),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 320),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              child: _open
-                ? details
-                : const SizedBox(
-                    key: ValueKey<String>('closed'),
-                    width: double.infinity)),
-          ),
-        ])));
+  Color _ratingColor(String r) {
+    if (r.startsWith('S')) return const Color(0xFFD4AF37);
+    if (r == 'A+' || r == 'A') return const Color(0xFF3FB950);
+    if (r == 'A-') return const Color(0xFF1DB898);
+    if (r.startsWith('B')) return const Color(0xFF58A6FF);
+    if (r.startsWith('C')) return const Color(0xFF8B949E);
+    return const Color(0xFFF85149);
   }
 }
 
 class _EHist {
   final String v, name, score, badge, bc, ar, en, rating;
   const _EHist(this.v, this.name, this.score, this.badge, this.bc, this.ar, this.en, [this.rating = '']);
-}
-
-class _Comp {
-  final String label;
-  final bool ok;
-  final bool optional;
-  final String? detail;
-  const _Comp(this.label, this.ok, {this.optional = false, this.detail});
 }
 
 // ── S237: Local Engine health panel ──────────────────────────────────────────
@@ -472,12 +382,11 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
     final r = await LocalEngineService.clearEngineCache();
     if (!mounted) return;
     setState(() => _clearing = false);
-    final p = NurPalette.of(context);
     final freed = _fmtBytes((r['freedBytes'] as num?)?.toInt() ?? 0);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      backgroundColor: p.surface, behavior: SnackBarBehavior.floating,
+      backgroundColor: _cCard, behavior: SnackBarBehavior.floating,
       content: Text('${ar ? "تم تحرير" : "Freed"} $freed',
-          style: TextStyle(color: p.teal, fontSize: 12))));
+          style: const TextStyle(color: _teal, fontSize: 12))));
     _refresh();
   }
 
@@ -493,12 +402,11 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
       final ar = LangProvider.strings(context).ar;
       final pct = (LocalEngineService.preparationProgress['pct'] as num?)?.toInt() ?? 0;
       if (!mounted) return;
-      final p = NurPalette.of(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        backgroundColor: p.surface, behavior: SnackBarBehavior.floating,
+        backgroundColor: _cCard, behavior: SnackBarBehavior.floating,
         content: Text(
             ar ? 'التجهيز جارٍ بالفعل… $pct٪' : 'Preparation is already running… $pct%',
-            style: TextStyle(color: p.gold, fontSize: 12))));
+            style: const TextStyle(color: _gold, fontSize: 12))));
       return;
     }
     await Navigator.of(context).push(MaterialPageRoute(
@@ -519,7 +427,6 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
   Widget build(BuildContext context) {
     final s = LangProvider.strings(context);
     final ar = s.ar;
-    final p = NurPalette.of(context);
     final st = _status;
     final bool allCoreOk = st != null &&
         (st['proot'] == true) && (st['python'] == true) &&
@@ -573,124 +480,70 @@ class _LocalEngineHealthCardState extends State<_LocalEngineHealthCard> {
                   (st['refAudio'] as num? ?? 0) > 0,
                   detail: '${st['refAudio'] ?? 0}'),
             ])),
-          const SizedBox(width: 8),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            child: _loading
-              ? SizedBox(
-                  key: const ValueKey<String>('loading'),
-                  width: 38, height: 38,
-                  child: Center(child: SizedBox(width: 18, height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2, color: p.gold))))
-              : NurIconButton(
-                  key: const ValueKey<String>('refresh'),
-                  icon: Icons.refresh_rounded,
-                  color: p.gold,
-                  size: 38,
-                  onTap: _refresh)),
-        ]),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 380),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topCenter,
-          child: st == null
-            ? const SizedBox(width: double.infinity)
-            : _details(st, ar, p, allCoreOk)),
+          Divider(height: 1, color: _cBorder),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Column(children: [
+              _kvRow(ar ? 'حجم بيئة التشغيل' : 'Runtime size',
+                  _fmtBytes((st['runtimeBytes'] as num? ?? 0).toInt())),
+              _kvRow(ar ? 'المساحة الحرة' : 'Free space',
+                  _fmtBytes((st['freeBytes'] as num? ?? 0).toInt())),
+              _kvRow(ar ? 'ملفات العمل المؤقتة' : 'Work cache',
+                  '${_fmtBytes((st['cacheBytes'] as num? ?? 0).toInt())} · ${st['cacheFiles'] ?? 0} ${ar ? "ملف" : "files"}'),
+            ])),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+            child: Row(children: [
+              Expanded(child: OutlinedButton.icon(
+                onPressed: _clearing || ((st['cacheFiles'] as num? ?? 0) == 0) ? null : _clearCache,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal, side: BorderSide(color: _teal.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10)),
+                icon: _clearing
+                    ? const SizedBox(width: 13, height: 13,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                    : const Icon(Icons.cleaning_services_rounded, size: 15),
+                label: Text(ar ? 'تفريغ المؤقت' : 'Clear Cache',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)))),
+              const SizedBox(width: 10),
+              Expanded(child: OutlinedButton.icon(
+                onPressed: _repair,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _gold, side: BorderSide(color: _gold.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10)),
+                icon: const Icon(Icons.build_rounded, size: 15),
+                label: Text(
+                    allCoreOk ? (ar ? 'إعادة الإعداد' : 'Re-run Setup')
+                              : (ar ? 'إصلاح الآن' : 'Repair Now'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)))),
+            ])),
+        ],
       ]));
   }
 
-  Widget _details(Map<String, dynamic> st, bool ar, NurPalette p, bool allCoreOk) {
-    final comps = <_Comp>[
-      _Comp(ar ? 'بيئة العزل proot' : 'proot sandbox', st['proot'] == true),
-      _Comp('Python 3', st['python'] == true && st['libpython'] == true),
-      _Comp('ffmpeg', st['ffmpeg'] == true),
-      _Comp('numpy', st['numpy'] == true),
-      _Comp('scipy', st['scipy'] == true, optional: true),
-      _Comp('DeepFilter (aarch64)', st['deepFilter'] == true),
-      _Comp(ar ? 'محركات المعالجة' : 'Engine scripts',
-          (st['engines'] as num? ?? 0) > 0, detail: '${st['engines'] ?? 0}'),
-      _Comp(ar ? 'التلاوات المرجعية' : 'Reference audio',
-          (st['refAudio'] as num? ?? 0) > 0, detail: '${st['refAudio'] ?? 0}'),
-    ];
-    final required = comps.where((c) => !c.optional).toList();
-    final okCount = required.where((c) => c.ok).length;
-    final ratio = required.isEmpty ? 0.0 : okCount / required.length;
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SizedBox(height: 16),
-      NurProgressBar(
-        value: ratio, height: 6,
-        a: allCoreOk ? p.teal : p.warn,
-        b: allCoreOk ? p.goldLight : p.err),
-      const SizedBox(height: 6),
-      Align(
-        alignment: AlignmentDirectional.centerEnd,
-        child: Text('$okCount / ${required.length}',
-          style: TextStyle(
-            color: p.textDim, fontSize: 10.5, fontFamily: 'monospace'))),
-      const SizedBox(height: 8),
-      for (var k = 0; k < comps.length; k++)
-        EntranceFade(index: k, offsetY: 8, child: _compRow(comps[k], ar, p)),
-      const SizedBox(height: 10),
-      Container(height: 1, color: p.border),
-      const SizedBox(height: 10),
-      _kvRow(ar ? 'حجم بيئة التشغيل' : 'Runtime size',
-          _fmtBytes((st['runtimeBytes'] as num? ?? 0).toInt()), p),
-      _kvRow(ar ? 'المساحة الحرة' : 'Free space',
-          _fmtBytes((st['freeBytes'] as num? ?? 0).toInt()), p),
-      _kvRow(ar ? 'ملفات العمل المؤقتة' : 'Work cache',
-          '${_fmtBytes((st['cacheBytes'] as num? ?? 0).toInt())} · ${st['cacheFiles'] ?? 0} ${ar ? "ملف" : "files"}', p),
-      const SizedBox(height: 14),
-      NurButton(
-        label: ar ? 'تفريغ المؤقت' : 'Clear Cache',
-        icon: Icons.cleaning_services_rounded,
-        filled: false,
-        accent: p.teal,
-        height: 46,
-        loading: _clearing,
-        onTap: _clearing || ((st['cacheFiles'] as num? ?? 0) == 0) ? null : _clearCache),
-      const SizedBox(height: 10),
-      NurButton(
-        label: allCoreOk ? (ar ? 'إعادة الإعداد' : 'Re-run Setup')
-                         : (ar ? 'إصلاح الآن' : 'Repair Now'),
-        icon: Icons.build_rounded,
-        filled: !allCoreOk,
-        accent: p.gold,
-        height: 46,
-        onTap: _repair),
-    ]);
-  }
-
-  Widget _compRow(_Comp c, bool ar, NurPalette p) {
-    final Color col = c.ok ? p.ok : c.optional ? p.textDim : p.err;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+  Widget _compRow(String label, bool ok,
+      {String? detail, bool optional = false, bool ar = false}) =>
+    Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(children: [
         Icon(
-          c.ok ? Icons.check_circle_rounded
-               : c.optional ? Icons.remove_circle_outline_rounded : Icons.cancel_rounded,
-          color: col, size: 16),
-        const SizedBox(width: 10),
-        Expanded(child: Text(c.label,
-          style: TextStyle(color: p.text, fontSize: 12.5))),
-        if (c.detail != null)
-          Text(c.detail!, style: TextStyle(
-            color: p.textSub, fontSize: 11, fontFamily: 'monospace'))
-        else if (!c.ok && c.optional)
+          ok ? Icons.check_circle_rounded
+             : optional ? Icons.remove_circle_outline_rounded : Icons.cancel_rounded,
+          color: ok ? _teal : optional ? _cSub : _red, size: 15),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label, style: TextStyle(color: _cText, fontSize: 12))),
+        if (detail != null)
+          Text(detail, style: TextStyle(color: _cSub, fontSize: 11, fontFamily: 'monospace'))
+        else if (!ok && optional)
           Text(ar ? 'اختياري' : 'optional',
-              style: TextStyle(color: p.textDim, fontSize: 10.5)),
+              style: TextStyle(color: _cSub, fontSize: 10)),
       ]));
-  }
 
-  Widget _kvRow(String label, String value, NurPalette p) => Padding(
+  Widget _kvRow(String label, String value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
     child: Row(children: [
-      Expanded(child: Text(label, style: TextStyle(color: p.textSub, fontSize: 11.5))),
-      const SizedBox(width: 8),
-      Flexible(child: Text(value,
-        textAlign: TextAlign.end,
-        style: TextStyle(color: p.text, fontSize: 11.5,
-            fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+      Expanded(child: Text(label, style: TextStyle(color: _cSub, fontSize: 11.5))),
+      Text(value, style: TextStyle(color: _cText, fontSize: 11.5,
+          fontWeight: FontWeight.w600, fontFamily: 'monospace')),
     ]));
 }
