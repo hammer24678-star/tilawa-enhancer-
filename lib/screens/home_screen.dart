@@ -401,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('☁ SERVER engine redirected to 🏠 v11.0 (local mode)'),
-          backgroundColor: Color(0xFF0F2420),
+          backgroundColor: Color(0xFF0F2623),
           duration: Duration(seconds: 3)));
         }
       }
@@ -637,7 +637,7 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: s.ar ? 'حسناً' : 'OK',
-          textColor: const Color(0xFF3FB950),
+          textColor: const Color(0xFF2ABF6E),
           onPressed: () {},
         ),
       ));
@@ -733,7 +733,7 @@ class _HomeScreenState extends State<HomeScreen>
           duration: const Duration(seconds: 8),
           action: SnackBarAction(
             label: s.ar ? 'حسناً' : 'OK',
-            textColor: const Color(0xFF3FB950),
+            textColor: const Color(0xFF2ABF6E),
             onPressed: () {})));
       } catch (e) {
         if (!mounted) return;
@@ -770,7 +770,7 @@ class _HomeScreenState extends State<HomeScreen>
         duration: const Duration(seconds: 8),
         action: SnackBarAction(
           label: s.ar ? 'حسناً' : 'OK',
-          textColor: const Color(0xFF3FB950),
+          textColor: const Color(0xFF2ABF6E),
           onPressed: () {},
         ),
       ));

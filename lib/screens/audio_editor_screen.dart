@@ -47,18 +47,18 @@ import '../state/lang_provider.dart';
 import '../widgets/anim.dart';   // S250g: shared PressScale / EntranceFade / ChangePulse
 
 // ── Sacred Cosmos palette (unchanged) ────────────────────────────────────────
-const _bg      = Color(0xFF020D17);
-const _surface = Color(0xFF0C1E28);
-const _card    = Color(0xFF0F2420);
+const _bg      = Color(0xFF03100E);
+const _surface = Color(0xFF0A1C1A);
+const _card    = Color(0xFF0F2623);
 const _gold    = Color(0xFFD4AF37);
 const _goldDim = Color(0xFF3A2B08);
 const _teal    = Color(0xFF1DB898);
 const _tealDk  = Color(0xFF0A3D2A);
-const _red     = Color(0xFFD94040);
-const _textA   = Color(0xFFE2CFA0);
-const _textB   = Color(0xFF8AACBA);
-const _textDim = Color(0xFF3D5A65);
-const _border  = Color(0xFF1A2E20);
+const _red     = Color(0xFFE0524A);
+const _textA   = Color(0xFFF0E6C8);
+const _textB   = Color(0xFF9DB8B3);
+const _textDim = Color(0xFF5C7873);
+const _border  = Color(0xFF1D3F39);
 
 enum _Tab { trim, eq, effects, fx2, cleanup, studio, loudness, quality, compare, merge, export_ }
 
@@ -5080,7 +5080,7 @@ class _WavePainter extends CustomPainter {
     for (final s in steps) {
       if (durationSec / s <= 8) { step = s; break; }
     }
-    const label = TextStyle(color: Color(0xFF3D5A65), fontSize: 8.5,
+    const label = TextStyle(color: Color(0xFF5C7873), fontSize: 8.5,
         fontFamily: 'monospace', fontWeight: FontWeight.w600);
     for (double t = 0; t <= durationSec + 1e-6; t += step) {
       final x = (t / durationSec) * sz.width;
@@ -5294,7 +5294,7 @@ class _WavePainter extends CustomPainter {
     // playhead position isn't read as "where the preview is".
     if (dimmed) {
       c.drawRect(Rect.fromLTWH(0, 0, szFull.width, szFull.height),
-          Paint()..color = const Color(0xFF020D17).withValues(alpha: 0.45));
+          Paint()..color = const Color(0xFF03100E).withValues(alpha: 0.45));
     }
   }
 
