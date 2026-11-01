@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-
 import '../design/nur.dart';
 import '../state/lang_provider.dart';
 
@@ -96,9 +95,13 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
     if (!mounted) return;
     final p = NurPalette.of(context);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: TextStyle(color: error ? Colors.white : p.onGold)),
-      backgroundColor: error ? p.err : p.gold,
+      content: Text(msg, style: TextStyle(
+          color: error ? p.err : p.text, fontWeight: FontWeight.w600)),
+      backgroundColor: p.surfaceHi,
       behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: error ? p.err : p.gold, width: 0.8)),
       duration: const Duration(seconds: 2)));
   }
 
@@ -133,65 +136,41 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
     }
   }
 
-  void _select(_EngineFile f) {
-    HapticFeedback.selectionClick();
-    _searchCtl.clear();
-    setState(() {
-      _sel = f;
-      _query = '';
-      _future = _load(f);
-    });
-  }
-
-  Widget _fileChip(NurPalette p, _EngineFile f, bool ar) {
+  Widget _fileChip(_EngineFile f, bool ar, NurPalette p) {
     final sel = f.asset == _sel.asset;
-    return Padding(
-      padding: const EdgeInsetsDirectional.only(end: 8),
-      child: PressScale(
-        scale: 0.94,
-        onTap: sel ? null : () => _select(f),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: sel
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      p.gold.withValues(alpha: 0.30),
-                      p.gold.withValues(alpha: 0.12),
-                    ])
-                : LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [p.surfaceHi, p.surface]),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-                color: sel ? p.gold : p.border, width: sel ? 1.4 : 1),
-            boxShadow: sel
-                ? [BoxShadow(color: p.gold.withValues(alpha: 0.25), blurRadius: 14)]
-                : null),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(ar ? f.nameAr : f.nameEn,
-                style: TextStyle(
-                    color: sel ? p.gold : p.textSub,
-                    fontSize: 12,
-                    fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: sel ? p.gold.withValues(alpha: 0.18) : p.bgDeep,
-                borderRadius: BorderRadius.circular(7)),
-              child: Text(f.tag,
-                  style: TextStyle(
-                      color: sel ? p.gold : p.textDim,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'monospace'))),
-          ]))));
+    return GestureDetector(
+      onTap: () {
+        if (sel) return;
+        HapticFeedback.selectionClick();
+        setState(() { _sel = f; _query = ''; });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        margin: const EdgeInsetsDirectional.only(end: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? p.gold.withValues(alpha: 0.16) : p.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: sel ? p.gold : p.border, width: sel ? 1.4 : 1),
+          boxShadow: sel
+              ? [BoxShadow(color: p.gold.withValues(alpha: 0.22), blurRadius: 14)]
+              : null),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(ar ? f.nameAr : f.nameEn,
+              style: TextStyle(color: sel ? p.gold : p.textSub, fontSize: 12,
+                  fontWeight: sel ? FontWeight.w800 : FontWeight.w500)),
+          const SizedBox(width: 7),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: sel ? p.gold.withValues(alpha: 0.18) : p.surfaceHi,
+              borderRadius: BorderRadius.circular(6)),
+            child: Text(f.tag, style: TextStyle(
+                color: sel ? p.gold : p.textDim, fontSize: 9,
+                fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+        ])));
   }
 
   // Search results — matched lines with their 1-based line numbers.
@@ -317,59 +296,102 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
     return NurScaffold(
       title: ar ? 'كود محركات المعالجة' : 'Engine Source Code',
       icon: Icons.code_rounded,
+      accent: p.teal,
+      intensity: 0.6,
       body: Column(children: [
         // ── engine picker ──────────────────────────────────────────────────
-        EntranceFade(
-          index: 0,
-          child: SizedBox(height: 46,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: _files.map((f) => Center(child: _fileChip(p, f, ar))).toList()))),
-        const SizedBox(height: 8),
+        SizedBox(height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: _files.map((f) => Center(child: _fileChip(f, ar, p))).toList())),
+        const SizedBox(height: 10),
         // ── actions + search ───────────────────────────────────────────────
-        EntranceFade(
-          index: 1,
-          child: Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Column(children: [
-              _searchField(p, ar),
-              const SizedBox(height: 10),
-              Row(children: [
-                Expanded(child: NurButton(
-                    label: ar ? 'نسخ' : 'Copy',
-                    icon: Icons.copy_rounded,
-                    filled: false,
-                    height: 44,
-                    onTap: _copySrc)),
-                const SizedBox(width: 10),
-                Expanded(child: NurButton(
-                    label: ar ? 'تنزيل' : 'Download',
-                    icon: Icons.download_rounded,
-                    height: 44,
-                    onTap: _downloadSrc)),
-              ]),
-            ]))),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Row(children: [
+            NurIconButton(
+                icon: Icons.copy_rounded, size: 40,
+                tooltip: ar ? 'نسخ' : 'Copy', onTap: _copySrc),
+            const SizedBox(width: 8),
+            NurIconButton(
+                icon: Icons.download_rounded, size: 40, color: p.gold,
+                tooltip: ar ? 'تنزيل' : 'Download', onTap: _downloadSrc),
+            const SizedBox(width: 10),
+            Expanded(child: SizedBox(height: 40,
+              child: TextField(
+                onChanged: (v) => setState(() => _query = v),
+                style: TextStyle(color: p.text, fontSize: 12.5),
+                cursorColor: p.gold,
+                decoration: InputDecoration(
+                  hintText: ar ? 'ابحث في الكود…' : 'Search in code…',
+                  hintStyle: TextStyle(color: p.textDim, fontSize: 12),
+                  prefixIcon: Icon(Icons.search_rounded, color: p.textDim, size: 18),
+                  filled: true, fillColor: p.surface, isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(color: p.border)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide(color: p.gold)),
+                )))),
+          ])),
         // ── code view ──────────────────────────────────────────────────────
-        Expanded(child: EntranceFade(
-          index: 2,
-          child: FutureBuilder<String>(
-            future: _future,
-            builder: (context, snap) => AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              layoutBuilder: (current, previous) => Stack(
-                fit: StackFit.expand,
-                children: [...previous, if (current != null) current]),
-              child: KeyedSubtree(
-                key: ValueKey('${_sel.asset}|${snap.connectionState == ConnectionState.done}|${snap.hasError}'),
-                child: _codeBody(p, ar, snap)))))),
+        Expanded(child: FutureBuilder<String>(
+          future: _load(_sel),
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return Center(
+                  child: CircularProgressIndicator(color: p.gold, strokeWidth: 2.4));
+            }
+            if (snap.hasError) {
+              return Center(child: Text(
+                  ar ? 'تعذر تحميل الكود' : 'Could not load source',
+                  style: TextStyle(color: p.err)));
+            }
+            final src = snap.data ?? '';
+            final lines = src.split('\n');
+            final kb = (src.length / 1024).toStringAsFixed(0);
+            final searching = _query.trim().isNotEmpty;
+            final matches = searching ? _matches(lines) : const <MapEntry<int, String>>[];
+            return Column(children: [
+              // stats strip
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                child: Row(children: [
+                  Expanded(child: Text(_sel.fileName,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: p.textDim, fontSize: 11,
+                          fontFamily: 'monospace'))),
+                  NurChip(
+                      label: searching
+                          ? (ar ? '${matches.length} نتيجة' : '${matches.length} matches')
+                          : '${lines.length} ${ar ? "سطر" : "lines"} · $kb KB',
+                      color: p.teal, fontSize: 10.5),
+                ])),
+              Expanded(child: Container(
+                margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                    color: p.dark ? p.bgDeep.withValues(alpha: 0.85) : p.surface,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: p.border)),
+                // Code is always LTR regardless of app language.
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: searching
+                      ? _searchResultsView(matches, ar, p)
+                      : _chunkedCodeView(lines, p)))),
+            ]);
+          })),
       ]),
     );
   }
 
   // Chunked virtualized rendering — one SelectableText per ~200 lines keeps
-  // even the 15k-line الاسترداد source smooth on mid-range phones. A fixed
-  // gutter (outside the horizontal scroll) carries the line numbers.
-  Widget _chunkedCodeView(NurPalette p, List<String> lines) {
+  // even the 15k-line الاسترداد source smooth on mid-range phones.
+  Widget _chunkedCodeView(List<String> lines, NurPalette p) {
     final chunks = (lines.length / _chunkLines).ceil().clamp(1, 1 << 20);
     final style = TextStyle(color: p.text, fontSize: 11.5,
         fontFamily: 'monospace', height: 1.5);
@@ -380,32 +402,19 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
         itemBuilder: (_, i) {
           final start = i * _chunkLines;
           final end = (start + _chunkLines).clamp(0, lines.length);
-          final nums = [for (var n = start + 1; n <= end; n++) '$n'].join('\n');
-          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                  color: p.border.withValues(alpha: 0.18),
-                  border: Border(right: BorderSide(color: p.border))),
-              child: Text(nums,
-                  textAlign: TextAlign.end,
-                  style: style.copyWith(color: p.textDim))),
-            Expanded(child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: SelectableText(
-                lines.sublist(start, end).join('\n'),
-                style: style))),
-          ]);
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SelectableText(
+              lines.sublist(start, end).join('\n'),
+              style: TextStyle(color: p.textSub, fontSize: 11.5,
+                  fontFamily: 'monospace', height: 1.5)));
         }));
   }
 
-  // Wraps every case-insensitive occurrence of the query in a gold highlight.
-  TextSpan _highlight(NurPalette p, String line, TextStyle base) {
-    final q = _query.trim().toLowerCase();
-    final low = line.toLowerCase();
-    if (q.isEmpty || low.length != line.length) {
-      return TextSpan(text: line, style: base);
+  Widget _searchResultsView(List<MapEntry<int, String>> matches, bool ar, NurPalette p) {
+    if (matches.isEmpty) {
+      return Center(child: Text(ar ? 'لا نتائج' : 'No matches',
+          style: TextStyle(color: p.textDim, fontSize: 12)));
     }
     final spans = <TextSpan>[];
     var pos = 0;
@@ -450,10 +459,12 @@ class _EngineCodeScreenState extends State<EngineCodeScreen> {
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(width: 54, child: Text('${m.key}',
+              SizedBox(width: 48, child: Text('${m.key}',
                   style: TextStyle(color: p.gold, fontSize: 10.5,
                       fontFamily: 'monospace'))),
-              SelectableText.rich(_highlight(p, m.value, base)),
+              SelectableText(m.value,
+                  style: TextStyle(color: p.textSub, fontSize: 11.5,
+                      fontFamily: 'monospace', height: 1.4)),
             ])));
       });
   }

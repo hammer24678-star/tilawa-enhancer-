@@ -10,9 +10,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import '../design/nur.dart';
-import '../state/lang_provider.dart'; // S196-BUG-I (S198-BUG-1: fixed path)
+
+// Tool accent colours (static const list below needs compile-time colours).
+const _teal   = Color(0xFF2FD4B0);
+const _violet = Color(0xFFB88CFF);
+const _amber  = Color(0xFFF0A23B);
 
 class AiToolsScreen extends StatelessWidget {
   const AiToolsScreen({super.key});
@@ -78,9 +81,10 @@ class AiToolsScreen extends StatelessWidget {
     if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication) &&
         ctx.mounted) {
       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-          backgroundColor: p.surfaceHi,
-          content: Text(ar ? 'تعذّر فتح الرابط' : 'Could not open the link',
-              style: TextStyle(color: p.err, fontSize: 12))));
+        backgroundColor: NurPalette.of(ctx).surfaceHi,
+        behavior: SnackBarBehavior.floating,
+        content: Text(ar ? 'تعذّر فتح الرابط' : 'Could not open the link',
+            style: TextStyle(color: NurPalette.of(ctx).err, fontSize: 12))));
     }
   }
 
@@ -202,210 +206,105 @@ class AiToolsScreen extends StatelessWidget {
   Widget build(BuildContext ctx) {
     final ar = LangProvider.strings(ctx).ar;
     final p = NurPalette.of(ctx);
-    final tools = _tools(p);
+    // NurScaffold mirrors itself for Arabic (S196-BUG-I: direction follows
+    // the app language), so rows here must not flip on their own.
     return NurScaffold(
       title: ar ? 'أدوات الذكاء الاصطناعي' : 'AI Tools',
       icon: Icons.auto_fix_high_rounded,
       accent: p.warn,
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          EntranceFade(index: 0, child: _warningCard(p, ar)),
+
+          // ── Warning banner ────────────────────────────────────────────────
+          EntranceFade(index: 0, child: NurCard(
+            radius: 22,
+            accent: p.warn,
+            glow: true,
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.warning_amber_rounded, color: p.warn, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(
+                    ar ? 'الذكاء الاصطناعي — الخيار الأخير'
+                       : 'AI — the last resort',
+                    style: TextStyle(color: p.warn,
+                        fontSize: 16, fontWeight: FontWeight.w800))),
+                ]),
+                const SizedBox(height: 12),
+                Text(
+                  ar
+                    ? 'هذه الأدوات مخصصة فقط للتسجيلات البالغة التلف '
+                      'التي فشلت فيها كل محركات محسِّن التلاوة.\n\n'
+                      '⚠️  مخاطر الاستخدام:\n'
+                      '  • ابتلاع الكلمات — يختفي حرف أو كلمة كاملة\n'
+                      '  • تغيير صوت الشيخ — يصبح اصطناعياً\n'
+                      '  • فقدان التجويد الدقيق والغنة والمدود\n\n'
+                      '✅  إذا اضطررت للاستخدام:\n'
+                      '  راجع الملف الناتج كلمةً كلمة وأضف يدوياً '
+                      'أي كلمة مبتلوعة في الملفات التالفة جداً.'
+                    : 'These tools are only for severely damaged '
+                      'recordings where every Tilawa Enhancer engine '
+                      'has already failed.\n\n'
+                      '⚠️  Risks of using them:\n'
+                      '  • Swallowed words — a letter or whole word disappears\n'
+                      '  • The Sheikh\'s voice changes — sounds synthetic\n'
+                      '  • Fine Tajweed detail (ghunnah, madd) gets lost\n\n'
+                      '✅  If you must use them:\n'
+                      '  Review the output word by word, and manually '
+                      'restore any swallowed word from the damaged original.',
+                  style: TextStyle(color: p.text, fontSize: 13, height: 1.65)),
+              ]))),
+
           const SizedBox(height: 14),
-          EntranceFade(index: 1, child: _noteCard(p, ar)),
-          EntranceFade(
-            index: 2,
-            child: NurSectionHeader(
-              ar ? 'الأدوات المتاحة' : 'Available tools',
-              accent: p.warn,
-              padding: const EdgeInsets.fromLTRB(2, 24, 2, 12),
-            ),
-          ),
-          for (var i = 0; i < tools.length; i++)
-            EntranceFade(
-              index: i + 3,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _ToolCard(
-                  tool: tools[i],
-                  ar: ar,
-                  onTap: () => _open(ctx, tools[i].url, ar),
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
-          Center(
-            child: Text(
+
+          // ── Note from us ──────────────────────────────────────────────────
+          EntranceFade(index: 1, child: NurCard(
+            radius: 18,
+            accent: p.gold,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.edit_note_rounded, color: p.gold, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text(
+                  ar
+                    ? 'ملاحظة من الفريق: لا توجد أداة ذكاء اصطناعي تفهم '
+                      'مقامات التلاوة أو أحكام التجويد. محركات محسِّن '
+                      'التلاوة مُصممة خصيصاً لهذا. استخدم هذه الأدوات '
+                      'فقط حين يكون الصوت بالغ التلف لدرجة أن النتيجة '
+                      '"الاصطناعية" أفضل من الصمت.'
+                    : 'A note from the team: no AI tool understands '
+                      'recitation maqamat or Tajweed rules. The Tilawa '
+                      'Enhancer engines were purpose-built for that. '
+                      'Reach for these tools only when the audio is so '
+                      'damaged that a "synthetic" result beats silence.',
+                  style: TextStyle(
+                      color: p.textSub, fontSize: 12.5, height: 1.6))),
+              ]))),
+
+          NurSectionHeader(ar ? 'الأدوات المتاحة' : 'Available tools',
+              padding: const EdgeInsets.fromLTRB(4, 24, 4, 12)),
+
+          // ── Tool cards ────────────────────────────────────────────────────
+          ..._tools.asMap().entries.map((e) => EntranceFade(
+              index: 2 + e.key,
+              child: _ToolCard(
+                  tool: e.value, ar: ar,
+                  onTap: () => _open(ctx, e.value.url, ar)))),
+
+          const SizedBox(height: 20),
+          Center(child: Text(
               ar ? 'استخدم بحذر شديد ⚠️' : 'Use with extreme care ⚠️',
-              textAlign: TextAlign.center,
               style: TextStyle(
-                  color: p.warn.withValues(alpha: 0.70),
-                  fontSize: 11,
-                  letterSpacing: 0.8),
-            ),
-          ),
-          SizedBox(height: MediaQuery.of(ctx).padding.bottom + 8),
-        ],
-      ),
-    );
-  }
-}
-
-/// Amber warning glyph with a slow breathing halo.
-class _WarnBadge extends StatefulWidget {
-  final Color color;
-  const _WarnBadge({required this.color});
-
-  @override
-  State<_WarnBadge> createState() => _WarnBadgeState();
-}
-
-class _WarnBadgeState extends State<_WarnBadge>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1800))
-    ..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final col = widget.color;
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (_, __) {
-        final t = Curves.easeInOut.transform(_c.value);
-        return Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                col.withValues(alpha: 0.34),
-                col.withValues(alpha: 0.12),
-              ],
-            ),
-            border: Border.all(color: col.withValues(alpha: 0.55 + 0.25 * t)),
-            boxShadow: [
-              BoxShadow(
-                color: col.withValues(alpha: 0.15 + 0.25 * t),
-                blurRadius: 10 + 12 * t,
-              ),
-            ],
-          ),
-          child: Icon(Icons.warning_amber_rounded, color: col, size: 24),
-        );
-      },
-    );
-  }
-}
-
-/// Collapsible red "risks" panel: tap the header to fold the list away.
-class _RisksPanel extends StatefulWidget {
-  final String head;
-  final List<String> risks;
-  const _RisksPanel({required this.head, required this.risks});
-
-  @override
-  State<_RisksPanel> createState() => _RisksPanelState();
-}
-
-class _RisksPanelState extends State<_RisksPanel> {
-  bool _open = true;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = NurPalette.of(context);
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOutCubic,
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      decoration: BoxDecoration(
-        color: p.err.withValues(alpha: _open ? 0.09 : 0.05),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.err.withValues(alpha: _open ? 0.34 : 0.22)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _open = !_open),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(widget.head,
-                        style: TextStyle(
-                            color: p.warn,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800)),
-                  ),
-                  const SizedBox(width: 8),
-                  AnimatedRotation(
-                    turns: _open ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 280),
-                    curve: Curves.easeOutCubic,
-                    child: Icon(Icons.keyboard_arrow_down_rounded,
-                        color: p.textSub, size: 20),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: _open
-                ? SizedBox(
-                    width: double.infinity,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final r in widget.risks)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 7),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    width: 6,
-                                    height: 6,
-                                    margin: const EdgeInsets.only(top: 8),
-                                    decoration: BoxDecoration(
-                                        shape: BoxShape.circle, color: p.err),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(r,
-                                        style: TextStyle(
-                                            color: p.text,
-                                            fontSize: 13,
-                                            height: 1.6)),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  )
-                : const SizedBox(width: double.infinity, height: 0),
-          ),
-        ],
-      ),
+                  color: p.warn.withValues(alpha: 0.6),
+                  fontSize: 11, letterSpacing: 0.8))),
+        ]),
     );
   }
 }
@@ -419,91 +318,55 @@ class _ToolCard extends StatelessWidget {
   @override
   Widget build(BuildContext ctx) {
     final p = NurPalette.of(ctx);
-    final c = tool.color;
     return NurCard(
-      accent: c,
+      margin: const EdgeInsets.only(bottom: 12),
+      radius: 20,
+      accent: tool.color,
       onTap: onTap,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(13),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      c.withValues(alpha: 0.30),
-                      c.withValues(alpha: 0.10),
-                    ],
-                  ),
-                  border: Border.all(color: c.withValues(alpha: 0.5)),
-                ),
-                child: Icon(tool.icon, color: c, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(ar ? tool.nameAr : tool.nameEn,
-                        style: TextStyle(
-                            color: c, fontSize: 14, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
-                    Text(ar ? tool.nameEn : tool.subEn,
-                        style: TextStyle(color: p.textDim, fontSize: 10.5)),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          Row(children: [
+            Container(
+              width: 42, height: 42,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(13),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  colors: [tool.color.withValues(alpha: 0.30),
+                           tool.color.withValues(alpha: 0.10)]),
+                border: Border.all(color: tool.color.withValues(alpha: 0.45))),
+              child: Icon(tool.icon, color: tool.color, size: 21)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(ar ? tool.nameAr : tool.nameEn,
+                    style: TextStyle(color: tool.color,
+                        fontSize: 14, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(ar ? tool.nameEn : tool.subEn,
+                    style: TextStyle(color: p.textDim, fontSize: 11)),
+              ])),
+            const SizedBox(width: 8),
+            // S239 — risk badge
+            NurChip(label: ar ? tool.riskAr : tool.riskEn,
+                color: tool.color, fontSize: 10),
+          ]),
           const SizedBox(height: 12),
           Text(ar ? tool.descAr : tool.descEn,
-              style: TextStyle(color: p.text, fontSize: 12, height: 1.6)),
-          const SizedBox(height: 14),
-          // S239 — risk badge + animated risk meter + open link
-          Row(
-            children: [
-              Flexible(
-                child: NurChip(
-                  label: ar ? tool.riskAr : tool.riskEn,
-                  color: c,
-                  icon: Icons.shield_outlined,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: tool.risk),
-                  duration: const Duration(milliseconds: 900),
-                  curve: Curves.easeOutCubic,
-                  builder: (_, v, __) =>
-                      NurProgressBar(
-                          value: v,
-                          height: 6,
-                          a: c.withValues(alpha: 0.5),
-                          b: c),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          NurButton(
-            label: ar ? 'فتح الأداة' : 'Open tool',
-            icon: Icons.open_in_new_rounded,
-            filled: false,
-            accent: c,
-            height: 44,
-            onTap: onTap,
-          ),
-        ],
-      ),
-    );
+              style: TextStyle(color: p.textSub, fontSize: 12.5, height: 1.6)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Icon(Icons.open_in_new_rounded,
+                color: tool.color.withValues(alpha: 0.7), size: 14),
+            const SizedBox(width: 6),
+            Text(ar ? 'فتح في المتصفح' : 'Open in browser',
+                style: TextStyle(color: tool.color.withValues(alpha: 0.8),
+                    fontSize: 11, fontWeight: FontWeight.w700)),
+          ]),
+        ]));
   }
 }
 

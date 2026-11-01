@@ -3,10 +3,25 @@
 // Hero orb, staggered section cards, animated engine-score bars, a living
 // offline shield and expandable troubleshooting rows.
 
-import 'dart:math' show sin, pi;
+import 'dart:math' show pi, sin, cos;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../design/nur.dart';
 import '../state/lang_provider.dart';
+
+// ── Sacred Cosmos tokens ──────────────────────────────────────────────────────
+const _bgDeep    = Color(0xFF050E10);
+const _bgCard    = Color(0xFF0B1A1D);
+const _gold      = Color(0xFFD9B13F);
+const _goldLight = Color(0xFFF5DC85);
+const _goldMuted = Color(0xFF3A2B08);
+const _teal      = Color(0xFF2FD4B0);
+const _textA     = Color(0xFFEAF2EE);
+const _textB     = Color(0xFF9DB6B6);
+const _textC     = Color(0xFF5E7B7C);
+const _ok        = Color(0xFF3DDC97);
+const _err       = Color(0xFFFF6B6B);
+const _jade      = Color(0xFF122529);
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 class LocalModeInfoScreen extends StatefulWidget {
@@ -16,14 +31,56 @@ class LocalModeInfoScreen extends StatefulWidget {
 }
 
 class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(seconds: 6))
-    ..repeat();
+    with TickerProviderStateMixin {
+
+  late final AnimationController _glowCtrl;
+  late final AnimationController _geoRotCtrl;
+  late final AnimationController _orbitCtrl;
+  late final AnimationController _entranceCtrl;
+
+  late final List<Animation<double>>  _cardFades;
+  late final List<Animation<Offset>>  _cardSlides;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _glowCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2800))
+      ..repeat(reverse: true);
+    _geoRotCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 80))
+      ..repeat();
+    _orbitCtrl = AnimationController(
+        vsync: this, duration: const Duration(seconds: 12))
+      ..repeat();
+    _entranceCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..forward();
+
+    _cardFades = List.generate(5, (i) {
+      final start = (i * 0.13).clamp(0.0, 0.7);
+      return CurvedAnimation(
+        parent: _entranceCtrl,
+        curve: Interval(start, (start + 0.45).clamp(0.0, 1.0),
+            curve: Curves.easeOut));
+    });
+    _cardSlides = List.generate(5, (i) {
+      final start = (i * 0.13).clamp(0.0, 0.7);
+      return Tween<Offset>(begin: const Offset(0, 0.18), end: Offset.zero)
+          .animate(CurvedAnimation(
+            parent: _entranceCtrl,
+            curve: Interval(start, (start + 0.45).clamp(0.0, 1.0),
+                curve: Curves.easeOutCubic)));
+    });
+  }
 
   @override
   void dispose() {
-    _c.dispose();
+    _glowCtrl.dispose();
+    _geoRotCtrl.dispose();
+    _orbitCtrl.dispose();
+    _entranceCtrl.dispose();
     super.dispose();
   }
 
@@ -33,29 +90,57 @@ class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
     final ar = s.ar;
     final p = NurPalette.of(context);
 
-    return NurScaffold(
-      title: ar ? 'المحرك المحلي' : 'Local Engine',
-      icon: Icons.offline_bolt_rounded,
-      accent: p.teal,
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-        children: [
-          EntranceFade(index: 0, child: _hero(p, ar)),
-          EntranceFade(index: 1, child: _whatIsCard(p, ar)),
-          const SizedBox(height: 14),
-          EntranceFade(index: 2, child: _enginesCard(p, ar)),
-          const SizedBox(height: 14),
-          EntranceFade(index: 3, child: _privacyCard(p, ar)),
-          const SizedBox(height: 14),
-          EntranceFade(index: 4, child: _setupCard(p, ar)),
-          const SizedBox(height: 14),
-          EntranceFade(index: 5, child: _troubleshootCard(p, ar)),
-          const SizedBox(height: 14),
-          EntranceFade(index: 6, child: _footerVerse(p, ar)),
-        ],
+    // This screen's text colours are tuned for the night palette, so it
+    // always renders in it (like the old dark-only version did).
+    return Theme(
+      data: buildNurTheme(dark: true),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Directionality(
+          textDirection: ar ? TextDirection.rtl : TextDirection.ltr,
+          child: Scaffold(
+            backgroundColor: _bgDeep,
+            body: NurBackdrop(
+              accent: _teal,
+              child: SafeArea(child: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _backBtn(context, ar)))),
+
+                SliverToBoxAdapter(child: _hero(ar)),
+
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
+                  sliver: SliverList(delegate: SliverChildListDelegate([
+                    _animCard(0, _whatIsCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(1, _enginesCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(2, _privacyCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(3, _setupCard(ar)),
+                    const SizedBox(height: 14),
+                    _animCard(4, _troubleshootCard(ar)),
+                    const SizedBox(height: 8),
+                    _footerVerse(ar),
+                  ]))),
+              ])),
+            ),
+          ),
+        ),
       ),
     );
   }
+
+  // ── Back button ───────────────────────────────────────────────────────────
+  Widget _backBtn(BuildContext ctx, bool ar) => NurIconButton(
+    icon: ar ? Icons.arrow_forward_ios_rounded : Icons.arrow_back_ios_new_rounded,
+    onTap: () => Navigator.of(ctx).pop());
 
   // ── Hero ──────────────────────────────────────────────────────────────────
   Widget _hero(NurPalette p, bool ar) => Padding(
@@ -103,35 +188,13 @@ class _LocalModeInfoScreenState extends State<LocalModeInfoScreen>
         ]),
       );
 
-  // ── Shared pieces ─────────────────────────────────────────────────────────
-  Widget _title(NurPalette p, IconData icon, Color col, String title) =>
-      Row(children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(11),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [col.withValues(alpha: 0.30), col.withValues(alpha: 0.08)],
-            ),
-            border: Border.all(color: col.withValues(alpha: 0.45)),
-          ),
-          child: Icon(icon, color: col, size: 18),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: p.text,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  height: 1.3)),
-        ),
-      ]);
+  // ── Shared card shell ─────────────────────────────────────────────────────
+  Widget _card({required Color accentColor, required Widget child}) =>
+    NurCard(
+      radius: 22,
+      accent: accentColor,
+      padding: const EdgeInsets.all(18),
+      child: SizedBox(width: double.infinity, child: child));
 
   Widget _body(NurPalette p, String text) => Text(text,
       style: TextStyle(color: p.textSub, fontSize: 12.5, height: 1.7));
@@ -677,5 +740,23 @@ class _ShieldPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ShieldPainter o) => o.t != t || o.color != color;
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height / 2;
+    final p = Paint()..style = PaintingStyle.fill;
+    for (final o in _orbits) {
+      final angle = t * 6.2832 * o.speed;
+      final x = cx + o.r * cos(angle);
+      final y = cy + o.r * sin(angle);
+      // Bloom
+      p.maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+      p.color = o.color.withValues(alpha: 0.22 + 0.18 * g);
+      canvas.drawCircle(Offset(x, y), 5.0, p);
+      // Core
+      p.maskFilter = null;
+      p.color = o.color.withValues(alpha: 0.72 + 0.22 * g);
+      canvas.drawCircle(Offset(x, y), 3.0, p);
+    }
+  }
+  @override bool shouldRepaint(_EngineOrbitPainter o) => o.t != t || o.g != g;
 }
+
